@@ -5,6 +5,7 @@ const BASE = process.env.REACT_APP_BACKEND_URL;
 export const api = axios.create({
   baseURL: `${BASE}/api`,
   withCredentials: true,
+  timeout: 20000,
 });
 
 export function formatApiError(detail) {

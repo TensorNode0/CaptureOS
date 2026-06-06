@@ -1,0 +1,28 @@
+{
+  "summary": "Frontend regression for the login race-condition fix verified. All scenarios PASS: admin/editor/viewer can sign in, dashboard renders, session persists for 10+ seconds without bouncing to /login, and survives a full page reload (F5). Logout returns to /login and protected route /dashboard properly redirects to /login when unauthenticated. Wrong-password shows login-error and does not log in. Opportunities table loads 18 seeded rows for the admin (confirming the auth cookie is sent on subsequent org-scoped API calls). Server-side RBAC verified: admin sees New/Pull/Verify + Admin + Settings; editor sees New/Pull/Verify but NOT Admin/Settings; viewer sees none of them.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/iteration_2.json"
+  ],
+  "action_items": [
+    "None for the reported bug — the AuthContext race-condition fix (authedRef guard) and the axios 20s timeout resolve the reported sign-in issue. Login + session-persistence + reload all verified."
+  ],
+  "critical_code_review_comments": [
+    "AuthContext.js — authedRef.current guard correctly prevents the late /auth/me 401 from clobbering a successful login. login()/register() set authedRef BEFORE setUser so a concurrent in-flight bootstrap response can't fire setUser(false). Logout resets authedRef to false. Logic is correct.",
+    "api.js timeout=20000 is reasonable; the bootstrap /auth/me cannot freeze the spinner indefinitely.",
+    "Minor: the review-request listed test-ids opps-new-btn / opps-pull-btn / opps-verify-btn that do not exist in code (actual ids: new-opp-button / pull-sam-button / verify-refresh-button). Consider either renaming for consistency or correcting documentation; not a bug."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "n/a (not retested this iteration; iteration_1 was 28/28)", "frontend": "100% (all 6 review-request scenarios verified)" },
+  "test_credentials": "admin@govcon.io / Admin#2026 ; editor@govcon.io / Editor#2026 ; viewer@govcon.io / Editor#2026 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "None. Used existing seed (Orbital Defense Systems, 18 opportunities visible in admin view).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Login race-condition bug is fixed. Verified flows: (1) admin/editor/viewer login -> dashboard (kpi-active-pursuits visible) -> still on dashboard after 10s -> reload preserves session; (2) logout -> /login and /dashboard redirects to /login; (3) wrong password -> login-error 'Invalid email or password'; (4) opportunities-table loads 18 rows (cookie carried on org-scoped calls); (5) RBAC: admin all visible, editor sees actions but not admin/settings, viewer sees none. Real test-ids in Opportunities.js are new-opp-button / pull-sam-button / verify-refresh-button (not the opps-*-btn names in the request). Auth network during reload: two GET /auth/me 200s (StrictMode double-fire) — harmless because authedRef guards against late clobber.",
+  "rca_of_the_issue": "RCA: The reported 'cannot sign in' was a client-side race in AuthProvider. On mount the bootstrap useEffect issued GET /auth/me (which 401s when unauthenticated). If the user submitted credentials and POST /auth/login resolved BEFORE the in-flight /auth/me 401 returned, the 401 handler then called setUser(false), wiping the just-logged-in user and bouncing them back to /login (or freezing on the spinner if the bootstrap was still pending while Protected rendered FullLoader). Mitigation (applied by main agent and verified by this iteration): introduce authedRef in AuthContext; login()/register()/refreshUser() set authedRef=true before calling setUser; the bootstrap .then/.catch both no-op if authedRef.current is already true. Also added axios timeout:20000 in api.js so a hung bootstrap cannot keep Protected stuck on FullLoader forever. Reproduction confirmed pre-fix via the prior report; post-fix all six review scenarios pass."
+}
