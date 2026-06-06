@@ -1,0 +1,300 @@
+import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import {
+  Search, Plus, Sparkles, DownloadCloud, ArrowUpDown, Trash2, Inbox,
+  CheckCircle2,
+} from "lucide-react";
+import { toast } from "sonner";
+import { api, errMsg } from "../lib/api";
+import { useAuth } from "../context/AuthContext";
+import { Card, SectionLabel, Pill, Skeleton, EmptyState, PageReveal, Modal, Field, Spinner } from "../components/ui";
+import { fmtMoney, fmtDate, fmtDateTime, dueColor, ELIGIBILITY, STAGE_COLORS, canEdit } from "../lib/helpers";
+
+const VEHICLES = ["RFP", "SBIR", "STTR", "BAA", "CSO", "Grant"];
+const SETASIDES = ["Total Small Business", "8(a)", "HUBZone", "SDVOSB", "WOSB", "EDWOSB", "VOSB", "None"];
+const STAGES = ["Identified", "Qualifying", "Building", "Submitted", "Won", "Lost", "No-Bid"];
+
+function Th({ k, children, className = "", onSort }) {
+  return (
+    <th className={`cursor-pointer select-none px-3 py-2.5 text-left font-medium hover:text-ink ${className}`}
+        onClick={() => onSort(k)} data-testid={`sort-${k}`}>
+      <span className="inline-flex items-center gap-1">{children}<ArrowUpDown size={12} className="text-faint" /></span>
+    </th>
+  );
+}
+
+function EligibilityPill({ verdict }) {
+  const cfg = ELIGIBILITY[verdict] || ELIGIBILITY.verify;
+  return <span className={`pill ${cfg.cls}`} data-testid={`elig-${verdict}`}>{cfg.label}</span>;
+}
+
+function CreateModal({ open, onClose, orgId, onCreated }) {
+  const [form, setForm] = useState({ title: "", solNumber: "", agency: "", vehicle: "RFP", setAside: "None", ceiling: "", dueDate: "", url: "" });
+  const [loading, setLoading] = useState(false);
+  const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
+  const submit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      const { data } = await api.post(`/orgs/${orgId}/opportunities`, {
+        ...form, ceiling: Number(form.ceiling) || 0, dueDate: form.dueDate || null,
+      });
+      toast.success("Opportunity created");
+      onCreated(data);
+      onClose();
+      setForm({ title: "", solNumber: "", agency: "", vehicle: "RFP", setAside: "None", ceiling: "", dueDate: "", url: "" });
+    } catch (err) {
+      toast.error(errMsg(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+  return (
+    <Modal open={open} onClose={onClose} title="New Opportunity">
+      <form onSubmit={submit} className="space-y-3" data-testid="create-opp-form">
+        <Field label="Title"><input className="field" required value={form.title} onChange={set("title")} data-testid="opp-title" /></Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Solicitation #"><input className="field mono" value={form.solNumber} onChange={set("solNumber")} data-testid="opp-sol" /></Field>
+          <Field label="Agency"><input className="field" value={form.agency} onChange={set("agency")} /></Field>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Vehicle">
+            <select className="field" value={form.vehicle} onChange={set("vehicle")}>{VEHICLES.map((v) => <option key={v}>{v}</option>)}</select>
+          </Field>
+          <Field label="Set-Aside">
+            <select className="field" value={form.setAside} onChange={set("setAside")}>{SETASIDES.map((v) => <option key={v}>{v}</option>)}</select>
+          </Field>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Ceiling ($)"><input type="number" className="field mono" value={form.ceiling} onChange={set("ceiling")} /></Field>
+          <Field label="Due date"><input type="date" className="field mono" value={form.dueDate} onChange={set("dueDate")} /></Field>
+        </div>
+        <Field label="Source URL"><input className="field" value={form.url} onChange={set("url")} placeholder="https://sam.gov/opp/..." /></Field>
+        <div className="flex justify-end gap-2 pt-2">
+          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button type="submit" className="btn btn-primary" disabled={loading} data-testid="opp-create-submit">
+            {loading ? <Spinner /> : "Create"}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+export default function Opportunities() {
+  const { activeOrgId, activeOrg } = useAuth();
+  const navigate = useNavigate();
+  const editor = canEdit(activeOrg?.role);
+  const [opps, setOpps] = useState(null);
+  const [q, setQ] = useState("");
+  const [fVehicle, setFVehicle] = useState("");
+  const [fSetAside, setFSetAside] = useState("");
+  const [fStage, setFStage] = useState("");
+  const [hideClosed, setHideClosed] = useState(false);
+  const [sort, setSort] = useState({ key: "dueDate", dir: "asc" });
+  const [showCreate, setShowCreate] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [pulling, setPulling] = useState(false);
+
+  const load = () => {
+    if (!activeOrgId) return;
+    api.get(`/orgs/${activeOrgId}/opportunities`).then((r) => setOpps(r.data)).catch(() => setOpps([]));
+  };
+  useEffect(() => {
+    if (!activeOrgId) return;
+    api.get(`/orgs/${activeOrgId}/opportunities`).then((r) => setOpps(r.data)).catch(() => setOpps([]));
+  }, [activeOrgId]);
+
+  const runVerify = async () => {
+    setVerifying(true);
+    const tid = toast.loading("Running AI Verify & Refresh…");
+    try {
+      const { data } = await api.post(`/orgs/${activeOrgId}/opportunities/verify`);
+      toast.success(`AI Verify complete${data.mock ? " (mock)" : ""}`, { id: tid, description: data.summary });
+      load();
+    } catch (err) {
+      toast.error(errMsg(err), { id: tid });
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  const runPull = async () => {
+    setPulling(true);
+    const tid = toast.loading("Pulling from SAM / Grants…");
+    try {
+      const { data } = await api.post(`/orgs/${activeOrgId}/opportunities/pull`);
+      toast.success(`Pull complete${data.mock ? " (mock)" : ""}`, { id: tid, description: data.summary });
+      load();
+    } catch (err) {
+      toast.error(errMsg(err), { id: tid });
+    } finally {
+      setPulling(false);
+    }
+  };
+
+  const del = async (e, o) => {
+    e.stopPropagation();
+    if (!window.confirm(`Delete "${o.title}"?`)) return;
+    try {
+      await api.delete(`/orgs/${activeOrgId}/opportunities/${o.id}`);
+      toast.success("Deleted");
+      setOpps((prev) => prev.filter((x) => x.id !== o.id));
+    } catch (err) {
+      toast.error(errMsg(err));
+    }
+  };
+
+  const filtered = useMemo(() => {
+    if (!opps) return [];
+    let list = opps.filter((o) => {
+      if (q && !(`${o.title} ${o.solNumber} ${o.agency}`.toLowerCase().includes(q.toLowerCase()))) return false;
+      if (fVehicle && o.vehicle !== fVehicle) return false;
+      if (fSetAside && o.setAside !== fSetAside) return false;
+      if (fStage && o.stage !== fStage) return false;
+      if (hideClosed && ["Won", "Lost", "No-Bid"].includes(o.stage)) return false;
+      return true;
+    });
+    const { key, dir } = sort;
+    list = [...list].sort((a, b) => {
+      let av = a[key], bv = b[key];
+      if (key === "ceiling") { av = Number(av) || 0; bv = Number(bv) || 0; }
+      if (key === "dueDate") { av = av ? new Date(av).getTime() : Infinity; bv = bv ? new Date(bv).getTime() : Infinity; }
+      if (typeof av === "string") av = av.toLowerCase();
+      if (typeof bv === "string") bv = bv.toLowerCase();
+      if (av < bv) return dir === "asc" ? -1 : 1;
+      if (av > bv) return dir === "asc" ? 1 : -1;
+      return 0;
+    });
+    return list;
+  }, [opps, q, fVehicle, fSetAside, fStage, hideClosed, sort]);
+
+  const toggleSort = (key) =>
+    setSort((s) => ({ key, dir: s.key === key && s.dir === "asc" ? "desc" : "asc" }));
+
+  return (
+    <PageReveal className="space-y-5">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <SectionLabel>Pipeline</SectionLabel>
+          <h1 className="mt-1 text-2xl font-semibold text-ink">Opportunities</h1>
+          <div className="mt-1 text-xs text-faint">FEED as of {fmtDateTime(new Date())}</div>
+        </div>
+        {editor && (
+          <div className="flex flex-wrap gap-2">
+            <button className="btn btn-violet" onClick={runVerify} disabled={verifying} data-testid="verify-refresh-button">
+              {verifying ? <Spinner /> : <Sparkles size={16} />} Verify &amp; Refresh with AI
+            </button>
+            <button className="btn btn-ghost" onClick={runPull} disabled={pulling} data-testid="pull-sam-button">
+              {pulling ? <Spinner /> : <DownloadCloud size={16} />} Pull from SAM / Grants
+            </button>
+            <button className="btn btn-primary" onClick={() => setShowCreate(true)} data-testid="new-opp-button">
+              <Plus size={16} /> New
+            </button>
+          </div>
+        )}
+      </div>
+
+      <Card className="p-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative min-w-[200px] flex-1">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-faint" />
+            <input className="field !pl-9" placeholder="Search title, sol #, agency…" value={q}
+              onChange={(e) => setQ(e.target.value)} data-testid="opp-search" />
+          </div>
+          <select className="field !w-auto" value={fVehicle} onChange={(e) => setFVehicle(e.target.value)} data-testid="filter-vehicle">
+            <option value="">All vehicles</option>{VEHICLES.map((v) => <option key={v}>{v}</option>)}
+          </select>
+          <select className="field !w-auto" value={fSetAside} onChange={(e) => setFSetAside(e.target.value)} data-testid="filter-setaside">
+            <option value="">All set-asides</option>{SETASIDES.map((v) => <option key={v}>{v}</option>)}
+          </select>
+          <select className="field !w-auto" value={fStage} onChange={(e) => setFStage(e.target.value)} data-testid="filter-stage">
+            <option value="">All stages</option>{STAGES.map((v) => <option key={v}>{v}</option>)}
+          </select>
+          <label className="flex items-center gap-2 text-xs text-dim">
+            <input type="checkbox" checked={hideClosed} onChange={(e) => setHideClosed(e.target.checked)} data-testid="hide-closed" />
+            Hide closed
+          </label>
+        </div>
+      </Card>
+
+      <Card className="overflow-hidden">
+        {opps === null ? (
+          <div className="space-y-2 p-4">{[...Array(6)].map((_, i) => <Skeleton key={i} className="h-12" />)}</div>
+        ) : filtered.length === 0 ? (
+          <EmptyState icon={Inbox} title="No opportunities match"
+            subtitle={opps.length === 0 ? "Pull from SAM/Grants or create one manually." : "Try clearing filters."}
+            action={editor && opps.length === 0 ? (
+              <button className="btn btn-primary" onClick={() => setShowCreate(true)}><Plus size={16} /> New Opportunity</button>
+            ) : null} />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm" data-testid="opportunities-table">
+              <thead className="sticky top-0 z-10 bg-elev/90 text-xs text-dim backdrop-blur">
+                <tr className="border-b border-line">
+                  <Th k="title" onSort={toggleSort}>Opportunity</Th>
+                  <Th k="agency" onSort={toggleSort}>Agency</Th>
+                  <Th k="vehicle" onSort={toggleSort}>Vehicle</Th>
+                  <Th k="setAside" onSort={toggleSort}>Set-Aside</Th>
+                  <Th k="ceiling" className="text-right" onSort={toggleSort}>Ceiling</Th>
+                  <Th k="dueDate" onSort={toggleSort}>Due</Th>
+                  <Th k="stage" onSort={toggleSort}>Stage</Th>
+                  <Th k="lastVerified" onSort={toggleSort}>Last Verified</Th>
+                  {editor && <th className="px-3 py-2.5"></th>}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((o) => {
+                  const due = dueColor(o.dueDate);
+                  return (
+                    <tr key={o.id} onClick={() => navigate(`/opportunities/${o.id}`)}
+                      className="cursor-pointer border-b border-line/60 transition-colors hover:bg-white/5"
+                      data-testid={`opp-row-${o.id}`}>
+                      <td className="px-3 py-3">
+                        <div className="font-medium text-ink">{o.title}</div>
+                        <div className="mono text-xs text-faint">{o.solNumber || "—"}</div>
+                      </td>
+                      <td className="px-3 py-3 text-dim">{o.agency || "—"}<div className="text-xs text-faint">{o.office}</div></td>
+                      <td className="px-3 py-3"><Pill tone="violet">{o.vehicle}</Pill></td>
+                      <td className="px-3 py-3">
+                        <div className="flex flex-col gap-1">
+                          <EligibilityPill verdict={o.eligibility?.verdict} />
+                          <span className="text-xs text-faint">{o.setAside}</span>
+                        </div>
+                      </td>
+                      <td className="px-3 py-3 text-right mono text-ink">{fmtMoney(o.ceiling)}</td>
+                      <td className="px-3 py-3">
+                        <div className={`mono text-sm ${due.cls}`}>{fmtDate(o.dueDate)}</div>
+                        <div className={`text-xs ${due.cls}`}>{due.label}</div>
+                      </td>
+                      <td className="px-3 py-3">
+                        <span className="pill border-line" style={{ color: STAGE_COLORS[o.stage], borderColor: STAGE_COLORS[o.stage] + "66" }}>
+                          {o.stage}
+                        </span>
+                      </td>
+                      <td className="px-3 py-3">
+                        {o.lastVerified ? (
+                          <span className="inline-flex items-center gap-1 text-xs text-ok"><CheckCircle2 size={12} />{fmtDate(o.lastVerified)}</span>
+                        ) : <span className="text-xs text-faint">Never</span>}
+                      </td>
+                      {editor && (
+                        <td className="px-3 py-3 text-right">
+                          <button onClick={(e) => del(e, o)} className="text-faint hover:text-bad" data-testid={`delete-opp-${o.id}`}>
+                            <Trash2 size={15} />
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      <CreateModal open={showCreate} onClose={() => setShowCreate(false)} orgId={activeOrgId}
+        onCreated={(d) => setOpps((p) => [d, ...(p || [])])} />
+    </PageReveal>
+  );
+}
