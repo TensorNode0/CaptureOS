@@ -1,0 +1,83 @@
+{
+  "project_name": "GovCon Command Center",
+  "theme": "dark",
+  "archetype": "Precision Command Console (E1 Performance Pro / Swiss Hybrid)",
+  "concept": "A mission-control console set against deep space — calm, precise, 'command center,' not gamer-neon. Refined dark, with restrained nebula accents and a faint starfield. Prioritize legibility and density for operators scanning data.",
+  "colors": {
+    "css_variables": {
+      "--bg-deep": "#05070f",
+      "--bg-panel": "#0b1020",
+      "--bg-elev": "#121a30",
+      "--line": "#1c2740",
+      "--text": "#e8eefc",
+      "--text-dim": "#93a1c0",
+      "--text-faint": "#5d6b8a",
+      "--accent-cyan": "#38e1ff",
+      "--accent-violet": "#8b7bff",
+      "--accent-magenta": "#ff5cae",
+      "--ok": "#34d399",
+      "--warn": "#fbbf24",
+      "--bad": "#fb6f70"
+    },
+    "tailwind_config_instructions": "Map the exact CSS variables directly into tailwind.config.js under theme.colors. e.g., 'bg-deep': 'var(--bg-deep)'. Do not use default tailwind gray/slate scales for the UI."
+  },
+  "typography": {
+    "primary_ui_font": "IBM Plex Sans",
+    "data_mono_font": "JetBrains Mono",
+    "rules": {
+      "headings": "Precise geometric/engineered look using IBM Plex Sans. Never use standard generic fonts like Inter or Roboto.",
+      "data_labels": "Use JetBrains Mono. Specifically for sol numbers, dates, scores, KPIs. Uppercase mono labels with letter-spacing (tracking-[0.2em]) for section headers.",
+      "scale": "Clear type scale with generous line-height."
+    }
+  },
+  "backgrounds_and_surfaces": {
+    "app_background": "Set to var(--bg-deep). Implement layered radial gradients (cyan & violet glows at low opacity) using CSS background-image radial-gradient.",
+    "starfield": "A subtle, low-contrast starfield. Implement via a single SVG/Canvas or CSS particle effect fixed to the background. MUST remain quiet and never distracting.",
+    "cards": "Glassmorphism style: translucent var(--bg-panel) background + backdrop-blur-md + 1px solid var(--line) border. 12-16px border-radius.",
+    "elevated_cards": "Use var(--bg-elev) for tooltips, dropdowns, and modal surfaces. Add a soft glow on hover/focus using box-shadow with var(--accent-cyan) at 10% opacity."
+  },
+  "layout_and_spacing": {
+    "strategy": "Mode B: 'Control Room' Grid. High density for operators scanning data. grid-cols-1 md:grid-cols-3 lg:grid-cols-4 or 12-col dense layouts. Tight gaps (gap-4 or gap-6).",
+    "navigation": "Left sidebar OR sticky top nav. Must include Org Switcher, navigation links (Dashboard, Opportunities, Admin, Settings, User Menu), and a live UTC/local clock styled in mono font.",
+    "tables": "Sticky table headers. Zebra-free rows. Include hover highlight on rows (e.g., bg-white/5). Responsive: scroll horizontally on small screens."
+  },
+  "components": {
+    "buttons": "Primary actions (Verify & Refresh, Pull from SAM) use var(--accent-cyan) backgrounds or outlines. Include progress states and toast notifications on success.",
+    "badges_pills": "Semantic pill/badge components for status, set-aside, stage, bid call using var(--ok), var(--warn), var(--bad). Color MUST NEVER be the only signal: always pair with text/icon.",
+    "kpi_cards": "Display large numerals in JetBrains Mono. Place inside glass cards.",
+    "charts": "Recharts library. Use cyan, violet, magenta, teal, amber series. Transparent background for the chart container. Grid lines use var(--line). Tooltips use var(--bg-elev). Reserve magenta strictly for rare highlights.",
+    "inputs": "Shadcn UI forms. Hairline borders (var(--line)). Visible focus rings (var(--accent-cyan))."
+  },
+  "motion_and_interaction": {
+    "page_load": "One orchestrated page-load reveal. Staggered fade/slide using Framer Motion.",
+    "background_motion": "Gentle parallax or slow drift on the starfield.",
+    "charts": "Smooth entrance animations.",
+    "micro_interactions": "Hover micro-interactions on table rows, buttons, and cards (soft glow).",
+    "accessibility": "CRITICAL: No heavy continuous animation. Respect prefers-reduced-motion media query. Always provide visible focus rings and ARIA labels."
+  },
+  "states": {
+    "empty": "Design bespoke empty states for tables and pipelines. Use faded mono text.",
+    "loading": "Use skeleton loaders matching the glass card shapes and chart dimensions.",
+    "error": "Clear error states with var(--bad) accents and retry actions."
+  },
+  "image_urls": {
+    "background_texture": "https://images.pexels.com/photos/7736059/pexels-photo-7736059.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+    "avatar_1": "https://images.unsplash.com/photo-1560250097-0b93528c311a?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjY2NjV8MHwxfHNlYXJjaHwxfHxwcm9mZXNzaW9uYWwlMjBoZWFkc2hvdHxlbnwwfHx8fDE3ODA3MzYyMDZ8MA&ixlib=rb-4.1.0&q=85",
+    "avatar_2": "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjY2NjV8MHwxfHNlYXJjaHwzfHxwcm9mZXNzaW9uYWwlMjBoZWFkc2hvdHxlbnwwfHx8fDE3ODA3MzYyMDZ8MA&ixlib=rb-4.1.0&q=85",
+    "avatar_3": "https://images.unsplash.com/photo-1627161683077-e34782c24d81?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjY2NjV8MHwxfHNlYXJjaHwyfHxwcm9mZXNzaW9uYWwlMjBoZWFkc2hvdHxlbnwwfHx8fDE3ODA3MzYyMDZ8MA&ixlib=rb-4.1.0&q=85"
+  },
+  "testing_attributes": {
+    "rule": "All interactive and key informational elements MUST include a data-testid attribute.",
+    "convention": "kebab-case, role-based. e.g., data-testid='org-switcher', data-testid='verify-refresh-button'."
+  },
+  "instructions_to_main_agent": [
+    "Strictly apply the custom CSS variables to the Tailwind configuration.",
+    "Do not use Shadcn's default slate/zinc gray scales; override them with the provided --bg-*, --line, and --text-* variables.",
+    "Implement the starfield as a low-overhead CSS or SVG background, using the provided background_texture lightly overlaid if necessary, or just purely CSS.",
+    "All Recharts instances must have transparent backgrounds and grid strokes explicitly set to var(--line).",
+    "Use Phosphor Icons or Lucide-react for sharp, technical dashboard iconography.",
+    "Ensure the 'Verify & Refresh with AI' and 'Pull from SAM/Grants' buttons have explicit loading states and trigger Sonner toasts upon completion.",
+    "Scorecard component must visually separate 'Proposal Strength' and 'Capture Probability' (e.g., multi-axis radar chart). Never combine into a single win-rate.",
+    "In the Compliance matrix, clearly implement the 'CMMC no-bid gate' UI, indicating a hard stop if criteria aren't met."
+  ]
+}
