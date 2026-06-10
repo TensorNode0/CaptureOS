@@ -40,9 +40,20 @@ until the final phase; keep AI cheap.
   JetBrains Mono, motion, skeleton/empty/error states, reduced-motion, focus rings).
 - Admin (Members invite/role/remove/transfer + Audit log); Settings (org + encrypted/masked API keys);
   Company Profile (drives eligibility).
-- MOCKED: "Verify & Refresh with AI" (verifyReport accept/dismiss diffs + link freshness),
-  "Pull from SAM/Grants" (add/merge by sol#). Both write auditLog + refreshJobs.
 - Tested: 28/28 backend pass; all critical frontend flows verified. Fixed Motor tz_aware bug.
+
+## Phase 5 — LIVE integrations wired (2026-06)
+- `/app/backend/integrations.py`: `anthropic_verify()` (claude-3-5-haiku + `web_search_20250305`
+  tool, max_uses=5, JSON-only, ~10¢/run cap), `fetch_sam()` (SAM.gov v2 search), `fetch_grants()`
+  (Grants.gov search2). Keys never logged/stored in source.
+- `routers/opportunities.py`: removed mocks. `POST /verify` and `POST /pull` now read the org's
+  Fernet-encrypted keys from `db.secrets` (decrypt at call time, server-only), Editor-RBAC gated,
+  batch capped to 25 opps for cost. Helper `_new_opp_doc()` reused by pull + AI-discovered opps.
+  Dedupe/merge by sol# preserves user fit/compliance/budget/scoring.
+- Error UX: 400 "Add it in Settings → API Keys" when unset; 400 "rejected" on invalid key;
+  502 on upstream failure. Verified via curl (no-key + invalid-key paths).
+- ⚠️ User supplies real keys via Settings → API Keys (anthropic-key / sam-key inputs). Live
+  success path validated by user since keys are user-owned.
 
 ## Prioritized Backlog
 - P0 (next): Phase 5 — wire REAL integrations. Anthropic Messages API (web search + web fetch,

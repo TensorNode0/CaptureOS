@@ -1,4 +1,3 @@
-import random
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from typing import Optional, List, Any, Dict
@@ -8,7 +7,8 @@ from database import db
 from utils import now_utc, serialize, oid, iso
 from rbac import require_role
 from domain import (write_audit, compute_eligibility, default_fit, default_compliance,
-                    default_budget, default_criteria)
+                    default_budget, default_criteria, decrypt_secret)
+import integrations
 
 router = APIRouter(prefix="/api/orgs", tags=["opportunities"])
 
@@ -57,6 +57,37 @@ class OpportunityUpdate(BaseModel):
 
 async def _profile(org_oid):
     return await db.orgProfile.find_one({"organizationId": org_oid})
+
+
+async def _org_keys(org_oid):
+    """Decrypt the org's stored Anthropic + SAM keys at call time (server-only)."""
+    rec = await db.secrets.find_one({"organizationId": org_oid}) or {}
+    return (decrypt_secret(rec.get("anthropicKey", "")),
+            decrypt_secret(rec.get("samKey", "")))
+
+
+def _new_opp_doc(ctx, rec, source):
+    """Build a fresh opportunity document from a normalized integration record."""
+    ceiling = float(rec.get("ceiling") or 0)
+    sol = (rec.get("solNumber") or "").strip()
+    url = rec.get("url") or (f"https://sam.gov/opp/{sol}" if sol else "")
+    return {
+        "organizationId": ctx["org_oid"],
+        "title": rec.get("title", ""), "solNumber": sol,
+        "agency": rec.get("agency", ""), "office": rec.get("office", ""),
+        "vehicle": rec.get("vehicle", "RFP"), "setAside": rec.get("setAside") or "None",
+        "naics": rec.get("naics", "") or "", "ceiling": ceiling,
+        "pop": rec.get("pop", "") or "", "dueDate": rec.get("dueDate") or None,
+        "stage": "Identified", "url": url, "winThemes": "", "source": source,
+        "lastVerified": now_utc(), "verifyReport": None,
+        "links": [{"label": "Solicitation", "url": url, "status": "live",
+                   "checkedAt": iso(now_utc())}],
+        "fit": default_fit(), "pwin": 0, "proposalStrength": 0,
+        "compliance": default_compliance(), "budget": default_budget(ceiling),
+        "criteria": default_criteria(), "decision": {"call": "TBD", "rationale": ""},
+        "createdBy": ObjectId(ctx["user"]["id"]),
+        "createdAt": now_utc(), "updatedAt": now_utc(),
+    }
 
 
 async def _decorate(opp, profile):
@@ -135,67 +166,100 @@ async def delete_opportunity(oppId: str, ctx: dict = Depends(require_role("edito
     return {"ok": True}
 
 
-# ---------------- AI Verify & Refresh (MOCKED) ----------------
+# ---------------- AI Verify & Refresh (LIVE — Anthropic) ----------------
 @router.post("/{orgId}/opportunities/verify")
 async def verify_refresh(ctx: dict = Depends(require_role("editor"))):
-    """MOCK of the Anthropic web-search/web-fetch verification.
-    Produces a structured verifyReport with accept/dismiss diffs per opportunity.
-    Real Anthropic Messages API wiring is Phase 5."""
+    """LIVE Anthropic verification: claude-3-5-haiku + web search (capped to keep
+    cost well under 10 credits). Confirms each stored opportunity against live web
+    sources and discovers up to 3 new matches for the org's NAICS/keywords."""
+    anthropic_key, _ = await _org_keys(ctx["org_oid"])
+    if not anthropic_key:
+        raise HTTPException(status_code=400,
+            detail="No Anthropic API key set. Add it in Settings → API Keys.")
+    profile = await _profile(ctx["org_oid"]) or {}
+    naics = profile.get("naics", [])
+    keywords = profile.get("keywords", [])
+    # Cap the batch to control web-search + token cost.
+    opps = await db.opportunities.find({"organizationId": ctx["org_oid"]}) \
+        .sort("updatedAt", -1).to_list(25)
     job = await db.refreshJobs.insert_one({
         "organizationId": ctx["org_oid"], "type": "ai", "status": "running",
         "startedBy": ObjectId(ctx["user"]["id"]), "startedAt": now_utc(),
     })
-    opps = await db.opportunities.find({"organizationId": ctx["org_oid"]}).to_list(1000)
+    payload = [serialize(o) for o in opps]
+    try:
+        data = await integrations.anthropic_verify(anthropic_key, naics, keywords, payload)
+    except Exception as e:
+        await db.refreshJobs.update_one({"_id": job.inserted_id},
+            {"$set": {"status": "error", "finishedAt": now_utc(), "summary": str(e)}})
+        msg = str(e)
+        if "authentication" in msg.lower() or "401" in msg or "invalid x-api-key" in msg.lower():
+            raise HTTPException(status_code=400,
+                detail="Anthropic rejected the API key. Update it in Settings → API Keys.")
+        raise HTTPException(status_code=502, detail=f"Anthropic verification failed: {msg}")
+
+    model = data.get("_model", "claude-3-5-haiku")
+    vmap = {str(v.get("id")): v for v in (data.get("verifications") or [])}
     flagged = 0
     link_flags = 0
     for opp in opps:
+        v = vmap.get(str(opp["_id"]), {})
+        link_status = v.get("linkStatus", "unknown")
+        if link_status not in ("live", "unknown"):
+            link_flags += 1
+        link_statuses = [{"label": "Solicitation", "url": opp.get("url", ""),
+                          "status": link_status, "checkedAt": iso(now_utc())}]
+        sources = v.get("sourceUrls") or ([opp.get("url", "")] if opp.get("url") else [])
+        src = sources[0] if sources else ""
         diffs = []
-        link_statuses = []
-        # simulate link freshness check
-        for ln in (opp.get("links") or [{"label": "Solicitation", "url": opp.get("url", "")}]):
-            status = random.choice(["live", "live", "live", "stale", "moved"])
-            if status != "live":
-                link_flags += 1
-            link_statuses.append({"label": ln.get("label", "Link"), "url": ln.get("url", ""),
-                                  "status": status, "checkedAt": iso(now_utc())})
-        # simulate a due-date drift suggestion ~40% of the time
-        if opp.get("dueDate") and random.random() < 0.4:
-            diffs.append({
-                "field": "dueDate", "current": opp.get("dueDate"),
-                "suggested": opp.get("dueDate"),
-                "confidence": "medium",
-                "note": "Source page shows the same close date — confirmed current.",
-                "source": opp.get("url", ""),
-            })
-        if random.random() < 0.3:
-            diffs.append({
-                "field": "stage", "current": opp.get("stage"),
-                "suggested": "Qualifying",
-                "confidence": "low",
-                "note": "AI heuristic suggestion — review before applying.",
-                "source": opp.get("url", ""),
-            })
+        cur_due = v.get("currentDueDate")
+        if v.get("dueDateChanged") and cur_due and cur_due != "unknown" \
+                and cur_due != opp.get("dueDate"):
+            diffs.append({"field": "dueDate", "current": opp.get("dueDate"),
+                          "suggested": cur_due, "confidence": v.get("confidence", "medium"),
+                          "note": v.get("notes") or "Source page shows a different close date.",
+                          "source": src})
+            flagged += 1
+        opp_status = v.get("opportunityStatus")
+        if opp_status in ("archived", "cancelled"):
+            diffs.append({"field": "stage", "current": opp.get("stage"),
+                          "suggested": "No-Bid", "confidence": v.get("confidence", "medium"),
+                          "note": f"Source indicates this opportunity is {opp_status}.",
+                          "source": src})
             flagged += 1
         report = {
-            "generatedAt": iso(now_utc()),
-            "model": "claude-haiku (mock)",
-            "summary": "Assistive verification (mock). Always confirm against the official source link.",
-            "diffs": diffs,
-            "linkStatuses": link_statuses,
-            "confidence": random.choice(["high", "medium"]),
+            "generatedAt": iso(now_utc()), "model": model,
+            "summary": v.get("notes") or "Verified against live web sources via Anthropic.",
+            "diffs": diffs, "linkStatuses": link_statuses,
+            "confidence": v.get("confidence", "medium"), "sourceUrls": sources,
         }
         await db.opportunities.update_one(
             {"_id": opp["_id"]},
             {"$set": {"verifyReport": report, "lastVerified": now_utc(),
                       "links": link_statuses, "updatedAt": now_utc()}})
-    summary = f"{len(opps)} verified, {flagged} field suggestions, {link_flags} links flagged"
+
+    added = 0
+    for rec in (data.get("discovered") or [])[:3]:
+        title = (rec.get("title") or "").strip()
+        if not title:
+            continue
+        sol = (rec.get("solNumber") or "").strip()
+        if sol and await db.opportunities.find_one(
+                {"organizationId": ctx["org_oid"], "solNumber": sol}):
+            continue
+        await db.opportunities.insert_one(_new_opp_doc(ctx, rec, "ai"))
+        added += 1
+
+    summary = (f"{len(opps)} verified, {flagged} field suggestions, "
+               f"{link_flags} links flagged, {added} discovered")
     await db.refreshJobs.update_one({"_id": job.inserted_id},
                                     {"$set": {"status": "done", "finishedAt": now_utc(),
                                               "summary": summary}})
     await write_audit(ctx["org_oid"], ctx["user"], "ai.verify_refresh", "pipeline",
-                      {"summary": summary})
+                      {"summary": summary, "model": model})
     return {"ok": True, "summary": summary, "verified": len(opps),
-            "fieldSuggestions": flagged, "linksFlagged": link_flags, "mock": True}
+            "fieldSuggestions": flagged, "linksFlagged": link_flags,
+            "discovered": added, "model": model, "mock": False}
 
 
 class AcceptIn(BaseModel):
@@ -231,83 +295,69 @@ async def dismiss_diff(oppId: str, body: AcceptIn, ctx: dict = Depends(require_r
     return {"ok": True}
 
 
-# ---------------- Pull from SAM / Grants (MOCKED) ----------------
-MOCK_SAM = [
-    {"title": "Advanced Tactical UAS Propulsion R&D", "solNumber": "FA8650-26-R-0142",
-     "agency": "Department of the Air Force", "office": "AFRL", "vehicle": "RFP",
-     "setAside": "Total Small Business", "naics": "336412", "ceiling": 4800000,
-     "source": "sam"},
-    {"title": "Hypersonic Thermal Protection Materials", "solNumber": "N00024-26-R-3310",
-     "agency": "Department of the Navy", "office": "NAVSEA", "vehicle": "BAA",
-     "setAside": "None", "naics": "541715", "ceiling": 12500000, "source": "sam"},
-    {"title": "Cyber Resiliency Assessment Services", "solNumber": "W519TC-26-R-0021",
-     "agency": "Department of the Army", "office": "ACC-APG", "vehicle": "RFP",
-     "setAside": "8(a)", "naics": "541512", "ceiling": 3200000, "source": "sam"},
-    {"title": "SDVOSB Logistics Modernization Support", "solNumber": "SP4701-26-R-0099",
-     "agency": "Defense Logistics Agency", "office": "DLA", "vehicle": "RFP",
-     "setAside": "SDVOSB", "naics": "541611", "ceiling": 2100000, "source": "sam"},
-]
-MOCK_GRANTS = [
-    {"title": "SBIR Phase II: Autonomous ISR Edge Compute", "solNumber": "DOD-SBIR-26.1-A2",
-     "agency": "Department of Defense", "office": "DSIP", "vehicle": "SBIR",
-     "setAside": "Total Small Business", "naics": "541715", "ceiling": 1800000,
-     "source": "grants"},
-    {"title": "STTR: Quantum Sensing for Navigation", "solNumber": "AF-STTR-26-X12",
-     "agency": "Department of the Air Force", "office": "AFWERX", "vehicle": "STTR",
-     "setAside": "Total Small Business", "naics": "541714", "ceiling": 1950000,
-     "source": "grants"},
-]
-
-
+# ---------------- Pull from SAM / Grants (LIVE) ----------------
 @router.post("/{orgId}/opportunities/pull")
 async def pull_sam_grants(ctx: dict = Depends(require_role("editor"))):
-    """MOCK of SAM.gov + Grants.gov pull. Dedupe/merge by solNumber; preserves
-    user-owned fit/compliance/budget/scoring. Real pull (govcon_pull.py) is Phase 5."""
+    """LIVE pull from SAM.gov v2 + Grants.gov search2. Dedupe/merge by sol#;
+    preserves user-owned fit/compliance/budget/scoring data on existing records."""
+    _, sam_key = await _org_keys(ctx["org_oid"])
+    if not sam_key:
+        raise HTTPException(status_code=400,
+            detail="No SAM.gov API key set. Add it in Settings → API Keys.")
+    profile = await _profile(ctx["org_oid"]) or {}
+    naics = profile.get("naics", [])
+    keywords = profile.get("keywords", [])
     job = await db.refreshJobs.insert_one({
         "organizationId": ctx["org_oid"], "type": "sam", "status": "running",
         "startedBy": ObjectId(ctx["user"]["id"]), "startedAt": now_utc(),
     })
+    records: List[Dict[str, Any]] = []
+    errors: List[str] = []
+    try:
+        records += await integrations.fetch_sam(sam_key, naics, keywords, limit=40)
+    except PermissionError:
+        await db.refreshJobs.update_one({"_id": job.inserted_id},
+            {"$set": {"status": "error", "finishedAt": now_utc(),
+                      "summary": "SAM.gov rejected the API key"}})
+        raise HTTPException(status_code=400,
+            detail="SAM.gov rejected the API key (401/403). Check it in Settings → API Keys.")
+    except Exception as e:
+        errors.append(f"SAM.gov: {e}")
+    try:
+        records += await integrations.fetch_grants(keywords)
+    except Exception as e:
+        errors.append(f"Grants.gov: {e}")
+
     added, updated = 0, 0
-    from datetime import timedelta
-    for idx, rec in enumerate(MOCK_SAM + MOCK_GRANTS):
-        due = (now_utc() + timedelta(days=random.choice([5, 12, 25, 45, 70]))).date().isoformat()
+    for rec in records:
+        sol = (rec.get("solNumber") or "").strip()
         existing = await db.opportunities.find_one(
-            {"organizationId": ctx["org_oid"], "solNumber": rec["solNumber"]})
+            {"organizationId": ctx["org_oid"], "solNumber": sol}) if sol else None
         if existing:
-            # merge metadata only, keep user assessment data
             await db.opportunities.update_one(
                 {"_id": existing["_id"]},
-                {"$set": {"title": rec["title"], "agency": rec["agency"],
-                          "office": rec["office"], "vehicle": rec["vehicle"],
-                          "setAside": rec["setAside"], "naics": rec["naics"],
-                          "ceiling": rec["ceiling"], "source": rec["source"],
+                {"$set": {"title": rec.get("title", ""), "agency": rec.get("agency", ""),
+                          "office": rec.get("office", ""), "vehicle": rec.get("vehicle", "RFP"),
+                          "setAside": rec.get("setAside") or "None", "naics": rec.get("naics", ""),
+                          "ceiling": float(rec.get("ceiling") or 0),
+                          "dueDate": rec.get("dueDate") or existing.get("dueDate"),
+                          "url": rec.get("url") or existing.get("url", ""),
+                          "source": rec.get("source", "sam"),
                           "lastVerified": now_utc(), "updatedAt": now_utc()}})
             updated += 1
         else:
-            doc = {
-                "organizationId": ctx["org_oid"],
-                "title": rec["title"], "solNumber": rec["solNumber"],
-                "agency": rec["agency"], "office": rec["office"],
-                "vehicle": rec["vehicle"], "setAside": rec["setAside"],
-                "naics": rec["naics"], "ceiling": rec["ceiling"],
-                "pop": "12 months base", "dueDate": due, "stage": "Identified",
-                "url": f"https://sam.gov/opp/{rec['solNumber']}",
-                "winThemes": "", "source": rec["source"],
-                "lastVerified": now_utc(), "verifyReport": None,
-                "links": [{"label": "Solicitation", "url": f"https://sam.gov/opp/{rec['solNumber']}",
-                           "status": "live", "checkedAt": iso(now_utc())}],
-                "fit": default_fit(), "pwin": 0, "proposalStrength": 0,
-                "compliance": default_compliance(), "budget": default_budget(rec["ceiling"]),
-                "criteria": default_criteria(), "decision": {"call": "TBD", "rationale": ""},
-                "createdBy": ObjectId(ctx["user"]["id"]),
-                "createdAt": now_utc(), "updatedAt": now_utc(),
-            }
-            await db.opportunities.insert_one(doc)
+            await db.opportunities.insert_one(
+                _new_opp_doc(ctx, rec, rec.get("source", "sam")))
             added += 1
-    summary = f"{added} added, {updated} updated (SAM + Grants, mock)"
+
+    summary = f"{added} added, {updated} updated"
+    if errors:
+        summary += " — " + "; ".join(errors)
+    status = "done" if not (errors and not records) else "error"
     await db.refreshJobs.update_one({"_id": job.inserted_id},
-                                    {"$set": {"status": "done", "finishedAt": now_utc(),
+                                    {"$set": {"status": status, "finishedAt": now_utc(),
                                               "summary": summary}})
     await write_audit(ctx["org_oid"], ctx["user"], "pull.sam_grants", "pipeline",
                       {"summary": summary})
-    return {"ok": True, "summary": summary, "added": added, "updated": updated, "mock": True}
+    return {"ok": True, "summary": summary, "added": added, "updated": updated,
+            "errors": errors, "mock": False}
