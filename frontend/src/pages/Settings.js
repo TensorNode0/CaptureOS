@@ -68,7 +68,7 @@ export default function Settings() {
         <div className="flex items-center gap-2"><KeyRound size={16} className="text-cyan" /><SectionLabel>API Keys (server-only secrets)</SectionLabel></div>
         <div className="mt-2 flex items-start gap-2 rounded-lg border border-line bg-white/5 p-3 text-xs text-faint">
           <Lock size={13} className="mt-0.5 shrink-0 text-ok" />
-          Keys are encrypted at rest and never returned to the browser in full — only a masked preview. They are used server-side for the AI verify &amp; SAM pull. Validation is currently mocked (Phase 5 wires live calls).
+          Keys are encrypted at rest and never returned to the browser in full — only a masked preview. They are used <b>live, server-side</b> for the AI Intelligence scan, “Verify &amp; Refresh with AI”, and the SAM/Grants pull.
         </div>
         <div className="mt-4 space-y-4">
           <Field label="Anthropic API key" hint={secrets.anthropicSet ? `Currently set: ${secrets.anthropicKey}` : "Not set"}>

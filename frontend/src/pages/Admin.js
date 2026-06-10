@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { UserPlus, Trash2, Crown, ScrollText, Users } from "lucide-react";
+import { UserPlus, Trash2, Crown, ScrollText, Users, KeyRound, Copy, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { api, errMsg } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
@@ -7,6 +7,30 @@ import { Card, SectionLabel, Pill, Spinner, PageReveal, Modal, Field, EmptyState
 import { fmtDateTime, isOwner } from "../lib/helpers";
 
 const ROLES = ["viewer", "editor", "admin"];
+
+function JoinCodeCard({ orgId }) {
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { api.get(`/orgs/${orgId}/join-code`).then((r) => setCode(r.data.joinCode)).catch(() => {}); }, [orgId]);
+  const copy = () => { navigator.clipboard?.writeText(code); toast.success("Join code copied"); };
+  const rotate = async () => {
+    if (!window.confirm("Rotate join code? The old code stops working immediately.")) return;
+    setBusy(true);
+    try { const { data } = await api.post(`/orgs/${orgId}/join-code/rotate`); setCode(data.joinCode); toast.success("New join code generated"); }
+    catch (e) { toast.error(errMsg(e)); } finally { setBusy(false); }
+  };
+  return (
+    <Card className="p-5" data-testid="join-code-card">
+      <div className="flex items-center gap-2"><KeyRound size={16} className="text-cyan" /><SectionLabel>Organization Join Code</SectionLabel></div>
+      <p className="mt-1 text-xs text-faint">Share this code so teammates can self-join as Viewer (Org switcher → “Join with code”). Rotate to revoke access.</p>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <code className="mono rounded-lg border border-line bg-white/5 px-4 py-2 text-lg tracking-[0.3em] text-cyan" data-testid="join-code-value">{code || "—"}</code>
+        <button className="btn btn-ghost" onClick={copy} data-testid="join-code-copy"><Copy size={15} /> Copy</button>
+        <button className="btn btn-ghost" onClick={rotate} disabled={busy} data-testid="join-code-rotate">{busy ? <Spinner /> : <RefreshCw size={15} />} Rotate</button>
+      </div>
+    </Card>
+  );
+}
 
 function InviteModal({ open, onClose, orgId, onDone }) {
   const [email, setEmail] = useState("");
@@ -78,6 +102,8 @@ export default function Admin() {
       </div>
 
       {tab === "members" && (
+        <div className="space-y-5">
+        <JoinCodeCard orgId={activeOrgId} />
         <Card className="overflow-hidden">
           {members === null ? <div className="p-4"><Spinner className="text-cyan" /></div> : (
             <table className="w-full text-sm" data-testid="members-table">
@@ -109,6 +135,7 @@ export default function Admin() {
             </table>
           )}
         </Card>
+        </div>
       )}
 
       {tab === "audit" && (

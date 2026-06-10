@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from database import ensure_indexes
 from seed import seed
-from routers import auth, orgs, opportunities
+from routers import auth, orgs, opportunities, intel
 
 app = FastAPI(title="GovCon Command Center API")
 
@@ -23,6 +23,7 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(orgs.router)
 app.include_router(opportunities.router)
+app.include_router(intel.router)
 
 
 @app.get("/api/health")

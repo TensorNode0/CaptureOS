@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path
 from pydantic import BaseModel, EmailStr, Field
 from typing import Optional, List
 from bson import ObjectId
+from secrets import token_hex
 
 from database import db
 from utils import now_utc, serialize, oid
@@ -10,6 +11,10 @@ from rbac import require_role, get_membership, ROLE_RANK
 from domain import (write_audit, encrypt_secret, decrypt_secret, mask_secret)
 
 router = APIRouter(prefix="/api/orgs", tags=["orgs"])
+
+
+def _gen_join_code():
+    return token_hex(4).upper()  # 8-char shareable code
 
 
 # ---------------- Organizations ----------------
@@ -26,6 +31,7 @@ async def create_org(body: OrgIn, user: dict = Depends(get_current_user)):
         "naics": body.naics,
         "keywords": body.keywords,
         "ownerId": ObjectId(user["id"]),
+        "joinCode": _gen_join_code(),
         "createdAt": now_utc(),
     }
     res = await db.organizations.insert_one(org)
@@ -44,6 +50,8 @@ async def create_org(body: OrgIn, user: dict = Depends(get_current_user)):
         "certs": {"sba": False, "eightA": False, "hubzone": False,
                   "sdvosb": False, "wosb": False, "edwosb": False, "vosb": False},
         "cmmcLevel": "Level 1", "sprsScore": None, "sizeNote": "", "notes": "",
+        "capabilities": "", "pastPerformance": "", "techFocus": [],
+        "differentiators": "", "commercialization": "", "clearances": "",
     })
     await write_audit(res.inserted_id, user, "org.create", body.name)
     org["_id"] = res.inserted_id
@@ -66,6 +74,41 @@ async def list_orgs(user: dict = Depends(get_current_user)):
     return result
 
 
+class JoinIn(BaseModel):
+    code: str = Field(min_length=4, max_length=40)
+
+
+@router.post("/join")
+async def join_org(body: JoinIn, user: dict = Depends(get_current_user)):
+    code = body.code.strip().upper()
+    org = await db.organizations.find_one({"joinCode": code})
+    if not org:
+        raise HTTPException(status_code=404, detail="Invalid join code")
+    existing = await db.memberships.find_one({
+        "organizationId": org["_id"], "userId": ObjectId(user["id"])})
+    if existing:
+        if existing.get("status") != "active":
+            await db.memberships.update_one({"_id": existing["_id"]},
+                                            {"$set": {"status": "active"}})
+        else:
+            raise HTTPException(status_code=400, detail="You are already a member")
+    else:
+        await db.memberships.insert_one({
+            "userId": ObjectId(user["id"]),
+            "invitedEmail": user["email"],
+            "organizationId": org["_id"],
+            "role": "viewer",
+            "invitedBy": None,
+            "status": "active",
+            "joinedViaCode": True,
+            "createdAt": now_utc(),
+        })
+    await write_audit(org["_id"], user, "member.join_code", user["email"])
+    out = serialize(org)
+    out["role"] = "viewer" if not (existing and existing.get("role")) else existing["role"]
+    return out
+
+
 @router.get("/{orgId}")
 async def get_org(ctx: dict = Depends(require_role("viewer"))):
     o = serialize(ctx["org"])
@@ -82,6 +125,26 @@ async def update_org(body: OrgIn, ctx: dict = Depends(require_role("admin"))):
     await write_audit(ctx["org_oid"], ctx["user"], "org.update", body.name)
     org = await db.organizations.find_one({"_id": ctx["org_oid"]})
     return serialize(org)
+
+
+@router.get("/{orgId}/join-code")
+async def get_join_code(ctx: dict = Depends(require_role("admin"))):
+    org = ctx["org"]
+    code = org.get("joinCode")
+    if not code:
+        code = _gen_join_code()
+        await db.organizations.update_one({"_id": ctx["org_oid"]},
+                                          {"$set": {"joinCode": code}})
+    return {"joinCode": code}
+
+
+@router.post("/{orgId}/join-code/rotate")
+async def rotate_join_code(ctx: dict = Depends(require_role("admin"))):
+    code = _gen_join_code()
+    await db.organizations.update_one({"_id": ctx["org_oid"]},
+                                      {"$set": {"joinCode": code}})
+    await write_audit(ctx["org_oid"], ctx["user"], "org.rotate_join_code", ctx["org"]["name"])
+    return {"joinCode": code}
 
 
 # ---------------- Org Profile ----------------
@@ -105,6 +168,12 @@ class ProfileIn(BaseModel):
     sprsScore: Optional[int] = None
     sizeNote: str = ""
     notes: str = ""
+    capabilities: str = ""
+    pastPerformance: str = ""
+    techFocus: List[str] = []
+    differentiators: str = ""
+    commercialization: str = ""
+    clearances: str = ""
 
 
 @router.get("/{orgId}/profile")
@@ -295,7 +364,7 @@ async def update_secrets(body: SecretsIn, ctx: dict = Depends(require_role("admi
         "anthropicKey": mask_secret(a), "samKey": mask_secret(s),
         "anthropicSet": bool(a), "samSet": bool(s),
         "validation": {
-            "anthropic": "valid (mock)" if a else "not set",
-            "sam": "valid (mock)" if s else "not set",
+            "anthropic": "saved" if a else "not set",
+            "sam": "saved" if s else "not set",
         },
     }

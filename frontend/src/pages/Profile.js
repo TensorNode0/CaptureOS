@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Save, Building2, ShieldCheck } from "lucide-react";
+import { Save, Building2, ShieldCheck, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { api, errMsg } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
@@ -39,8 +39,12 @@ export default function Profile() {
         certs: { sba: false, eightA: false, hubzone: false, sdvosb: false, wosb: false, edwosb: false, vosb: false, ...(p.certs || {}) },
         cmmcLevel: p.cmmcLevel || "Level 1", sprsScore: p.sprsScore ? Number(p.sprsScore) : null,
         sizeNote: p.sizeNote || "", notes: p.notes || "",
+        capabilities: p.capabilities || "", pastPerformance: p.pastPerformance || "",
+        techFocus: (Array.isArray(p.techFocus) ? p.techFocus : String(p.techFocus || "").split(",")).map((s) => String(s).trim()).filter(Boolean),
+        differentiators: p.differentiators || "", commercialization: p.commercialization || "",
+        clearances: p.clearances || "",
       });
-      toast.success("Profile saved — drives set-aside eligibility everywhere.");
+      toast.success("Profile saved — drives eligibility and AI Fit Score.");
     } catch (e) { toast.error(errMsg(e)); }
     finally { setSaving(false); }
   };
@@ -76,6 +80,21 @@ export default function Profile() {
               <input type="checkbox" disabled={!admin} checked={!!(p.certs && p.certs[k])} onChange={(e) => setCert(k, e.target.checked)} /> {label}
             </label>
           ))}
+        </div>
+      </Card>
+
+      <Card className="p-5">
+        <div className="flex items-center gap-2"><Sparkles size={16} className="text-cyan" /><SectionLabel>Capability Profile — drives AI Fit Score</SectionLabel></div>
+        <p className="mt-1 text-xs text-faint">The Intelligence scan uses these to honestly score how well each opportunity fits your organization. The more specific, the sharper the scoring.</p>
+        <div className="mt-4 space-y-4">
+          <Field label="Core capabilities" hint="What you actually build/deliver."><textarea className="field min-h-[70px]" disabled={!admin} value={p.capabilities || ""} onChange={(e) => set({ capabilities: e.target.value })} placeholder="e.g. EO/IR payload design, edge AI for ISR, autonomous flight software…" data-testid="profile-capabilities" /></Field>
+          <Field label="Technology focus areas" hint="Comma-separated."><input className="field" disabled={!admin} value={Array.isArray(p.techFocus) ? p.techFocus.join(", ") : (p.techFocus || "")} onChange={(e) => set({ techFocus: e.target.value })} placeholder="Space Technology, Trusted AI & Autonomy, Hypersonics" data-testid="profile-techfocus" /></Field>
+          <Field label="Past performance" hint="Notable contracts, agencies, outcomes."><textarea className="field min-h-[70px]" disabled={!admin} value={p.pastPerformance || ""} onChange={(e) => set({ pastPerformance: e.target.value })} placeholder="e.g. AFWERX Phase II (SpaceWERX), prime on $4M AFRL SBIR…" data-testid="profile-pastperf" /></Field>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <Field label="Differentiators"><textarea className="field min-h-[60px]" disabled={!admin} value={p.differentiators || ""} onChange={(e) => set({ differentiators: e.target.value })} data-testid="profile-diff" /></Field>
+            <Field label="Commercialization strategy"><textarea className="field min-h-[60px]" disabled={!admin} value={p.commercialization || ""} onChange={(e) => set({ commercialization: e.target.value })} data-testid="profile-commercial" /></Field>
+          </div>
+          <Field label="Clearances / facility" hint="e.g. FCL Secret, staff with TS/SCI."><input className="field" disabled={!admin} value={p.clearances || ""} onChange={(e) => set({ clearances: e.target.value })} data-testid="profile-clearances" /></Field>
         </div>
       </Card>
 
