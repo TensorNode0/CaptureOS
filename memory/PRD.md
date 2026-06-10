@@ -55,14 +55,35 @@ until the final phase; keep AI cheap.
 - ⚠️ User supplies real keys via Settings → API Keys (anthropic-key / sam-key inputs). Live
   success path validated by user since keys are user-owned.
 
-## Prioritized Backlog
-- P0 (next): Phase 5 — wire REAL integrations. Anthropic Messages API (web search + web fetch,
-  Haiku-class, capped tokens, batched, JSON-only) for Verify & Refresh; SAM.gov v2 + Grants.gov
-  search2 pull (port govcon_pull.py), dedupe/merge by sol#. Use the org's stored encrypted keys.
-- P1: Phase 7 Proposal Studio (solicitation summary, requirement extraction, tabbed deliverable
-  generation via python-docx/pptx/openpyxl, final evaluation scoring, ZIP package).
-- P1: Real email provider (SendGrid/Resend) for verification + invites.
-- P2: Weekly scheduled verify, per-org rate limiting, USAspending incumbent recon, CSV/JSON export.
-- P2: Phase 6 hardening — auth/refresh rate limits, deeper validation, deploy health check.
+## Phase 6 — AI Intelligence Scan + Org Join + Responsive Nav (2026-06-10)
+- **AI Opportunity Intelligence Scan** (LIVE): `/app/backend/intel.py` runs Claude (Sonnet tiers /
+  Haiku lean) + `web_search_20250305` against public federal sources (SAM.gov, SBIR/DSIP,
+  AFWERX/SpaceWERX, DARPA, NASA, DIU, xTech…) to discover REAL open SB-eligible solicitations and
+  fit-score (1-100 + grade) them against the org capability profile. Background job model
+  (`intelJobs`) + saved reports (`intelReports`). Tiers: lean/standard/deep cap web-searches &
+  opp count for cost control. Router `/app/backend/routers/intel.py`: scan/jobs/reports/delete/
+  add-to-pipeline (Editor-gated, keys from encrypted vault).
+- **Frontend Intelligence page** (`pages/Intelligence.js` + `components/IntelSummary.js`,
+  `components/IntelTable.js`, `lib/intel.js`): executive summary (KPIs + mission/agency/vehicle/
+  color-of-money charts + hot signals + recommended actions + source status), 20-column
+  sortable/filterable/searchable table with fit grades, compliance flags, color-of-money dots,
+  urgency row borders, CSV + standalone-HTML export, report history, add-to-pipeline. Sample-data
+  banner when previewing seeded report.
+- **Admin-editable Capability Profile** (Company Profile): capabilities, pastPerformance,
+  techFocus[], differentiators, commercialization, clearances — drive the AI Fit Score.
+- **Org create/join**: in-app "Create organization" + "Join with code" (Org switcher); shareable
+  8-char `joinCode` per org (Admin → Members card; GET/rotate). `POST /api/orgs/join`.
+- **Responsive navigation**: Shell now has a mobile hamburger drawer (`lg:hidden`) so Settings/Admin
+  are reachable below 1024px (fixes the "no Settings" report). New "Intelligence" nav item.
+- Settings copy updated — keys are LIVE (no longer mocked).
+- Tested: 12/12 new backend (`/app/backend/tests/test_intel_orgs.py`) + prior 28/28 green; 100% of
+  frontend flows verified. LIVE Anthropic/SAM success path validated by user (own keys).
+
+## Prioritized Backlog (updated 2026-06-10)
+- P1: Scheduled weekly auto-scan (Mon 3:30 AM MT) + email digest of the report (needs Resend/SendGrid).
+- P1: "Test connection" button per key in Settings to validate Anthropic/SAM before a full run.
+- P1: Phase 7 Proposal Studio (solicitation summary, requirement extraction, deliverable generation).
+- P2: USAspending incumbent recon, per-org rate limiting, auth/refresh rate limits.
+- P2: Replace window.confirm (join-code rotate) with Modal; richer source coverage (more portals).
 
 ## Test Credentials → /app/memory/test_credentials.md

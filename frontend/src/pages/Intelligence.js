@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Satellite, Play, Loader2, Download, FileSpreadsheet, Trash2, History,
-  KeyRound, Radar, ChevronDown,
+  KeyRound, Radar, ChevronDown, Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api, errMsg } from "../lib/api";
@@ -104,6 +104,7 @@ export default function Intelligence() {
   };
 
   const report = current?.report;
+  const isSample = (current?.model || "").toUpperCase().includes("SAMPLE");
 
   return (
     <PageReveal className="space-y-5">
@@ -128,7 +129,7 @@ export default function Intelligence() {
                     {reports.map((r) => (
                       <button key={r.id} onClick={() => { loadReport(r.id); setHistOpen(false); }}
                         className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm hover:bg-white/5 ${current?.id === r.id ? "text-cyan" : "text-dim"}`}
-                        data-testid={`intel-history-${r.id}`}>
+                        data-testid={`intel-history-item-${r.id}`}>
                         <span>{fmtDateTime(r.createdAt)}</span>
                         <span className="label-mono">{r.total} · {r.tier}</span>
                       </button>
@@ -191,6 +192,14 @@ export default function Intelligence() {
         </Card>
       ) : report ? (
         <div className="space-y-5">
+          {isSample && (
+            <Card className="border-warn/30 bg-warn/5 p-4" data-testid="intel-sample-banner">
+              <div className="flex items-center gap-2 text-sm text-warn">
+                <Sparkles size={15} className="shrink-0" />
+                <span><b>Sample data</b> — shown to preview the report format. Add your Anthropic key in Settings, then click <b>Run Scan</b> to replace this with live, fit-scored opportunities.</span>
+              </div>
+            </Card>
+          )}
           <div className="flex flex-wrap items-center gap-2 text-xs text-faint">
             <span>Report {report.reportDate || fmtDateTime(current.createdAt)}</span>
             {report.fiscalYear && <span>· {report.fiscalYear}</span>}
