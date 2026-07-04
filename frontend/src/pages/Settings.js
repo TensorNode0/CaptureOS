@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Save, KeyRound, Lock, Settings as SettingsIcon } from "lucide-react";
+import { Save, KeyRound, Lock, Settings as SettingsIcon, RotateCw } from "lucide-react";
 import { toast } from "sonner";
 import { api, errMsg } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
@@ -14,6 +14,7 @@ export default function Settings() {
   const [openai, setOpenai] = useState("");
   const [savingOrg, setSavingOrg] = useState(false);
   const [savingKeys, setSavingKeys] = useState(false);
+  const [rotating, setRotating] = useState(false);
 
   useEffect(() => {
     if (!activeOrgId) return;
@@ -49,6 +50,18 @@ export default function Settings() {
     finally { setSavingKeys(false); }
   };
 
+  const rotateKey = async () => {
+    if (!window.confirm("Rotate this organization's encryption key? Stored API keys are re-encrypted under a brand-new key. Nothing else changes.")) return;
+    setRotating(true);
+    try {
+      const { data } = await api.post(`/orgs/${activeOrgId}/secrets/rotate-key`);
+      const fresh = await api.get(`/orgs/${activeOrgId}/secrets`);
+      setSecrets(fresh.data);
+      toast.success(`Encryption key rotated (now v${data.keyVersion})`);
+    } catch (e) { toast.error(errMsg(e)); }
+    finally { setRotating(false); }
+  };
+
   if (!org || !secrets) return <div className="flex h-64 items-center justify-center"><Spinner size={26} className="text-cyan" /></div>;
 
   return (
@@ -81,13 +94,19 @@ export default function Settings() {
           <Field label="OpenAI API key (optional)" hint={secrets.openaiSet ? `Currently set: ${secrets.openaiKey}` : "Not set — enables the ChatGPT drafting engine"}>
             <input className="field mono" value={openai} onChange={(e) => setOpenai(e.target.value)} placeholder={secrets.openaiSet ? "•••••••• (enter new to replace)" : "sk-…"} data-testid="openai-key" />
           </Field>
-          <div className="flex items-center justify-between">
-            <div className="flex gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap gap-2">
               <Pill tone={secrets.anthropicSet ? "ok" : "neutral"}>Anthropic {secrets.anthropicSet ? "set" : "unset"}</Pill>
               <Pill tone={secrets.samSet ? "ok" : "neutral"}>SAM {secrets.samSet ? "set" : "unset"}</Pill>
               <Pill tone={secrets.openaiSet ? "ok" : "neutral"}>OpenAI {secrets.openaiSet ? "set" : "unset"}</Pill>
+              {secrets.keyVersion && <Pill tone="violet">encryption key v{secrets.keyVersion}</Pill>}
             </div>
-            <button className="btn btn-primary" onClick={saveKeys} disabled={savingKeys || (!anthropic && !sam && !openai)} data-testid="save-keys">{savingKeys ? <Spinner /> : <Save size={16} />} Save keys</button>
+            <div className="flex gap-2">
+              <button className="btn btn-ghost" onClick={rotateKey} disabled={rotating} data-testid="rotate-key" title="Re-encrypt stored keys under a new per-org encryption key">
+                {rotating ? <Spinner /> : <RotateCw size={15} />} Rotate encryption key
+              </button>
+              <button className="btn btn-primary" onClick={saveKeys} disabled={savingKeys || (!anthropic && !sam && !openai)} data-testid="save-keys">{savingKeys ? <Spinner /> : <Save size={16} />} Save keys</button>
+            </div>
           </div>
         </div>
       </Card>

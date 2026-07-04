@@ -9,9 +9,10 @@ from typing import Any, Dict, Optional
 import database as db
 from utils import now_utc, serialize, as_uuid
 from rbac import require_role
-from domain import write_audit, decrypt_secret
+from domain import write_audit
 import capability_ai
 import exports
+import org_keys
 
 router = APIRouter(prefix="/api/orgs", tags=["capabilities"])
 
@@ -44,12 +45,6 @@ def _cap_payload(cap):
     out = serialize(row)
     out["hasRenderingPng"] = has_png
     return out
-
-
-async def _anthropic_key(org_id):
-    rec = await db.fetchrow("select * from org_secrets where organization_id = $1",
-                            org_id) or {}
-    return decrypt_secret(rec.get("anthropic_key", ""))
 
 
 async def _run_generation(cap_id, api_key, org, profile, opp, user):
@@ -89,7 +84,8 @@ async def generate_capability(oppId: str, ctx: dict = Depends(require_role("edit
     opp = await _get_opp(ctx["org_id"], oppId)
     if not opp:
         raise HTTPException(status_code=404, detail="Opportunity not found")
-    api_key = await _anthropic_key(ctx["org_id"])
+    keys = await org_keys.get_keys(ctx["org_id"], ctx["user"], purpose="capability.generate")
+    api_key = keys["anthropic"]
     if not api_key:
         raise HTTPException(status_code=400,
             detail="No Anthropic API key set. Add it in Settings → API Keys.")

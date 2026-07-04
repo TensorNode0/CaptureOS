@@ -1,33 +1,5 @@
-import os
-from cryptography.fernet import Fernet
-
 import database as db
 from utils import as_uuid
-
-_fernet = Fernet(os.environ["SECRETS_ENC_KEY"].encode())
-
-
-def encrypt_secret(value: str) -> str:
-    if not value:
-        return ""
-    return _fernet.encrypt(value.encode()).decode()
-
-
-def decrypt_secret(token: str) -> str:
-    if not token:
-        return ""
-    try:
-        return _fernet.decrypt(token.encode()).decode()
-    except Exception:
-        return ""
-
-
-def mask_secret(value: str) -> str:
-    if not value:
-        return ""
-    if len(value) <= 6:
-        return "•" * len(value)
-    return value[:3] + "…" + value[-4:]
 
 
 async def write_audit(org_id, user, action, target=None, meta=None):

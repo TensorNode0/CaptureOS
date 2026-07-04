@@ -6,8 +6,9 @@ import database as db
 from utils import now_utc, serialize, as_uuid, iso
 from rbac import require_role
 from domain import (write_audit, compute_eligibility, default_fit, default_compliance,
-                    default_budget, default_criteria, decrypt_secret)
+                    default_budget, default_criteria)
 import integrations
+import org_keys
 
 router = APIRouter(prefix="/api/orgs", tags=["opportunities"])
 
@@ -69,14 +70,6 @@ UPDATE_COLUMNS = {
 async def _profile(org_id):
     prof = await db.fetchrow("select * from org_profiles where organization_id = $1", org_id)
     return serialize(prof) if prof else None
-
-
-async def _org_keys(org_id):
-    """Decrypt the org's stored Anthropic + SAM keys at call time (server-only)."""
-    rec = await db.fetchrow("select * from org_secrets where organization_id = $1",
-                            org_id) or {}
-    return (decrypt_secret(rec.get("anthropic_key", "")),
-            decrypt_secret(rec.get("sam_key", "")))
 
 
 async def _insert_opp(ctx, rec, source):
@@ -197,7 +190,8 @@ async def delete_opportunity(oppId: str, ctx: dict = Depends(require_role("edito
 async def verify_refresh(ctx: dict = Depends(require_role("editor"))):
     """LIVE Anthropic verification: confirms each stored opportunity against live
     web sources and discovers up to 3 new matches for the org's NAICS/keywords."""
-    anthropic_key, _ = await _org_keys(ctx["org_id"])
+    keys = await org_keys.get_keys(ctx["org_id"], ctx["user"], purpose="ai.verify_refresh")
+    anthropic_key = keys["anthropic"]
     if not anthropic_key:
         raise HTTPException(status_code=400,
             detail="No Anthropic API key set. Add it in Settings → API Keys.")
@@ -346,7 +340,8 @@ async def dismiss_diff(oppId: str, body: AcceptIn, ctx: dict = Depends(require_r
 async def pull_sam_grants(ctx: dict = Depends(require_role("editor"))):
     """LIVE pull from SAM.gov v2 + Grants.gov search2. Dedupe/merge by sol#;
     preserves user-owned fit/compliance/budget/scoring data on existing records."""
-    _, sam_key = await _org_keys(ctx["org_id"])
+    keys = await org_keys.get_keys(ctx["org_id"], ctx["user"], purpose="pull.sam_grants")
+    sam_key = keys["sam"]
     if not sam_key:
         raise HTTPException(status_code=400,
             detail="No SAM.gov API key set. Add it in Settings → API Keys.")

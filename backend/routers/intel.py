@@ -6,9 +6,10 @@ from pydantic import BaseModel
 import database as db
 from utils import now_utc, serialize, as_uuid, iso
 from rbac import require_role
-from domain import (write_audit, decrypt_secret, default_fit, default_compliance,
+from domain import (write_audit, default_fit, default_compliance,
                     default_budget, default_criteria)
 import intel
+import org_keys
 
 router = APIRouter(prefix="/api/orgs", tags=["intelligence"])
 
@@ -69,9 +70,8 @@ async def _execute_scan(job_id, org_id, api_key, ctx, tier, user):
 
 @router.post("/{orgId}/intel/scan")
 async def start_scan(body: ScanIn, ctx: dict = Depends(require_role("editor"))):
-    rec = await db.fetchrow("select * from org_secrets where organization_id = $1",
-                            ctx["org_id"]) or {}
-    api_key = decrypt_secret(rec.get("anthropic_key", ""))
+    keys = await org_keys.get_keys(ctx["org_id"], ctx["user"], purpose="intel.scan")
+    api_key = keys["anthropic"]
     if not api_key:
         raise HTTPException(status_code=400,
             detail="No Anthropic API key set. Add it in Settings → API Keys.")
