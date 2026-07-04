@@ -15,6 +15,8 @@ import Dashboard from "./pages/Dashboard";
 import Intelligence from "./pages/Intelligence";
 import Opportunities from "./pages/Opportunities";
 import OpportunityDetail from "./pages/OpportunityDetail";
+import Capability from "./pages/Capability";
+import ProposalWorkspace from "./pages/ProposalWorkspace";
 import Profile from "./pages/Profile";
 import Admin from "./pages/Admin";
 import Settings from "./pages/Settings";
@@ -73,6 +75,8 @@ export default function App() {
           <Route path="/intelligence" element={<Protected><Intelligence /></Protected>} />
           <Route path="/opportunities" element={<Protected><Opportunities /></Protected>} />
           <Route path="/opportunities/:id" element={<Protected><OpportunityDetail /></Protected>} />
+          <Route path="/opportunities/:id/capability" element={<Protected><Capability /></Protected>} />
+          <Route path="/opportunities/:id/proposal" element={<Protected><ProposalWorkspace /></Protected>} />
           <Route path="/profile" element={<Protected><Profile /></Protected>} />
           <Route path="/admin" element={<Protected><Admin /></Protected>} />
           <Route path="/settings" element={<Protected><Settings /></Protected>} />

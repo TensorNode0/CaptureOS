@@ -1,9 +1,9 @@
+"""Demo-data seeder. Runs at startup only when SEED_DEMO=1 (safe for prod)."""
 import os
 import random
 from datetime import timedelta
-from bson import ObjectId
 
-from database import db
+import database as db
 from utils import now_utc, iso
 from auth_utils import hash_password, verify_password
 from domain import default_fit, default_compliance, default_budget, default_criteria
@@ -28,7 +28,7 @@ TITLES = [
 ]
 
 
-async def _make_opp(org_oid, owner_oid, i):
+async def _make_opp(org_id, owner_id, i):
     agency, office = random.choice(AGENCIES)
     sa = random.choice(SETASIDES)
     veh = random.choice(VEHICLES)
@@ -36,7 +36,7 @@ async def _make_opp(org_oid, owner_oid, i):
     ceiling = random.choice([850000, 1800000, 2400000, 4800000, 9500000, 12500000])
     days = random.choice([-10, 3, 6, 14, 22, 40, 65, 120])
     due = (now_utc() + timedelta(days=days)).date().isoformat()
-    sol = f"{random.choice(['FA8650','N00024','W519TC','SP4701'])}-26-R-{1000 + i}"
+    sol = f"{random.choice(['FA8650', 'N00024', 'W519TC', 'SP4701'])}-26-R-{1000 + i}"
     fit = default_fit()
     for k in fit:
         fit[k] = random.randint(2, 5)
@@ -48,124 +48,87 @@ async def _make_opp(org_oid, owner_oid, i):
     crit = default_criteria()
     for c in crit:
         c["score"] = random.randint(5, 9)
-    return {
-        "organizationId": org_oid,
-        "title": random.choice(TITLES) + f" {chr(65 + (i % 6))}",
-        "solNumber": sol,
-        "agency": agency, "office": office, "vehicle": veh,
-        "setAside": sa, "naics": random.choice(["336412", "541715", "541512", "541611"]),
-        "ceiling": ceiling, "pop": "12 mo base + 2 option yrs", "dueDate": due,
-        "stage": stage, "url": f"https://sam.gov/opp/{sol}", "winThemes": "Low-risk, proven team",
-        "source": random.choice(["manual", "sam", "grants"]),
-        "lastVerified": now_utc() if random.random() > 0.4 else None,
-        "verifyReport": None,
-        "links": [{"label": "Solicitation", "url": f"https://sam.gov/opp/{sol}",
-                   "status": "live", "checkedAt": iso(now_utc())}],
-        "fit": fit, "pwin": random.randint(15, 75),
-        "proposalStrength": round(random.uniform(4.5, 9.0), 1),
-        "compliance": default_compliance(), "budget": budget,
-        "criteria": crit, "decision": {"call": "TBD", "rationale": ""},
-        "createdBy": owner_oid, "createdAt": now_utc(), "updatedAt": now_utc(),
-    }
+    links = [{"label": "Solicitation", "url": f"https://sam.gov/opp/{sol}",
+              "status": "live", "checkedAt": iso(now_utc())}]
+    await db.execute(
+        """insert into opportunities
+               (organization_id, title, sol_number, agency, office, vehicle, set_aside,
+                naics, ceiling, pop, due_date, stage, url, win_themes, source,
+                last_verified, links, fit, pwin, proposal_strength, compliance,
+                budget, criteria, created_by)
+           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
+                   $16, $17, $18, $19, $20, $21, $22, $23, $24)""",
+        org_id, random.choice(TITLES) + f" {chr(65 + (i % 6))}", sol, agency, office,
+        veh, sa, random.choice(["336412", "541715", "541512", "541611"]), ceiling,
+        "12 mo base + 2 option yrs", due, stage, f"https://sam.gov/opp/{sol}",
+        "Low-risk, proven team", random.choice(["manual", "sam", "grants"]),
+        now_utc() if random.random() > 0.4 else None, links, fit,
+        random.randint(15, 75), round(random.uniform(4.5, 9.0), 1),
+        default_compliance(), budget, crit, owner_id)
+
+
+async def _ensure_user(email, name, password):
+    u = await db.fetchrow("select * from users where email = $1", email)
+    if not u:
+        u = await db.fetchrow(
+            """insert into users (email, name, password_hash, email_verified)
+               values ($1, $2, $3, true) returning *""",
+            email, name, hash_password(password))
+    return u
 
 
 async def seed():
+    if os.environ.get("SEED_DEMO", "0") != "1":
+        return
+
     admin_email = os.environ.get("ADMIN_EMAIL", "admin@govcon.io").lower()
     admin_password = os.environ.get("ADMIN_PASSWORD", "Admin#2026")
 
-    admin = await db.users.find_one({"email": admin_email})
+    admin = await db.fetchrow("select * from users where email = $1", admin_email)
     if not admin:
-        res = await db.users.insert_one({
-            "email": admin_email, "name": "Mission Commander",
-            "password_hash": hash_password(admin_password),
-            "emailVerified": True, "created_at": now_utc(),
-        })
-        admin = await db.users.find_one({"_id": res.inserted_id})
+        admin = await _ensure_user(admin_email, "Mission Commander", admin_password)
     elif not verify_password(admin_password, admin["password_hash"]):
-        await db.users.update_one({"_id": admin["_id"]},
-                                  {"$set": {"password_hash": hash_password(admin_password)}})
+        await db.execute("update users set password_hash = $2 where id = $1",
+                         admin["id"], hash_password(admin_password))
 
-    admin_oid = admin["_id"]
+    editor = await _ensure_user("editor@govcon.io", "Capture Lead", "Editor#2026")
+    viewer = await _ensure_user("viewer@govcon.io", "Proposal Analyst", "Editor#2026")
 
-    # secondary demo users
-    async def ensure_user(email, name):
-        u = await db.users.find_one({"email": email})
-        if not u:
-            r = await db.users.insert_one({
-                "email": email, "name": name,
-                "password_hash": hash_password("Editor#2026"),
-                "emailVerified": True, "created_at": now_utc()})
-            u = await db.users.find_one({"_id": r.inserted_id})
-        return u
+    org = await db.fetchrow("select * from organizations where name = $1",
+                            "Orbital Defense Systems")
+    if org:
+        return
 
-    editor = await ensure_user("editor@govcon.io", "Capture Lead")
-    viewer = await ensure_user("viewer@govcon.io", "Proposal Analyst")
-
-    # demo org
-    org = await db.organizations.find_one({"name": "Orbital Defense Systems"})
-    if not org:
-        r = await db.organizations.insert_one({
-            "name": "Orbital Defense Systems",
-            "naics": ["336412", "541715", "541512"],
-            "keywords": ["UAS", "hypersonic", "cyber", "autonomy"],
-            "ownerId": admin_oid, "createdAt": now_utc(),
-        })
-        org = await db.organizations.find_one({"_id": r.inserted_id})
-        org_oid = org["_id"]
-        # memberships
-        await db.memberships.insert_many([
-            {"userId": admin_oid, "invitedEmail": admin_email, "organizationId": org_oid,
-             "role": "owner", "invitedBy": None, "status": "active", "createdAt": now_utc()},
-            {"userId": editor["_id"], "invitedEmail": "editor@govcon.io",
-             "organizationId": org_oid, "role": "editor", "invitedBy": admin_oid,
-             "status": "active", "createdAt": now_utc()},
-            {"userId": viewer["_id"], "invitedEmail": "viewer@govcon.io",
-             "organizationId": org_oid, "role": "viewer", "invitedBy": admin_oid,
-             "status": "active", "createdAt": now_utc()},
-        ])
-        # profile
-        await db.orgProfile.insert_one({
-            "organizationId": org_oid, "uei": "ORB1TALDEF99", "cage": "8XQ21",
-            "samActive": True, "isSmall": True,
-            "certs": {"sba": True, "eightA": False, "hubzone": False,
-                      "sdvosb": True, "wosb": False, "edwosb": False, "vosb": True},
-            "cmmcLevel": "Level 2", "sprsScore": 88,
-            "sizeNote": "Under 500 employees", "notes": "Dual-use aerospace & defense.",
-        })
-        # opportunities
-        opps = [await _make_opp(org_oid, admin_oid, i) for i in range(12)]
-        await db.opportunities.insert_many(opps)
-        await db.auditLog.insert_one({
-            "organizationId": org_oid, "userId": admin_oid, "userEmail": admin_email,
-            "userName": "Mission Commander", "action": "seed.demo",
-            "target": "Orbital Defense Systems", "meta": {}, "at": now_utc()})
-
-    # write test credentials
-    os.makedirs("/app/memory", exist_ok=True)
-    with open("/app/memory/test_credentials.md", "w") as f:
-        f.write(f"""# Test Credentials — GovCon Command Center
-
-## Admin / Owner
-- Email: `{admin_email}`
-- Password: `{admin_password}`
-- Role in 'Orbital Defense Systems': owner
-
-## Editor
-- Email: `editor@govcon.io`
-- Password: `Editor#2026`
-- Role: editor
-
-## Viewer
-- Email: `viewer@govcon.io`
-- Password: `Editor#2026`
-- Role: viewer
-
-## Notes
-- Demo org: **Orbital Defense Systems** (seeded with 12 opportunities + org profile).
-- Email verification is MOCKED: register returns a `verifyUrl`; password reset returns `resetUrl`.
-- AI 'Verify & Refresh' and 'Pull from SAM/Grants' are MOCKED (Phase 5 wires real keys).
-
-## Auth endpoints
-- POST /api/auth/register | /login | /logout | /refresh | /forgot-password | /reset-password | /verify-email
-- GET  /api/auth/me
-""")
+    org = await db.fetchrow(
+        """insert into organizations (name, naics, keywords, owner_id, join_code)
+           values ($1, $2, $3, $4, $5) returning *""",
+        "Orbital Defense Systems", ["336412", "541715", "541512"],
+        ["UAS", "hypersonic", "cyber", "autonomy"], admin["id"], "DEMO2026")
+    org_id = org["id"]
+    for user, email, role, inviter in (
+        (admin, admin_email, "owner", None),
+        (editor, "editor@govcon.io", "editor", admin["id"]),
+        (viewer, "viewer@govcon.io", "viewer", admin["id"]),
+    ):
+        await db.execute(
+            """insert into memberships (user_id, invited_email, organization_id, role,
+                                        invited_by, status)
+               values ($1, $2, $3, $4, $5, 'active')""",
+            user["id"], email, org_id, role, inviter)
+    await db.execute(
+        """insert into org_profiles
+               (organization_id, uei, cage, sam_active, is_small, certs, cmmc_level,
+                sprs_score, size_note, notes)
+           values ($1, $2, $3, true, true, $4, 'Level 2', 88, $5, $6)""",
+        org_id, "ORB1TALDEF99", "8XQ21",
+        {"sba": True, "eightA": False, "hubzone": False, "sdvosb": True,
+         "wosb": False, "edwosb": False, "vosb": True},
+        "Under 500 employees", "Dual-use aerospace & defense.")
+    for i in range(12):
+        await _make_opp(org_id, admin["id"], i)
+    await db.execute(
+        """insert into audit_log (organization_id, user_id, user_email, user_name,
+                                  action, target, meta)
+           values ($1, $2, $3, $4, 'seed.demo', 'Orbital Defense Systems', '{}')""",
+        org_id, admin["id"], admin_email, "Mission Commander")
+    print("[seed] demo org 'Orbital Defense Systems' created")
