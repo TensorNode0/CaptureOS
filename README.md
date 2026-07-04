@@ -47,6 +47,22 @@ auto-generated REST API exposes nothing.
   ChatGPT), an in-app editor, finalize, per-document download (.docx / .xlsx /
   .pptx) and a full-package .zip.
 
+## Quick start (Docker only — no local Python/Node needed)
+
+```bash
+cp backend/.env.example backend/.env    # fill in DATABASE_URL, JWT_SECRET, SECRETS_ENC_KEY
+cp frontend/.env.example frontend/.env
+docker compose -f docker-compose.dev.yml up
+```
+
+Then open http://localhost:3000 (API at http://localhost:8000). To try the app
+without a Supabase project, use the bundled local database instead:
+
+```bash
+# in backend/.env:  DATABASE_URL=postgresql://postgres:postgres@db:5432/postgres
+docker compose -f docker-compose.dev.yml --profile localdb up
+```
+
 ## Setup
 
 ### 1. Database (Supabase)
