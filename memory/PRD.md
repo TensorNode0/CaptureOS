@@ -40,9 +40,19 @@ rewriting app code.
 - Preview pod's supervisor also runs an unused platform-managed mongod ([readonly config) — harmless.
 - deployment_agent "fail" findings assessed as false positives / platform-managed / intentional (.env gitignored).
 
+## Production (deployed 2026-07-04)
+- LIVE at https://govcon-workspace.emergent.host — verified by testing_agent (iteration_5, read-only):
+  health JSON exact match, login page renders, external Supabase connected (startup = pool + migrations).
+- captureagent.us: DNS on Cloudflare, valid cert issued 2026-07-04 (user started Entri flow), but
+  Cloudflare error 1034 = origin route to the deployment not configured/propagated yet. User must
+  finish Link domain → Entri in deployment settings; remove old A/AAAA records at registrar if stuck;
+  escalate to support@emergent.sh with job ID if it persists. NOT an app bug — no code changes made.
+
 ## Backlog / Next
-- P0: User to click **Deploy** on Emergent (50 credits/mo), set env vars in deployment settings
-  (DATABASE_URL, JWT_SECRET, SECRETS_ENC_KEY, FRONTEND_URL, SEED_DEMO) outside chat, then
-  link custom domain captureagent.us (Link domain → Entri; remove old A records if DNS stalls).
+- P0: User to finish captureagent.us domain linking (see Production section).
+- P0: Resend email integration — user said "yes to improvements"; awaiting answers to 4 scope questions
+  (direct edits vs patch, drop URLs-in-response when key set, sender address, which flows).
+  Playbook obtained: resend pip pkg, RESEND_API_KEY + SENDER_EMAIL in backend/.env,
+  asyncio.to_thread(resend.Emails.send, params). 4 mocked spots: auth.py:82/161/195, orgs.py:266.
 - P1: Real email provider for verify/reset links before enabling public sign-ups (currently mocked).
 - P2: Whatever the user develops next in GitHub — re-import via GitHub button when main updates.
