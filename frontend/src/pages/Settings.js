@@ -11,6 +11,7 @@ export default function Settings() {
   const [secrets, setSecrets] = useState(null);
   const [anthropic, setAnthropic] = useState("");
   const [sam, setSam] = useState("");
+  const [openai, setOpenai] = useState("");
   const [savingOrg, setSavingOrg] = useState(false);
   const [savingKeys, setSavingKeys] = useState(false);
 
@@ -37,12 +38,12 @@ export default function Settings() {
     setSavingKeys(true);
     try {
       const { data } = await api.put(`/orgs/${activeOrgId}/secrets`, {
-        anthropicKey: anthropic || null, samKey: sam || null,
+        anthropicKey: anthropic || null, samKey: sam || null, openaiKey: openai || null,
       });
       setSecrets(data);
-      setAnthropic(""); setSam("");
+      setAnthropic(""); setSam(""); setOpenai("");
       toast.success("API keys saved (encrypted)", {
-        description: `Anthropic: ${data.validation.anthropic} · SAM: ${data.validation.sam}`,
+        description: `Anthropic: ${data.validation.anthropic} · SAM: ${data.validation.sam} · OpenAI: ${data.validation.openai}`,
       });
     } catch (e) { toast.error(errMsg(e)); }
     finally { setSavingKeys(false); }
@@ -77,12 +78,16 @@ export default function Settings() {
           <Field label="SAM.gov API key" hint={secrets.samSet ? `Currently set: ${secrets.samKey}` : "Not set"}>
             <input className="field mono" value={sam} onChange={(e) => setSam(e.target.value)} placeholder={secrets.samSet ? "•••••••• (enter new to replace)" : "32-char SAM key"} data-testid="sam-key" />
           </Field>
+          <Field label="OpenAI API key (optional)" hint={secrets.openaiSet ? `Currently set: ${secrets.openaiKey}` : "Not set — enables the ChatGPT drafting engine"}>
+            <input className="field mono" value={openai} onChange={(e) => setOpenai(e.target.value)} placeholder={secrets.openaiSet ? "•••••••• (enter new to replace)" : "sk-…"} data-testid="openai-key" />
+          </Field>
           <div className="flex items-center justify-between">
             <div className="flex gap-2">
               <Pill tone={secrets.anthropicSet ? "ok" : "neutral"}>Anthropic {secrets.anthropicSet ? "set" : "unset"}</Pill>
               <Pill tone={secrets.samSet ? "ok" : "neutral"}>SAM {secrets.samSet ? "set" : "unset"}</Pill>
+              <Pill tone={secrets.openaiSet ? "ok" : "neutral"}>OpenAI {secrets.openaiSet ? "set" : "unset"}</Pill>
             </div>
-            <button className="btn btn-primary" onClick={saveKeys} disabled={savingKeys || (!anthropic && !sam)} data-testid="save-keys">{savingKeys ? <Spinner /> : <Save size={16} />} Save keys</button>
+            <button className="btn btn-primary" onClick={saveKeys} disabled={savingKeys || (!anthropic && !sam && !openai)} data-testid="save-keys">{savingKeys ? <Spinner /> : <Save size={16} />} Save keys</button>
           </div>
         </div>
       </Card>

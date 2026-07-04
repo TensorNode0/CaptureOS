@@ -6,7 +6,7 @@ import {
 } from "recharts";
 import {
   ArrowLeft, Save, Plus, Trash2, ExternalLink, ShieldAlert, Sparkles,
-  CheckCircle2, XCircle, AlertTriangle, Gauge, Target,
+  CheckCircle2, XCircle, AlertTriangle, Gauge, Target, Package,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api, errMsg } from "../lib/api";
@@ -97,11 +97,21 @@ export default function OpportunityDetail() {
             {opp.url && <a href={opp.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-cyan hover:underline"><ExternalLink size={12} /> Source</a>}
           </div>
         </div>
-        {editor && (
-          <button className="btn btn-primary" onClick={save} disabled={!dirty || saving} data-testid="save-opp">
-            {saving ? <Spinner /> : <Save size={16} />} {dirty ? "Save changes" : "Saved"}
+        <div className="flex flex-wrap items-center gap-2">
+          <button className="btn btn-ghost" onClick={() => navigate(`/opportunities/${id}/capability`)}
+            data-testid="goto-capability">
+            <Sparkles size={15} /> Capability
           </button>
-        )}
+          <button className="btn btn-ghost" onClick={() => navigate(`/opportunities/${id}/proposal`)}
+            data-testid="goto-proposal">
+            <Package size={15} /> Proposal
+          </button>
+          {editor && (
+            <button className="btn btn-primary" onClick={save} disabled={!dirty || saving} data-testid="save-opp">
+              {saving ? <Spinner /> : <Save size={16} />} {dirty ? "Save changes" : "Saved"}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* AI verify report */}

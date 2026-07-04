@@ -2,11 +2,10 @@ import os
 import jwt
 import bcrypt
 from datetime import datetime, timezone, timedelta
-from fastapi import Request, HTTPException, Depends
-from bson import ObjectId
+from fastapi import Request, HTTPException
 
-from database import db
-from utils import serialize
+import database as db
+from utils import serialize, as_uuid
 
 JWT_ALGORITHM = "HS256"
 ACCESS_MIN = 60 * 12  # 12h access for smooth UX in preview
@@ -74,11 +73,14 @@ async def get_current_user(request: Request) -> dict:
         payload = jwt.decode(token, _secret(), algorithms=[JWT_ALGORITHM])
         if payload.get("type") != "access":
             raise HTTPException(status_code=401, detail="Invalid token type")
-        user = await db.users.find_one({"_id": ObjectId(payload["sub"])})
+        uid = as_uuid(payload.get("sub"))
+        if uid is None:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        user = await db.fetchrow("select * from users where id = $1", uid)
         if not user:
             raise HTTPException(status_code=401, detail="User not found")
         out = serialize(user)
-        out.pop("password_hash", None)
+        out.pop("passwordHash", None)
         return out
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")

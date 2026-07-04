@@ -2,7 +2,9 @@ import os
 import pytest
 import requests
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL") or "https://8d626961-5fb0-4ff9-bfac-7fe303cdef56.preview.emergentagent.com"
+BASE_URL = (os.environ.get("TEST_BASE_URL")
+            or os.environ.get("REACT_APP_BACKEND_URL")
+            or "http://localhost:8000")
 BASE_URL = BASE_URL.rstrip("/")
 
 ADMIN = ("admin@govcon.io", "Admin#2026")
@@ -16,6 +18,12 @@ def _login(email, password):
     r = s.post(f"{BASE_URL}/api/auth/login", json={"email": email, "password": password}, timeout=30)
     assert r.status_code == 200, f"Login failed for {email}: {r.status_code} {r.text}"
     me = r.json()
+    # Auth cookies are flagged Secure (correct for browsers, incl. localhost),
+    # but python-requests won't send Secure cookies over plain http — so tests
+    # authenticate via the Bearer header the API also accepts.
+    token = s.cookies.get("access_token")
+    if token:
+        s.headers["Authorization"] = f"Bearer {token}"
     return s, me
 
 
@@ -43,8 +51,7 @@ def viewer_session():
 def org_id(admin_session):
     _, me = admin_session
     orgs = me.get("organizations", [])
-    assert orgs, "Admin has no organizations"
-    # Find Orbital Defense Systems
+    assert orgs, "Admin has no organizations (is SEED_DEMO=1 set?)"
     for o in orgs:
         if "Orbital" in o["name"]:
             return o["id"]
