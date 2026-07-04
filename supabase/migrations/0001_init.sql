@@ -1,4 +1,4 @@
--- CaptureOS / GovCon Command Center — initial PostgreSQL schema
+-- CaptureAgent — initial PostgreSQL schema
 -- Target: Supabase (PostgreSQL 15+), also works on any vanilla PostgreSQL 13+.
 --
 -- Apply with:  python backend/apply_migrations.py   (uses DATABASE_URL)

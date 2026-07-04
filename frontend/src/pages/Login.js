@@ -71,10 +71,6 @@ export default function Login() {
           {loading ? <Spinner /> : "Sign in"}
         </button>
       </form>
-      <div className="mt-5 rounded-lg border border-line bg-white/5 p-3 text-xs text-faint">
-        <div className="label-mono mb-1">Demo access</div>
-        admin@govcon.io · Admin#2026 &nbsp;|&nbsp; editor@govcon.io / viewer@govcon.io · Editor#2026
-      </div>
     </AuthLayout>
   );
 }

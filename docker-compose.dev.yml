@@ -6,7 +6,7 @@
 #
 # Backend:  http://localhost:8000   Frontend:  http://localhost:3000
 # Configure backend/.env first (see backend/.env.example).
-name: captureos
+name: captureagent
 
 services:
   backend:
