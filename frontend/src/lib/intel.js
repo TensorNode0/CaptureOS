@@ -118,7 +118,7 @@ export function exportHTML(report) {
     return `<tr class="${cls}"><td>${i + 1}</td>${tds}</tr>`;
   }).join("");
   const html = `<!doctype html><html><head><meta charset="utf-8">
-<title>GovCon Intelligence Report — ${report?.reportDate || ""}</title>
+<title>CaptureAgent Intelligence Report — ${report?.reportDate || ""}</title>
 <style>
 :root{--bg:#0a0e1a;--card:#1a2035;--line:#1e293b;--txt:#f1f5f9;--dim:#94a3b8;--cyan:#06b6d4}
 body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans-serif;margin:0;padding:24px}
@@ -135,7 +135,7 @@ td{padding:8px 10px;border-top:1px solid var(--line);vertical-align:top;max-widt
 a{color:var(--cyan)}tr.u7 td:first-child{border-left:3px solid #ef4444}
 tr.u30 td:first-child{border-left:3px solid #f59e0b}tr.u30p td:first-child{border-left:3px solid #10b981}
 </style></head><body>
-<h1>GovCon Opportunity Intelligence Report</h1>
+<h1>CaptureAgent Opportunity Intelligence Report</h1>
 <div class="sub">${report?.reportDate || ""} · ${report?.fiscalYear || ""} · ${opps.length} opportunities · UNCLASSIFIED // FOUO</div>
 <div class="kpis">
   <div class="kpi"><span>Total</span><b>${opps.length}</b></div>

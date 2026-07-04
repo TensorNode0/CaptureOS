@@ -1,11 +1,13 @@
-"""GovCon Command Center — Backend API tests"""
+"""CaptureOS — Backend API tests (run against a local stack; see qa/)."""
 import os
 import time
 import uuid
 import requests
 import pytest
 
-BASE_URL = (os.environ.get("REACT_APP_BACKEND_URL") or "https://8d626961-5fb0-4ff9-bfac-7fe303cdef56.preview.emergentagent.com").rstrip("/")
+BASE_URL = (os.environ.get("TEST_BASE_URL")
+            or os.environ.get("REACT_APP_BACKEND_URL")
+            or "http://localhost:8000").rstrip("/")
 
 
 # ---------------- Health ----------------
@@ -144,21 +146,20 @@ class TestOpportunities:
         g3 = s.get(f"{BASE_URL}/api/orgs/{org_id}/opportunities/{opp_id}", timeout=15)
         assert g3.status_code == 404
 
-    def test_verify_refresh_mock(self, editor_session, org_id):
+    def test_verify_requires_api_key(self, editor_session, org_id):
+        """Verify & Refresh is LIVE — without an Anthropic key it must 400
+        with a helpful message (never a 500)."""
         s, _ = editor_session
         r = s.post(f"{BASE_URL}/api/orgs/{org_id}/opportunities/verify", timeout=30)
-        assert r.status_code == 200
-        body = r.json()
-        assert body["mock"] is True
-        assert "summary" in body and "verified" in body
+        assert r.status_code == 400, r.text
+        assert "Anthropic" in r.json().get("detail", "")
 
-    def test_pull_sam_grants_mock(self, editor_session, org_id):
+    def test_pull_requires_api_key(self, editor_session, org_id):
+        """SAM/Grants pull is LIVE — without a SAM key it must 400."""
         s, _ = editor_session
         r = s.post(f"{BASE_URL}/api/orgs/{org_id}/opportunities/pull", timeout=30)
-        assert r.status_code == 200
-        body = r.json()
-        assert body["mock"] is True
-        assert "added" in body and "updated" in body
+        assert r.status_code == 400, r.text
+        assert "SAM" in r.json().get("detail", "")
 
 
 # ---------------- RBAC ----------------

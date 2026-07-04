@@ -1,5 +1,7 @@
+import re
+import uuid as uuidlib
 from datetime import datetime, timezone
-from bson import ObjectId
+from decimal import Decimal
 
 
 def now_utc():
@@ -16,39 +18,39 @@ def iso(dt):
     return dt.isoformat()
 
 
-def serialize(doc):
-    """Recursively convert a MongoDB document into a JSON-safe dict.
-    _id -> id (str), ObjectId -> str, datetime -> iso string."""
-    if doc is None:
+_SNAKE_RE = re.compile(r"_([a-z0-9])")
+
+
+def to_camel(s: str) -> str:
+    return _SNAKE_RE.sub(lambda m: m.group(1).upper(), s)
+
+
+def serialize(value):
+    """Convert a DB row (dict) into the JSON shape the frontend expects:
+    snake_case column names -> camelCase keys, UUID -> str, datetime -> ISO,
+    Decimal -> float. Values inside JSONB payloads are stored camelCase
+    already and pass through untouched (their keys contain no underscores)."""
+    if value is None:
         return None
-    if isinstance(doc, list):
-        return [serialize(d) for d in doc]
-    if not isinstance(doc, dict):
-        if isinstance(doc, ObjectId):
-            return str(doc)
-        if isinstance(doc, datetime):
-            return iso(doc)
-        return doc
-    out = {}
-    for k, v in doc.items():
-        if k == "_id":
-            out["id"] = str(v)
-        elif isinstance(v, ObjectId):
-            out[k] = str(v)
-        elif isinstance(v, datetime):
-            out[k] = iso(v)
-        elif isinstance(v, dict):
-            out[k] = serialize(v)
-        elif isinstance(v, list):
-            out[k] = [serialize(i) for i in v]
-        else:
-            out[k] = v
-    return out
+    if isinstance(value, list):
+        return [serialize(v) for v in value]
+    if isinstance(value, dict):
+        return {to_camel(k): serialize(v) for k, v in value.items()}
+    if isinstance(value, uuidlib.UUID):
+        return str(value)
+    if isinstance(value, datetime):
+        return iso(value)
+    if isinstance(value, Decimal):
+        f = float(value)
+        return int(f) if f.is_integer() else f
+    return value
 
 
-def oid(value):
-    """Safely build an ObjectId; raise 404-friendly error upstream if invalid."""
+def as_uuid(value):
+    """Parse a UUID string; returns uuid.UUID or None if invalid."""
+    if isinstance(value, uuidlib.UUID):
+        return value
     try:
-        return ObjectId(value)
-    except Exception:
+        return uuidlib.UUID(str(value))
+    except (ValueError, AttributeError, TypeError):
         return None

@@ -5,11 +5,12 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from database import ensure_indexes
+import database
+from apply_migrations import apply_migrations
 from seed import seed
-from routers import auth, orgs, opportunities, intel
+from routers import auth, orgs, opportunities, intel, capabilities, proposals
 
-app = FastAPI(title="GovCon Command Center API")
+app = FastAPI(title="CaptureAgent API")
 
 frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 app.add_middleware(
@@ -24,14 +25,24 @@ app.include_router(auth.router)
 app.include_router(orgs.router)
 app.include_router(opportunities.router)
 app.include_router(intel.router)
+app.include_router(capabilities.router)
+app.include_router(proposals.router)
 
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "service": "govcon-command-center"}
+    return {"status": "ok", "service": "captureagent"}
 
 
 @app.on_event("startup")
 async def startup():
-    await ensure_indexes()
+    pool = await database.init_pool()
+    if os.environ.get("AUTO_MIGRATE", "1") == "1":
+        async with pool.acquire() as conn:
+            await apply_migrations(conn)
     await seed()
+
+
+@app.on_event("shutdown")
+async def shutdown():
+    await database.close_pool()

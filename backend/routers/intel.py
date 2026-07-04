@@ -2,14 +2,14 @@
 import asyncio
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from bson import ObjectId
 
-from database import db
-from utils import now_utc, serialize, oid, iso
+import database as db
+from utils import now_utc, serialize, as_uuid, iso
 from rbac import require_role
-from domain import (write_audit, decrypt_secret, default_fit, default_compliance,
+from domain import (write_audit, default_fit, default_compliance,
                     default_budget, default_criteria)
 import intel
+import org_keys
 
 router = APIRouter(prefix="/api/orgs", tags=["intelligence"])
 
@@ -18,80 +18,80 @@ class ScanIn(BaseModel):
     tier: str = "standard"
 
 
-async def _build_ctx(org_oid):
-    org = await db.organizations.find_one({"_id": org_oid}) or {}
-    prof = await db.orgProfile.find_one({"organizationId": org_oid}) or {}
+async def _build_ctx(org_id):
+    org = await db.fetchrow("select * from organizations where id = $1", org_id) or {}
+    prof = await db.fetchrow("select * from org_profiles where organization_id = $1",
+                             org_id) or {}
     return {
         "orgName": org.get("name", ""),
-        "naics": org.get("naics", []),
-        "keywords": org.get("keywords", []),
+        "naics": org.get("naics") or [],
+        "keywords": org.get("keywords") or [],
         "capabilities": prof.get("capabilities", ""),
-        "pastPerformance": prof.get("pastPerformance", ""),
-        "techFocus": prof.get("techFocus", []),
+        "pastPerformance": prof.get("past_performance", ""),
+        "techFocus": prof.get("tech_focus") or [],
         "differentiators": prof.get("differentiators", ""),
         "commercialization": prof.get("commercialization", ""),
         "clearances": prof.get("clearances", ""),
-        "cmmcLevel": prof.get("cmmcLevel", ""),
-        "isSmall": prof.get("isSmall", True),
-        "certs": prof.get("certs", {}),
+        "cmmcLevel": prof.get("cmmc_level", ""),
+        "isSmall": prof.get("is_small", True),
+        "certs": prof.get("certs") or {},
     }
 
 
-async def _execute_scan(job_id, org_oid, api_key, ctx, tier, user):
-    await db.intelJobs.update_one({"_id": job_id},
-                                  {"$set": {"status": "running"}})
+async def _execute_scan(job_id, org_id, api_key, ctx, tier, user):
+    await db.execute("update intel_jobs set status = 'running' where id = $1", job_id)
     try:
         report = await intel.run_scan(api_key, ctx, tier)
-        rdoc = {
-            "organizationId": org_oid,
-            "createdBy": ObjectId(user["id"]),
-            "createdAt": now_utc(),
-            "tier": tier,
-            "model": report.get("_model", ""),
-            "usage": report.get("_usage", {}),
-            "report": report,
-        }
-        res = await db.intelReports.insert_one(rdoc)
+        rep = await db.fetchrow(
+            """insert into intel_reports
+                   (organization_id, created_by, tier, model, usage, report)
+               values ($1, $2, $3, $4, $5, $6) returning id""",
+            org_id, as_uuid(user["id"]), tier, report.get("_model", ""),
+            report.get("_usage", {}) or {}, report)
         total = len((report.get("opportunities") or []))
-        await db.intelJobs.update_one(
-            {"_id": job_id},
-            {"$set": {"status": "done", "finishedAt": now_utc(),
-                      "reportId": res.inserted_id,
-                      "summary": f"{total} opportunities found",
-                      "model": report.get("_model", "")}})
-        await write_audit(org_oid, user, "intel.scan", "weekly report",
+        await db.execute(
+            """update intel_jobs
+               set status = 'done', finished_at = $2, report_id = $3,
+                   summary = $4, model = $5
+               where id = $1""",
+            job_id, now_utc(), rep["id"], f"{total} opportunities found",
+            report.get("_model", ""))
+        await write_audit(org_id, user, "intel.scan", "weekly report",
                           {"total": total, "model": report.get("_model", ""),
                            "usage": report.get("_usage", {})})
     except Exception as e:  # noqa: BLE001
         msg = str(e)
         if "authentication" in msg.lower() or "401" in msg or "invalid x-api-key" in msg.lower():
             msg = "Anthropic rejected the API key. Update it in Settings → API Keys."
-        await db.intelJobs.update_one(
-            {"_id": job_id},
-            {"$set": {"status": "error", "finishedAt": now_utc(), "error": msg}})
+        await db.execute(
+            "update intel_jobs set status = 'error', finished_at = $2, error = $3 where id = $1",
+            job_id, now_utc(), msg)
 
 
 @router.post("/{orgId}/intel/scan")
 async def start_scan(body: ScanIn, ctx: dict = Depends(require_role("editor"))):
-    rec = await db.secrets.find_one({"organizationId": ctx["org_oid"]}) or {}
-    api_key = decrypt_secret(rec.get("anthropicKey", ""))
+    keys = await org_keys.get_keys(ctx["org_id"], ctx["user"], purpose="intel.scan")
+    api_key = keys["anthropic"]
     if not api_key:
         raise HTTPException(status_code=400,
             detail="No Anthropic API key set. Add it in Settings → API Keys.")
     tier = body.tier if body.tier in intel.TIERS else "standard"
-    scan_ctx = await _build_ctx(ctx["org_oid"])
-    job = await db.intelJobs.insert_one({
-        "organizationId": ctx["org_oid"], "status": "queued", "tier": tier,
-        "startedBy": ObjectId(ctx["user"]["id"]), "startedAt": now_utc(),
-    })
+    scan_ctx = await _build_ctx(ctx["org_id"])
+    job = await db.fetchrow(
+        """insert into intel_jobs (organization_id, status, tier, started_by)
+           values ($1, 'queued', $2, $3) returning id""",
+        ctx["org_id"], tier, as_uuid(ctx["user"]["id"]))
     asyncio.create_task(
-        _execute_scan(job.inserted_id, ctx["org_oid"], api_key, scan_ctx, tier, ctx["user"]))
-    return {"ok": True, "jobId": str(job.inserted_id), "status": "queued", "tier": tier}
+        _execute_scan(job["id"], ctx["org_id"], api_key, scan_ctx, tier, ctx["user"]))
+    return {"ok": True, "jobId": str(job["id"]), "status": "queued", "tier": tier}
 
 
 @router.get("/{orgId}/intel/jobs/{jobId}")
 async def job_status(jobId: str, ctx: dict = Depends(require_role("viewer"))):
-    j = await db.intelJobs.find_one({"_id": oid(jobId), "organizationId": ctx["org_oid"]})
+    jid = as_uuid(jobId)
+    j = await db.fetchrow(
+        "select * from intel_jobs where id = $1 and organization_id = $2",
+        jid, ctx["org_id"]) if jid else None
     if not j:
         raise HTTPException(status_code=404, detail="Job not found")
     return serialize(j)
@@ -99,14 +99,16 @@ async def job_status(jobId: str, ctx: dict = Depends(require_role("viewer"))):
 
 @router.get("/{orgId}/intel/reports")
 async def list_reports(ctx: dict = Depends(require_role("viewer"))):
-    reports = await db.intelReports.find({"organizationId": ctx["org_oid"]}) \
-        .sort("createdAt", -1).limit(50).to_list(50)
+    reports = await db.fetch(
+        """select * from intel_reports where organization_id = $1
+           order by created_at desc limit 50""",
+        ctx["org_id"])
     out = []
     for r in reports:
-        rep = r.get("report", {})
+        rep = r.get("report") or {}
         out.append({
-            "id": str(r["_id"]),
-            "createdAt": iso(r.get("createdAt")),
+            "id": str(r["id"]),
+            "createdAt": iso(r.get("created_at")),
             "tier": r.get("tier"),
             "model": r.get("model"),
             "total": len(rep.get("opportunities") or []),
@@ -117,7 +119,10 @@ async def list_reports(ctx: dict = Depends(require_role("viewer"))):
 
 @router.get("/{orgId}/intel/reports/{reportId}")
 async def get_report(reportId: str, ctx: dict = Depends(require_role("viewer"))):
-    r = await db.intelReports.find_one({"_id": oid(reportId), "organizationId": ctx["org_oid"]})
+    rid = as_uuid(reportId)
+    r = await db.fetchrow(
+        "select * from intel_reports where id = $1 and organization_id = $2",
+        rid, ctx["org_id"]) if rid else None
     if not r:
         raise HTTPException(status_code=404, detail="Report not found")
     return serialize(r)
@@ -125,26 +130,33 @@ async def get_report(reportId: str, ctx: dict = Depends(require_role("viewer")))
 
 @router.delete("/{orgId}/intel/reports/{reportId}")
 async def delete_report(reportId: str, ctx: dict = Depends(require_role("editor"))):
-    r = await db.intelReports.find_one({"_id": oid(reportId), "organizationId": ctx["org_oid"]})
+    rid = as_uuid(reportId)
+    r = await db.fetchrow(
+        "select id from intel_reports where id = $1 and organization_id = $2",
+        rid, ctx["org_id"]) if rid else None
     if not r:
         raise HTTPException(status_code=404, detail="Report not found")
-    await db.intelReports.delete_one({"_id": r["_id"]})
+    await db.execute("delete from intel_reports where id = $1", r["id"])
     return {"ok": True}
 
 
 @router.post("/{orgId}/intel/reports/{reportId}/add/{idx}")
 async def add_to_pipeline(reportId: str, idx: int, ctx: dict = Depends(require_role("editor"))):
-    r = await db.intelReports.find_one({"_id": oid(reportId), "organizationId": ctx["org_oid"]})
+    rid = as_uuid(reportId)
+    r = await db.fetchrow(
+        "select * from intel_reports where id = $1 and organization_id = $2",
+        rid, ctx["org_id"]) if rid else None
     if not r:
         raise HTTPException(status_code=404, detail="Report not found")
-    opps = (r.get("report", {}).get("opportunities") or [])
+    opps = ((r.get("report") or {}).get("opportunities") or [])
     if idx < 0 or idx >= len(opps):
         raise HTTPException(status_code=404, detail="Opportunity not found in report")
     o = opps[idx]
     sol = (o.get("solNumber") or "").strip()
     if sol and sol != "TBD":
-        dup = await db.opportunities.find_one(
-            {"organizationId": ctx["org_oid"], "solNumber": sol})
+        dup = await db.fetchrow(
+            "select id from opportunities where organization_id = $1 and sol_number = $2",
+            ctx["org_id"], sol)
         if dup:
             raise HTTPException(status_code=400, detail="Already in your pipeline")
     ceiling = o.get("awardAmount")
@@ -155,23 +167,20 @@ async def add_to_pipeline(reportId: str, idx: int, ctx: dict = Depends(require_r
     url = o.get("solUrl") or o.get("topicUrl") or ""
     due = o.get("dueDate")
     due = due if (due and due != "TBD") else None
-    doc = {
-        "organizationId": ctx["org_oid"],
-        "title": o.get("title", ""), "solNumber": sol if sol != "TBD" else "",
-        "agency": o.get("agency", ""), "office": o.get("office", ""),
-        "vehicle": o.get("vehicle", "RFP") or "RFP",
-        "setAside": o.get("setAside") or "None", "naics": "",
-        "ceiling": ceiling, "pop": "", "dueDate": due, "stage": "Identified",
-        "url": url, "winThemes": "", "source": "intel",
-        "lastVerified": now_utc(), "verifyReport": None,
-        "links": [{"label": "Solicitation", "url": url, "status": "live",
-                   "checkedAt": iso(now_utc())}],
-        "fit": default_fit(), "pwin": 0, "proposalStrength": 0,
-        "compliance": default_compliance(), "budget": default_budget(ceiling),
-        "criteria": default_criteria(), "decision": {"call": "TBD", "rationale": ""},
-        "createdBy": ObjectId(ctx["user"]["id"]),
-        "createdAt": now_utc(), "updatedAt": now_utc(),
-    }
-    res = await db.opportunities.insert_one(doc)
-    await write_audit(ctx["org_oid"], ctx["user"], "intel.add_to_pipeline", o.get("title"))
-    return {"ok": True, "id": str(res.inserted_id)}
+    links = [{"label": "Solicitation", "url": url, "status": "live",
+              "checkedAt": iso(now_utc())}]
+    opp = await db.fetchrow(
+        """insert into opportunities
+               (organization_id, title, sol_number, agency, office, vehicle, set_aside,
+                naics, ceiling, pop, due_date, stage, url, win_themes, source,
+                last_verified, links, fit, compliance, budget, criteria, created_by)
+           values ($1, $2, $3, $4, $5, $6, $7, '', $8, '', $9, 'Identified', $10, '',
+                   'intel', $11, $12, $13, $14, $15, $16, $17)
+           returning id""",
+        ctx["org_id"], o.get("title", ""), sol if sol != "TBD" else "",
+        o.get("agency", ""), o.get("office", ""), o.get("vehicle", "RFP") or "RFP",
+        o.get("setAside") or "None", ceiling, due, url, now_utc(), links,
+        default_fit(), default_compliance(), default_budget(ceiling),
+        default_criteria(), as_uuid(ctx["user"]["id"]))
+    await write_audit(ctx["org_id"], ctx["user"], "intel.add_to_pipeline", o.get("title"))
+    return {"ok": True, "id": str(opp["id"])}

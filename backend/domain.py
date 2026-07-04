@@ -1,47 +1,14 @@
-import os
-from cryptography.fernet import Fernet
-from bson import ObjectId
-
-from database import db
-from utils import now_utc
-
-_fernet = Fernet(os.environ["SECRETS_ENC_KEY"].encode())
+import database as db
+from utils import as_uuid
 
 
-def encrypt_secret(value: str) -> str:
-    if not value:
-        return ""
-    return _fernet.encrypt(value.encode()).decode()
-
-
-def decrypt_secret(token: str) -> str:
-    if not token:
-        return ""
-    try:
-        return _fernet.decrypt(token.encode()).decode()
-    except Exception:
-        return ""
-
-
-def mask_secret(value: str) -> str:
-    if not value:
-        return ""
-    if len(value) <= 6:
-        return "•" * len(value)
-    return value[:3] + "…" + value[-4:]
-
-
-async def write_audit(org_oid, user, action, target=None, meta=None):
-    await db.auditLog.insert_one({
-        "organizationId": org_oid,
-        "userId": ObjectId(user["id"]),
-        "userEmail": user.get("email"),
-        "userName": user.get("name"),
-        "action": action,
-        "target": target,
-        "meta": meta or {},
-        "at": now_utc(),
-    })
+async def write_audit(org_id, user, action, target=None, meta=None):
+    await db.execute(
+        """insert into audit_log
+               (organization_id, user_id, user_email, user_name, action, target, meta)
+           values ($1, $2, $3, $4, $5, $6, $7)""",
+        as_uuid(org_id), as_uuid(user["id"]), user.get("email"), user.get("name"),
+        action, target, meta or {})
 
 
 # ---- Set-aside eligibility logic (org profile drives eligibility) ----
@@ -62,7 +29,8 @@ SETASIDE_CERT_MAP = {
 
 
 def compute_eligibility(set_aside: str, profile: dict):
-    """Returns (verdict, reason). verdict in eligible|not_certified|verify|open."""
+    """Returns (verdict, reason). verdict in eligible|not_certified|verify|open.
+    `profile` is a serialized (camelCase) org profile dict, or None."""
     if not set_aside or set_aside.lower() in ("none", "full and open", "full & open", "n/a"):
         return ("open", "Full & open — no set-aside restriction")
     if not profile:

@@ -156,8 +156,8 @@ function Brand() {
         <Shield size={18} className="text-cyan" />
       </div>
       <div className="leading-tight">
-        <div className="text-sm font-semibold text-ink">GovCon</div>
-        <div className="label-mono">Command Center</div>
+        <div className="text-sm font-semibold text-ink">CaptureAgent</div>
+        <div className="label-mono">captureagent.us</div>
       </div>
     </div>
   );

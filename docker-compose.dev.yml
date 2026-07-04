@@ -1,0 +1,55 @@
+# One-command dev stack — no local Python/Node needed:
+#
+#   docker compose -f docker-compose.dev.yml up          # app only (Supabase DB)
+#   docker compose -f docker-compose.dev.yml --profile localdb up
+#                                                        # app + local Postgres
+#
+# Backend:  http://localhost:8000   Frontend:  http://localhost:3000
+# Configure backend/.env first (see backend/.env.example).
+name: captureagent
+
+services:
+  backend:
+    image: python:3.12-slim
+    working_dir: /app/backend
+    volumes:
+      - .:/app
+      - pipcache:/root/.cache/pip
+    env_file: backend/.env
+    environment:
+      PYTHONUNBUFFERED: "1"   # show [migrate]/[seed] lines live in the console
+    command: bash -c "pip install -q -r requirements.txt && uvicorn server:app --host 0.0.0.0 --port 8000"
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  frontend:
+    image: node:20-alpine
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+    environment:
+      REACT_APP_BACKEND_URL: http://localhost:8000
+      BROWSER: none
+      CHOKIDAR_USEPOLLING: "true"
+      WATCHPACK_POLLING: "true"
+    command: sh -c "npm install --no-audit --no-fund --loglevel=error && npm start"
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+
+  # Optional local database (instead of Supabase) — start with --profile localdb
+  # and set DATABASE_URL=postgresql://postgres:postgres@db:5432/postgres
+  db:
+    image: postgres:16-alpine
+    profiles: ["localdb"]
+    environment:
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pipcache:
+  pgdata:

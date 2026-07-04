@@ -16,7 +16,7 @@ export default function AuthLayout({ title, subtitle, children, footer }) {
             <Shield size={22} className="text-cyan" />
           </div>
           <div>
-            <div className="text-base font-semibold text-ink">GovCon Command Center</div>
+            <div className="text-base font-semibold text-ink">CaptureAgent</div>
             <div className="label-mono">Federal Capture Console</div>
           </div>
         </div>

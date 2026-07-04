@@ -1,20 +1,25 @@
-from fastapi import APIRouter, Depends, HTTPException, Path
+import os
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr, Field
 from typing import Optional, List
-from bson import ObjectId
 from secrets import token_hex
 
-from database import db
-from utils import now_utc, serialize, oid
+import database as db
+from utils import now_utc, serialize, as_uuid
 from auth_utils import get_current_user
-from rbac import require_role, get_membership, ROLE_RANK
-from domain import (write_audit, encrypt_secret, decrypt_secret, mask_secret)
+from rbac import require_role
+from domain import write_audit
+import org_keys
 
 router = APIRouter(prefix="/api/orgs", tags=["orgs"])
 
 
 def _gen_join_code():
     return token_hex(4).upper()  # 8-char shareable code
+
+
+DEFAULT_CERTS = {"sba": False, "eightA": False, "hubzone": False,
+                 "sdvosb": False, "wosb": False, "edwosb": False, "vosb": False}
 
 
 # ---------------- Organizations ----------------
@@ -26,35 +31,21 @@ class OrgIn(BaseModel):
 
 @router.post("")
 async def create_org(body: OrgIn, user: dict = Depends(get_current_user)):
-    org = {
-        "name": body.name.strip(),
-        "naics": body.naics,
-        "keywords": body.keywords,
-        "ownerId": ObjectId(user["id"]),
-        "joinCode": _gen_join_code(),
-        "createdAt": now_utc(),
-    }
-    res = await db.organizations.insert_one(org)
-    await db.memberships.insert_one({
-        "userId": ObjectId(user["id"]),
-        "organizationId": res.inserted_id,
-        "role": "owner",
-        "invitedBy": None,
-        "invitedEmail": user["email"],
-        "status": "active",
-        "createdAt": now_utc(),
-    })
-    await db.orgProfile.insert_one({
-        "organizationId": res.inserted_id,
-        "uei": "", "cage": "", "samActive": False, "isSmall": True,
-        "certs": {"sba": False, "eightA": False, "hubzone": False,
-                  "sdvosb": False, "wosb": False, "edwosb": False, "vosb": False},
-        "cmmcLevel": "Level 1", "sprsScore": None, "sizeNote": "", "notes": "",
-        "capabilities": "", "pastPerformance": "", "techFocus": [],
-        "differentiators": "", "commercialization": "", "clearances": "",
-    })
-    await write_audit(res.inserted_id, user, "org.create", body.name)
-    org["_id"] = res.inserted_id
+    uid = as_uuid(user["id"])
+    org = await db.fetchrow(
+        """insert into organizations (name, naics, keywords, owner_id, join_code)
+           values ($1, $2, $3, $4, $5) returning *""",
+        body.name.strip(), body.naics, body.keywords, uid, _gen_join_code())
+    await db.execute(
+        """insert into memberships (user_id, invited_email, organization_id, role,
+                                    invited_by, status)
+           values ($1, $2, $3, 'owner', null, 'active')""",
+        uid, user["email"], org["id"])
+    await db.execute(
+        """insert into org_profiles (organization_id, certs)
+           values ($1, $2)""",
+        org["id"], DEFAULT_CERTS)
+    await write_audit(org["id"], user, "org.create", body.name)
     out = serialize(org)
     out["role"] = "owner"
     return out
@@ -62,15 +53,18 @@ async def create_org(body: OrgIn, user: dict = Depends(get_current_user)):
 
 @router.get("")
 async def list_orgs(user: dict = Depends(get_current_user)):
-    memberships = await db.memberships.find(
-        {"userId": ObjectId(user["id"]), "status": "active"}).to_list(100)
+    rows = await db.fetch(
+        """select o.*, m.role as member_role
+           from memberships m join organizations o on o.id = m.organization_id
+           where m.user_id = $1 and m.status = 'active'
+           order by o.created_at""",
+        as_uuid(user["id"]))
     result = []
-    for m in memberships:
-        org = await db.organizations.find_one({"_id": m["organizationId"]})
-        if org:
-            o = serialize(org)
-            o["role"] = m["role"]
-            result.append(o)
+    for r in rows:
+        role = r.pop("member_role")
+        o = serialize(r)
+        o["role"] = role
+        result.append(o)
     return result
 
 
@@ -81,29 +75,26 @@ class JoinIn(BaseModel):
 @router.post("/join")
 async def join_org(body: JoinIn, user: dict = Depends(get_current_user)):
     code = body.code.strip().upper()
-    org = await db.organizations.find_one({"joinCode": code})
+    org = await db.fetchrow("select * from organizations where join_code = $1", code)
     if not org:
         raise HTTPException(status_code=404, detail="Invalid join code")
-    existing = await db.memberships.find_one({
-        "organizationId": org["_id"], "userId": ObjectId(user["id"])})
+    uid = as_uuid(user["id"])
+    existing = await db.fetchrow(
+        "select * from memberships where organization_id = $1 and user_id = $2",
+        org["id"], uid)
     if existing:
         if existing.get("status") != "active":
-            await db.memberships.update_one({"_id": existing["_id"]},
-                                            {"$set": {"status": "active"}})
+            await db.execute("update memberships set status = 'active' where id = $1",
+                             existing["id"])
         else:
             raise HTTPException(status_code=400, detail="You are already a member")
     else:
-        await db.memberships.insert_one({
-            "userId": ObjectId(user["id"]),
-            "invitedEmail": user["email"],
-            "organizationId": org["_id"],
-            "role": "viewer",
-            "invitedBy": None,
-            "status": "active",
-            "joinedViaCode": True,
-            "createdAt": now_utc(),
-        })
-    await write_audit(org["_id"], user, "member.join_code", user["email"])
+        await db.execute(
+            """insert into memberships (user_id, invited_email, organization_id, role,
+                                        invited_by, status, joined_via_code)
+               values ($1, $2, $3, 'viewer', null, 'active', true)""",
+            uid, user["email"], org["id"])
+    await write_audit(org["id"], user, "member.join_code", user["email"])
     out = serialize(org)
     out["role"] = "viewer" if not (existing and existing.get("role")) else existing["role"]
     return out
@@ -118,32 +109,30 @@ async def get_org(ctx: dict = Depends(require_role("viewer"))):
 
 @router.put("/{orgId}")
 async def update_org(body: OrgIn, ctx: dict = Depends(require_role("admin"))):
-    await db.organizations.update_one(
-        {"_id": ctx["org_oid"]},
-        {"$set": {"name": body.name.strip(), "naics": body.naics,
-                  "keywords": body.keywords}})
-    await write_audit(ctx["org_oid"], ctx["user"], "org.update", body.name)
-    org = await db.organizations.find_one({"_id": ctx["org_oid"]})
+    org = await db.fetchrow(
+        """update organizations set name = $2, naics = $3, keywords = $4
+           where id = $1 returning *""",
+        ctx["org_id"], body.name.strip(), body.naics, body.keywords)
+    await write_audit(ctx["org_id"], ctx["user"], "org.update", body.name)
     return serialize(org)
 
 
 @router.get("/{orgId}/join-code")
 async def get_join_code(ctx: dict = Depends(require_role("admin"))):
-    org = ctx["org"]
-    code = org.get("joinCode")
+    code = ctx["org"].get("join_code")
     if not code:
         code = _gen_join_code()
-        await db.organizations.update_one({"_id": ctx["org_oid"]},
-                                          {"$set": {"joinCode": code}})
+        await db.execute("update organizations set join_code = $2 where id = $1",
+                         ctx["org_id"], code)
     return {"joinCode": code}
 
 
 @router.post("/{orgId}/join-code/rotate")
 async def rotate_join_code(ctx: dict = Depends(require_role("admin"))):
     code = _gen_join_code()
-    await db.organizations.update_one({"_id": ctx["org_oid"]},
-                                      {"$set": {"joinCode": code}})
-    await write_audit(ctx["org_oid"], ctx["user"], "org.rotate_join_code", ctx["org"]["name"])
+    await db.execute("update organizations set join_code = $2 where id = $1",
+                     ctx["org_id"], code)
+    await write_audit(ctx["org_id"], ctx["user"], "org.rotate_join_code", ctx["org"]["name"])
     return {"joinCode": code}
 
 
@@ -178,19 +167,35 @@ class ProfileIn(BaseModel):
 
 @router.get("/{orgId}/profile")
 async def get_profile(ctx: dict = Depends(require_role("viewer"))):
-    prof = await db.orgProfile.find_one({"organizationId": ctx["org_oid"]})
+    prof = await db.fetchrow("select * from org_profiles where organization_id = $1",
+                             ctx["org_id"])
     return serialize(prof) if prof else None
 
 
 @router.put("/{orgId}/profile")
 async def update_profile(body: ProfileIn, ctx: dict = Depends(require_role("admin"))):
-    data = body.model_dump()
-    data["certs"] = body.certs.model_dump()
-    await db.orgProfile.update_one(
-        {"organizationId": ctx["org_oid"]},
-        {"$set": {**data, "organizationId": ctx["org_oid"]}}, upsert=True)
-    await write_audit(ctx["org_oid"], ctx["user"], "profile.update", ctx["org"]["name"])
-    prof = await db.orgProfile.find_one({"organizationId": ctx["org_oid"]})
+    prof = await db.fetchrow(
+        """insert into org_profiles (organization_id, uei, cage, sam_active, is_small,
+               certs, cmmc_level, sprs_score, size_note, notes, capabilities,
+               past_performance, tech_focus, differentiators, commercialization, clearances)
+           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+           on conflict (organization_id) do update set
+               uei = excluded.uei, cage = excluded.cage, sam_active = excluded.sam_active,
+               is_small = excluded.is_small, certs = excluded.certs,
+               cmmc_level = excluded.cmmc_level, sprs_score = excluded.sprs_score,
+               size_note = excluded.size_note, notes = excluded.notes,
+               capabilities = excluded.capabilities,
+               past_performance = excluded.past_performance,
+               tech_focus = excluded.tech_focus,
+               differentiators = excluded.differentiators,
+               commercialization = excluded.commercialization,
+               clearances = excluded.clearances
+           returning *""",
+        ctx["org_id"], body.uei, body.cage, body.samActive, body.isSmall,
+        body.certs.model_dump(), body.cmmcLevel, body.sprsScore, body.sizeNote,
+        body.notes, body.capabilities, body.pastPerformance, body.techFocus,
+        body.differentiators, body.commercialization, body.clearances)
+    await write_audit(ctx["org_id"], ctx["user"], "profile.update", ctx["org"]["name"])
     return serialize(prof)
 
 
@@ -213,18 +218,26 @@ VALID_ROLES = {"viewer", "editor", "admin"}
 
 @router.get("/{orgId}/members")
 async def list_members(ctx: dict = Depends(require_role("admin"))):
-    members = await db.memberships.find({"organizationId": ctx["org_oid"]}).to_list(500)
+    members = await db.fetch(
+        """select m.*, u.name as user_name, u.email as user_email,
+                  u.email_verified as user_email_verified
+           from memberships m left join users u on u.id = m.user_id
+           where m.organization_id = $1
+           order by m.created_at""",
+        ctx["org_id"])
     out = []
     for m in members:
+        name = m.pop("user_name", None)
+        email = m.pop("user_email", None)
+        verified = m.pop("user_email_verified", None)
         entry = serialize(m)
-        if m.get("userId"):
-            u = await db.users.find_one({"_id": m["userId"]})
-            if u:
-                entry["name"] = u.get("name")
-                entry["email"] = u.get("email")
-                entry["emailVerified"] = u.get("emailVerified", False)
+        if name is not None:
+            entry["name"] = name
+        if email:
+            entry["email"] = email
+            entry["emailVerified"] = bool(verified)
         if not entry.get("email"):
-            entry["email"] = m.get("invitedEmail")
+            entry["email"] = m.get("invited_email")
         out.append(entry)
     return out
 
@@ -235,29 +248,25 @@ async def invite_member(body: InviteIn, ctx: dict = Depends(require_role("admin"
     if role not in VALID_ROLES:
         raise HTTPException(status_code=400, detail="Invalid role")
     email = body.email.lower().strip()
-    existing_user = await db.users.find_one({"email": email})
-    user_oid = existing_user["_id"] if existing_user else None
-    # already a member?
-    dup = await db.memberships.find_one({
-        "organizationId": ctx["org_oid"],
-        "$or": [{"invitedEmail": email}, {"userId": user_oid}] if user_oid else [{"invitedEmail": email}],
-    })
+    existing_user = await db.fetchrow("select * from users where email = $1", email)
+    user_id = existing_user["id"] if existing_user else None
+    dup = await db.fetchrow(
+        """select id from memberships
+           where organization_id = $1
+             and (invited_email = $2 or (user_id is not null and user_id = $3))""",
+        ctx["org_id"], email, user_id)
     if dup:
         raise HTTPException(status_code=400, detail="This email is already a member or invited")
     status = "active" if existing_user else "invited"
-    res = await db.memberships.insert_one({
-        "userId": user_oid,
-        "invitedEmail": email,
-        "organizationId": ctx["org_oid"],
-        "role": role,
-        "invitedBy": ObjectId(ctx["user"]["id"]),
-        "status": status,
-        "createdAt": now_utc(),
-    })
-    invite_url = f"{__import__('os').environ.get('FRONTEND_URL','')}/login?invited={email}"
+    membership = await db.fetchrow(
+        """insert into memberships (user_id, invited_email, organization_id, role,
+                                    invited_by, status)
+           values ($1, $2, $3, $4, $5, $6) returning id""",
+        user_id, email, ctx["org_id"], role, as_uuid(ctx["user"]["id"]), status)
+    invite_url = f"{os.environ.get('FRONTEND_URL', '')}/login?invited={email}"
     print(f"[EMAIL-MOCK] Invite for {email} to org {ctx['org']['name']}: {invite_url}")
-    await write_audit(ctx["org_oid"], ctx["user"], "member.invite", email, {"role": role})
-    return {"ok": True, "membershipId": str(res.inserted_id), "status": status,
+    await write_audit(ctx["org_id"], ctx["user"], "member.invite", email, {"role": role})
+    return {"ok": True, "membershipId": str(membership["id"]), "status": status,
             "inviteUrl": invite_url}
 
 
@@ -266,105 +275,122 @@ async def change_role(body: RoleIn, membershipId: str, ctx: dict = Depends(requi
     role = body.role.lower()
     if role not in VALID_ROLES:
         raise HTTPException(status_code=400, detail="Invalid role (cannot assign owner here)")
-    mid = oid(membershipId)
-    m = await db.memberships.find_one({"_id": mid, "organizationId": ctx["org_oid"]})
+    mid = as_uuid(membershipId)
+    m = await db.fetchrow(
+        "select * from memberships where id = $1 and organization_id = $2",
+        mid, ctx["org_id"]) if mid else None
     if not m:
         raise HTTPException(status_code=404, detail="Member not found")
     if m.get("role") == "owner":
         raise HTTPException(status_code=400, detail="Cannot change the Owner's role here")
-    await db.memberships.update_one({"_id": mid}, {"$set": {"role": role}})
-    await write_audit(ctx["org_oid"], ctx["user"], "member.role_change",
-                      m.get("invitedEmail"), {"role": role})
+    await db.execute("update memberships set role = $2 where id = $1", mid, role)
+    await write_audit(ctx["org_id"], ctx["user"], "member.role_change",
+                      m.get("invited_email"), {"role": role})
     return {"ok": True}
 
 
 @router.delete("/{orgId}/members/{membershipId}")
 async def remove_member(membershipId: str, ctx: dict = Depends(require_role("admin"))):
-    mid = oid(membershipId)
-    m = await db.memberships.find_one({"_id": mid, "organizationId": ctx["org_oid"]})
+    mid = as_uuid(membershipId)
+    m = await db.fetchrow(
+        "select * from memberships where id = $1 and organization_id = $2",
+        mid, ctx["org_id"]) if mid else None
     if not m:
         raise HTTPException(status_code=404, detail="Member not found")
     if m.get("role") == "owner":
         raise HTTPException(status_code=400, detail="Cannot remove the Owner")
-    await db.memberships.delete_one({"_id": mid})
-    await write_audit(ctx["org_oid"], ctx["user"], "member.remove", m.get("invitedEmail"))
+    await db.execute("delete from memberships where id = $1", mid)
+    await write_audit(ctx["org_id"], ctx["user"], "member.remove", m.get("invited_email"))
     return {"ok": True}
 
 
 @router.post("/{orgId}/members/transfer-ownership")
 async def transfer_ownership(body: TransferIn, ctx: dict = Depends(require_role("owner"))):
-    mid = oid(body.membershipId)
-    target = await db.memberships.find_one({"_id": mid, "organizationId": ctx["org_oid"]})
-    if not target or not target.get("userId"):
+    mid = as_uuid(body.membershipId)
+    target = await db.fetchrow(
+        "select * from memberships where id = $1 and organization_id = $2",
+        mid, ctx["org_id"]) if mid else None
+    if not target or not target.get("user_id"):
         raise HTTPException(status_code=404, detail="Target member not found / not active")
     # demote current owner to admin, promote target to owner
-    await db.memberships.update_one(
-        {"organizationId": ctx["org_oid"], "userId": ObjectId(ctx["user"]["id"])},
-        {"$set": {"role": "admin"}})
-    await db.memberships.update_one({"_id": mid}, {"$set": {"role": "owner"}})
-    await db.organizations.update_one({"_id": ctx["org_oid"]},
-                                      {"$set": {"ownerId": target["userId"]}})
-    await write_audit(ctx["org_oid"], ctx["user"], "org.transfer_ownership",
-                      target.get("invitedEmail"))
+    await db.execute(
+        """update memberships set role = 'admin'
+           where organization_id = $1 and user_id = $2""",
+        ctx["org_id"], as_uuid(ctx["user"]["id"]))
+    await db.execute("update memberships set role = 'owner' where id = $1", mid)
+    await db.execute("update organizations set owner_id = $2 where id = $1",
+                     ctx["org_id"], target["user_id"])
+    await write_audit(ctx["org_id"], ctx["user"], "org.transfer_ownership",
+                      target.get("invited_email"))
     return {"ok": True}
 
 
 # ---------------- Audit ----------------
 @router.get("/{orgId}/audit")
 async def get_audit(ctx: dict = Depends(require_role("admin"))):
-    logs = await db.auditLog.find({"organizationId": ctx["org_oid"]}) \
-        .sort("at", -1).limit(200).to_list(200)
+    logs = await db.fetch(
+        """select * from audit_log where organization_id = $1
+           order by at desc limit 200""",
+        ctx["org_id"])
     return [serialize(l) for l in logs]
 
 
 # ---------------- Secrets / Settings ----------------
+# Per-org API keys use envelope encryption (see org_keys.py): values encrypted
+# with the org's own DEK, DEK wrapped by the server master key. Only masked
+# previews ever leave the server, and only org admins reach these endpoints.
 class SecretsIn(BaseModel):
     anthropicKey: Optional[str] = None
     samKey: Optional[str] = None
+    openaiKey: Optional[str] = None
+
+
+def _masked_payload(values, extra=None):
+    out = {
+        "anthropicKey": org_keys.mask_secret(values["anthropic"]),
+        "samKey": org_keys.mask_secret(values["sam"]),
+        "openaiKey": org_keys.mask_secret(values["openai"]),
+        "anthropicSet": bool(values["anthropic"]),
+        "samSet": bool(values["sam"]),
+        "openaiSet": bool(values["openai"]),
+    }
+    out.update(extra or {})
+    return out
 
 
 @router.get("/{orgId}/secrets")
 async def get_secrets(ctx: dict = Depends(require_role("admin"))):
-    rec = await db.secrets.find_one({"organizationId": ctx["org_oid"]})
-    if not rec:
-        return {"anthropicKey": "", "samKey": "", "anthropicSet": False, "samSet": False}
-    a = decrypt_secret(rec.get("anthropicKey", ""))
-    s = decrypt_secret(rec.get("samKey", ""))
-    return {
-        "anthropicKey": mask_secret(a),
-        "samKey": mask_secret(s),
-        "anthropicSet": bool(a),
-        "samSet": bool(s),
-        "updatedAt": serialize(rec).get("updatedAt"),
-    }
+    values = await org_keys.get_keys(ctx["org_id"], ctx["user"], purpose="admin.view_masked")
+    rec = await db.fetchrow(
+        "select key_version, updated_at from org_secrets where organization_id = $1",
+        ctx["org_id"])
+    return _masked_payload(values, {
+        "keyVersion": (rec or {}).get("key_version", 1),
+        "updatedAt": serialize(rec or {}).get("updatedAt"),
+    })
 
 
 @router.put("/{orgId}/secrets")
 async def update_secrets(body: SecretsIn, ctx: dict = Depends(require_role("admin"))):
-    rec = await db.secrets.find_one({"organizationId": ctx["org_oid"]}) or {}
-    update = {"organizationId": ctx["org_oid"],
-              "updatedBy": ObjectId(ctx["user"]["id"]), "updatedAt": now_utc()}
-    # only overwrite when a non-masked, non-empty value is provided
-    if body.anthropicKey is not None and body.anthropicKey.strip() and "…" not in body.anthropicKey:
-        update["anthropicKey"] = encrypt_secret(body.anthropicKey.strip())
-    else:
-        update["anthropicKey"] = rec.get("anthropicKey", "")
-    if body.samKey is not None and body.samKey.strip() and "…" not in body.samKey:
-        update["samKey"] = encrypt_secret(body.samKey.strip())
-    else:
-        update["samKey"] = rec.get("samKey", "")
-    await db.secrets.update_one({"organizationId": ctx["org_oid"]},
-                                {"$set": update}, upsert=True)
-    await write_audit(ctx["org_oid"], ctx["user"], "secrets.update", "API keys")
-    # MOCK validation result while integrations are mocked
-    a = decrypt_secret(update["anthropicKey"])
-    s = decrypt_secret(update["samKey"])
-    return {
+    values = await org_keys.store_keys(
+        ctx["org_id"],
+        {"anthropic": body.anthropicKey, "sam": body.samKey, "openai": body.openaiKey},
+        ctx["user"]["id"])
+    await write_audit(ctx["org_id"], ctx["user"], "secrets.update", "API keys")
+    return _masked_payload(values, {
         "ok": True,
-        "anthropicKey": mask_secret(a), "samKey": mask_secret(s),
-        "anthropicSet": bool(a), "samSet": bool(s),
         "validation": {
-            "anthropic": "saved" if a else "not set",
-            "sam": "saved" if s else "not set",
+            "anthropic": "saved" if values["anthropic"] else "not set",
+            "sam": "saved" if values["sam"] else "not set",
+            "openai": "saved" if values["openai"] else "not set",
         },
-    }
+    })
+
+
+@router.post("/{orgId}/secrets/rotate-key")
+async def rotate_secrets_key(ctx: dict = Depends(require_role("admin"))):
+    """Re-encrypt this org's API keys under a brand-new data-encryption key."""
+    version = await org_keys.rotate_key(ctx["org_id"], ctx["user"]["id"])
+    await write_audit(ctx["org_id"], ctx["user"], "secrets.rotate_key", "API keys",
+                      {"keyVersion": version})
+    return {"ok": True, "keyVersion": version}
