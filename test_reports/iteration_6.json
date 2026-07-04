@@ -1,0 +1,129 @@
+{
+  "summary": "Verified the /app/frontend/src/lib/api.js BASE-selection fix. Preview auth E2E is fully green: register creates account (200) and navigates to /onboarding; login with the newly-registered user (200 -> /onboarding); login with existing QA account (200 -> /dashboard). Fix-artifact check on /app/frontend/build/static/js/main.cd73c689.js confirms 'location.origin' present (3 hits) and ZERO 'govcon-workspace' references — the new bundle is same-origin. Pre-redeploy PRODUCTION evidence captured (read-only): captureagent.us still ships the OLD bundle main.9a8054ba.js which hardcodes https://govcon-workspace.emergent.host, and CORS preflight from Origin: https://captureagent.us to the prod API returns HTTP 400 with NO Access-Control-Allow-Origin header — matching exactly the reported user symptom. The bug is real on the live domain and will be resolved by redeploying the fixed bundle. No app code was modified this iteration.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "VerifyEmail page (/verify-email?token=...)",
+        "issue": "Page displays 'Invalid or expired verification token' on fresh, unused tokens when opened in dev/preview. Direct API call POST /api/auth/verify-email with the same token returns 200 {ok:true}. Root cause is React.StrictMode double-invocation in dev: the page fires the verify API twice — the 1st call succeeds and flips the token to used=true, the 2nd (StrictMode replay) returns 400 'Invalid or expired verification token', and the 2nd response overwrites the UI state. Only affects dev/preview UX; PRE-EXISTING (unrelated to the api.js fix). Suggest: guard the effect with a ref/AbortController, or in the backend treat 'already used' as success within the same request context.",
+        "selector": "N/A (page text)",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "verification_results": {
+    "1_preview_register_e2e": {
+      "url": "https://govcon-workspace.preview.emergentagent.com/register",
+      "user": "fixcheck.1783184801@testmail.dev / FixCheck#2026",
+      "register_status": 200,
+      "register_response_keys": ["id","email","name","emailVerified","createdAt","organizations","verifyUrl"],
+      "navigated_to": "/onboarding",
+      "pass": true
+    },
+    "1b_preview_login_new_user": {
+      "note": "Cookies cleared after register so /login form is shown.",
+      "login_status": 200,
+      "navigated_to": "/onboarding (expected — new user has 0 orgs)",
+      "pass": true
+    },
+    "1c_verify_email_api_direct": {
+      "note": "Second fresh registration (apitest.1783184854@testmail.dev), token extracted from verifyUrl.",
+      "endpoint": "POST /api/auth/verify-email",
+      "status": 200,
+      "response": "{\"ok\":true}",
+      "pass": true
+    },
+    "2_preview_login_existing_qa": {
+      "url": "https://govcon-workspace.preview.emergentagent.com/login",
+      "user": "qa.captureagent@testmail.dev / CaptureQA#2026",
+      "login_status": 200,
+      "orgs_count": ">=1 (QA Verification Org visible in sidebar)",
+      "navigated_to": "/dashboard",
+      "screenshot": "/app/test_reports/it6_final.png",
+      "pass": true
+    },
+    "3_fix_artifact_check": {
+      "file": "/app/frontend/build/static/js/main.cd73c689.js",
+      "grep_location_origin_count": 3,
+      "grep_govcon_workspace_count": 0,
+      "note": "Minified bundle contains window.location.origin (3 hits, one is the BASE assignment). Zero references to any govcon-workspace URL. Same-origin behavior confirmed at bundle level.",
+      "pass": true
+    },
+    "4_pre_redeploy_production_evidence": {
+      "4a_bundle_still_old": {
+        "captureagent_us_html_references": "main.9a8054ba.js",
+        "govcon_workspace_hardcoded_in_deployed_bundle": true,
+        "curl_evidence": "curl -s https://captureagent.us/static/js/main.9a8054ba.js | grep 'govcon-workspace.emergent.host' -> match found",
+        "govcon_host_prod_bundle": "main.9a8054ba.js (same bundle as captureagent.us — confirming captureagent.us is now proxying prod)"
+      },
+      "4b_cors_preflight_from_captureagent_us_origin": {
+        "curl": "curl -sI -X OPTIONS https://govcon-workspace.emergent.host/api/auth/login -H 'Origin: https://captureagent.us' -H 'Access-Control-Request-Method: POST' -H 'Access-Control-Request-Headers: content-type'",
+        "http_status": 400,
+        "access_control_allow_origin_header_present": false,
+        "server": "cloudflare",
+        "expected": "400 with NO ACAO — confirms browser will block cross-origin auth calls from captureagent.us",
+        "control_same_origin_preflight": {
+          "curl": "same request but Origin: https://govcon-workspace.emergent.host",
+          "http_status": 200,
+          "access_control_allow_origin": "https://govcon-workspace.emergent.host"
+        },
+        "conclusion": "Reported bug reproduced on live domain. Fix will land on next production redeploy of the new bundle."
+      },
+      "note_on_iteration_5": "Iteration 5 saw Cloudflare error 1034 on captureagent.us; that has since been resolved — captureagent.us now serves the Emergent app HTML successfully, but the served JS bundle is still the pre-fix build.",
+      "pass": true
+    }
+  },
+  "test_report_links": [
+    "/app/test_reports/iteration_6.json"
+  ],
+  "action_items": [
+    "REDEPLOY: The user must redeploy so that production serves the new main.cd73c689.js bundle (which uses window.location.origin as BASE). After redeploy, retest register + login on https://captureagent.us — this will confirm the bug is resolved on the live domain.",
+    "(Optional, LOW priority, pre-existing) Harden /verify-email page against React.StrictMode double-invocation — either use a useRef guard on the effect, or make the backend verify-email endpoint idempotent (treat second call on same token by the same user as 200 within a short window).",
+    "(Housekeeping) FRONTEND_URL env for backend currently points to https://captureagent.us — verifyUrl/resetUrl in mocked email responses will therefore embed captureagent.us. Not a blocker for testing (the QA extracts the token and calls the API directly), just noting so main agent is aware."
+  ],
+  "critical_code_review_comments": [
+    "The applied fix in /app/frontend/src/lib/api.js is correct and minimal: NODE_ENV==='production' -> window.location.origin; else -> process.env.REACT_APP_BACKEND_URL. This eliminates the cross-origin CORS failure for any production host (captureagent.us OR govcon-workspace.emergent.host) with a single bundle, preserves first-party cookies (withCredentials still works because requests are same-origin), and leaves dev/preview behavior unchanged. No new attack surface.",
+    "Bundle-level check confirms webpack correctly tree-shook out the old REACT_APP_BACKEND_URL constant string — no 'govcon-workspace' literal remains in build/static/js/main.cd73c689.js.",
+    "Pre-existing verify-email double-fire is a minor dev-only UX bug; not a security or availability issue (token is single-use as intended, backend behavior is correct)."
+  ],
+  "updated_files": [
+    "/app/test_reports/iteration_6.json (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (all auth endpoints hit during E2E returned 2xx: register 200, login 200 x2, verify-email 200)",
+    "frontend": "100% for the fixed flow (register form, login form, onboarding navigation, dashboard navigation all work with correct data-testids)",
+    "fix_artifact": "100% (new bundle same-origin, zero govcon-workspace refs)",
+    "pre_redeploy_prod_evidence": "captured (bundle still old, CORS preflight fails as expected — bug reproduced on live)"
+  },
+  "test_credentials": "Existing QA: qa.captureagent@testmail.dev / CaptureQA#2026. New accounts created in Supabase (preview shares prod DB): fixcheck.1783184745@testmail.dev, fixcheck.1783184801@testmail.dev, apitest.1783184854@testmail.dev — all with password FixCheck#2026. Note: PREVIEW HITS THE SAME EXTERNAL SUPABASE DATABASE AS PROD (per test_credentials.md), so these three test accounts now exist in the production DB. If the user wants them purged, delete rows where email like 'fixcheck.%@testmail.dev' or 'apitest.%@testmail.dev' from users table.",
+  "seed_data_creation": "3 test users created in shared Supabase DB via preview UI/API — see test_credentials note above.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "The api.js fix is verified on preview and at the bundle artifact level. Production still serves the OLD bundle (main.9a8054ba.js) until the user redeploys — do NOT expect captureagent.us auth to work until then. Post-redeploy, the same-origin fix means /api/... calls from https://captureagent.us should succeed. Existing QA account (qa.captureagent@testmail.dev / CaptureQA#2026) is intact. Watch out for React.StrictMode double-firing the verify-email API in dev/preview — direct backend calls work fine.",
+  "rca_of_the_issue": {
+    "user_reported": "'I can't create an account or log in. Fix it.'",
+    "root_cause": "Production frontend bundle was built with REACT_APP_BACKEND_URL=https://govcon-workspace.emergent.host baked in. When users browse the custom domain https://captureagent.us, all /api calls target govcon-workspace.emergent.host — a cross-origin request. Backend CORS is configured with explicit origins (via FRONTEND_URL env = emergent.host URL), so the browser preflight OPTIONS from Origin: https://captureagent.us receives HTTP 400 with no Access-Control-Allow-Origin header, and the browser blocks register/login POSTs.",
+    "fix_applied": "Single change in /app/frontend/src/lib/api.js: BASE = (NODE_ENV==='production' ? window.location.origin : process.env.REACT_APP_BACKEND_URL). This makes any production build same-origin, works from either host, keeps first-party cookies intact, and does not require any backend CORS changes.",
+    "reproduction_steps_pre_redeploy": [
+      "1. curl -s https://captureagent.us/ | grep -oE 'main\\.[a-f0-9]+\\.js' -> main.9a8054ba.js (OLD build)",
+      "2. curl -s https://captureagent.us/static/js/main.9a8054ba.js | grep 'govcon-workspace.emergent.host' -> match (proves hardcoded)",
+      "3. curl -sI -X OPTIONS https://govcon-workspace.emergent.host/api/auth/login -H 'Origin: https://captureagent.us' -H 'Access-Control-Request-Method: POST' -> HTTP/2 400, no access-control-allow-origin header",
+      "4. Same preflight with Origin: https://govcon-workspace.emergent.host -> HTTP/2 200 with access-control-allow-origin echoed back — proving CORS is host-restrictive by design."
+    ],
+    "verification_steps_post_fix": [
+      "1. Preview register + login E2E: PASS (register 200 -> /onboarding, login 200 -> /onboarding or /dashboard)",
+      "2. Fix artifact: build/static/js/main.cd73c689.js contains window.location.origin (3x) and 0 govcon-workspace refs",
+      "3. Existing QA account login on preview -> /dashboard: PASS"
+    ],
+    "mitigation_steps": [
+      "1. User redeploys — production will start serving main.cd73c689.js",
+      "2. captureagent.us will use its own origin for /api, so no cross-origin request happens",
+      "3. Retest register + login on https://captureagent.us to confirm end-to-end resolution"
+    ]
+  }
+}
