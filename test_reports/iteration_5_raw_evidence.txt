@@ -1,0 +1,109 @@
+CaptureAgent — Iteration 5: Raw evidence for production/preview/custom-domain verification
+Timestamp: 2026-07-04
+
+============================================================
+TEST 1: PRODUCTION HEALTH
+============================================================
+$ curl -sS -w "\nHTTP_STATUS:%{http_code}\nTIME:%{time_total}s\n" https://govcon-workspace.emergent.host/api/health
+{"status":"ok","service":"captureagent"}
+HTTP_STATUS:200
+TIME:0.749911s
+--> PASS: matches expected body exactly
+
+============================================================
+TEST 4: PREVIEW HEALTH (regression)
+============================================================
+$ curl -sS -w "\nHTTP_STATUS:%{http_code}\nTIME:%{time_total}s\n" https://govcon-workspace.preview.emergentagent.com/api/health
+{"status":"ok","service":"captureagent"}
+HTTP_STATUS:200
+TIME:0.339186s
+--> PASS: matches expected body exactly
+
+============================================================
+TEST 3: captureagent.us — DNS + TLS + HTTP
+============================================================
+
+DNS (getent hosts):
+  172.66.2.113    captureagent.us
+  162.159.142.117 captureagent.us
+--> Both Cloudflare edge IPs (matches task expectation)
+
+TLS handshake (curl -vI https://captureagent.us):
+  *   Trying 172.66.2.113:443...
+  * Connected to captureagent.us (172.66.2.113) port 443 (#0)
+  * ALPN: offers h2,http/1.1
+  * TLSv1.3 (OUT), TLS handshake, Client hello (1):
+  * TLSv1.3 (IN), TLS handshake, Server hello (2):
+  * TLSv1.3 (IN), TLS handshake, Certificate (11):
+  * TLSv1.3 (IN), TLS handshake, CERT verify (15):
+  * TLSv1.3 (IN), TLS handshake, Finished (20):
+  * SSL connection using TLSv1.3 / TLS_AES_256_GCM_SHA384
+  * ALPN: server accepted h2
+  * Server certificate:
+  *  subject: CN=captureagent.us
+  *  start date: Jul  4 15:37:55 2026 GMT
+  *  expire date: Oct  2 16:26:51 2026 GMT
+  *  subjectAltName: host "captureagent.us" matched cert's "captureagent.us"
+  *  issuer: C=US; O=Google Trust Services; CN=WE1
+  *  SSL certificate verify ok.
+--> TLS handshake SUCCEEDED — this contradicts the task's stated expectation of 'SSL handshake fails'.
+
+Certificate details (openssl):
+  subject=CN = captureagent.us
+  issuer=C = US, O = Google Trust Services, CN = WE1
+  notBefore=Jul  4 15:37:55 2026 GMT
+  notAfter=Oct  2 16:26:51 2026 GMT
+  X509v3 Subject Alternative Name: DNS:captureagent.us, DNS:*.captureagent.us
+
+HTTP response (HTTPS):
+  > HEAD / HTTP/2
+  > Host: captureagent.us
+  < HTTP/2 403
+  < date: Sat, 04 Jul 2026 16:39:07 GMT
+  < content-type: text/plain; charset=UTF-8
+  < content-length: 17
+  < server: cloudflare
+  < cf-ray: a15f90722f1e1195-SIN
+
+Body (GET /):
+  error code: 1034
+
+HTTP response (HTTP port 80):
+  < HTTP/1.1 403 Forbidden
+  < Server: cloudflare
+  < Content-Length: 17
+  (same body: "error code: 1034")
+
+============================================================
+INTERPRETATION
+============================================================
+- Cloudflare Error 1034 = "Edge IP Restricted" — indicates the hostname
+  is on Cloudflare's network but no valid origin/route is configured
+  (or the route is misconfigured).
+- captureagent.us is CLEARLY not linked to the Emergent deployment
+  (govcon-workspace.emergent.host), which is the correct conclusion.
+- HOWEVER, the failure mode is NOT a TLS handshake failure. Cloudflare
+  has already provisioned a valid SSL cert (issued 2026-07-04, TODAY),
+  which suggests the user's Entri linking flow was partially initiated
+  but the origin route is not yet configured or has not yet propagated.
+
+Fix path for the user:
+  1. Complete the Link Domain → Entri flow in the Emergent UI.
+  2. If already initiated: wait 5–15 min for propagation.
+  3. Verify Cloudflare CNAME/origin points to govcon-workspace.emergent.host.
+
+============================================================
+TEST 2 & 4: Frontend login pages (Playwright)
+============================================================
+Production https://govcon-workspace.emergent.host/  --> 200, page title "CaptureAgent"
+  data-testid=login-email: visible
+  data-testid=login-password: visible
+  data-testid=login-submit: visible
+  (One expected 401 from /api/auth/me — normal for unauthenticated visitor)
+
+Preview https://govcon-workspace.preview.emergentagent.com/ --> 200, page title "CaptureAgent"
+  data-testid=login-email: visible
+  data-testid=login-password: visible
+  data-testid=login-submit: visible
+
+Both pages render identically. No data was created. READ-ONLY confirmed.
