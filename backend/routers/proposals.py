@@ -9,9 +9,10 @@ from typing import Any, Dict, Optional
 import database as db
 from utils import now_utc, serialize, as_uuid
 from rbac import require_role
-from domain import write_audit, decrypt_secret
+from domain import write_audit
 import proposal_ai
 import exports
+import org_keys
 
 router = APIRouter(prefix="/api/orgs", tags=["proposals"])
 
@@ -60,13 +61,6 @@ async def _payload(proposal):
     out = serialize(proposal)
     out["documents"] = [serialize(d) for d in await _docs(proposal["id"])]
     return out
-
-
-async def _org_keys(org_id):
-    rec = await db.fetchrow("select * from org_secrets where organization_id = $1",
-                            org_id) or {}
-    return (decrypt_secret(rec.get("anthropic_key", "")),
-            decrypt_secret(rec.get("openai_key", "")))
 
 
 async def _cap_content(org_id, opp_id):
@@ -154,7 +148,8 @@ async def draft_document(oppId: str, docId: str, body: DraftIn,
     if doc.get("draft_status") == "drafting":
         raise HTTPException(status_code=409, detail="Draft already in progress")
     engine = body.engine if body.engine in ("claude", "openai") else "claude"
-    anthropic_key, openai_key = await _org_keys(ctx["org_id"])
+    keys = await org_keys.get_keys(ctx["org_id"], ctx["user"], purpose="proposal.draft")
+    anthropic_key, openai_key = keys["anthropic"], keys["openai"]
     if engine == "claude" and not anthropic_key:
         raise HTTPException(status_code=400,
             detail="No Anthropic API key set. Add it in Settings → API Keys.")

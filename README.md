@@ -122,7 +122,12 @@ never returned to the browser in full.
 
 ## Security notes
 
-- Per-org API keys: Fernet-encrypted at rest, masked in every API response.
+See [SECURITY.md](SECURITY.md) for the full architecture (per-org envelope
+encryption, key rotation, access auditing, CMMC positioning).
+
+- Per-org API keys: envelope-encrypted at rest (per-org data key wrapped by a
+  server-side master key), masked in every API response, rotatable per org,
+  with every access audit-logged.
 - RLS enabled on all tables — Supabase PostgREST exposes nothing by default.
 - Login lockout (5 attempts / 15 min), bcrypt password hashing, httpOnly
   cookies.

@@ -8,7 +8,8 @@ import database as db
 from utils import now_utc, serialize, as_uuid
 from auth_utils import get_current_user
 from rbac import require_role
-from domain import write_audit, encrypt_secret, decrypt_secret, mask_secret
+from domain import write_audit
+import org_keys
 
 router = APIRouter(prefix="/api/orgs", tags=["orgs"])
 
@@ -335,70 +336,61 @@ async def get_audit(ctx: dict = Depends(require_role("admin"))):
 
 
 # ---------------- Secrets / Settings ----------------
+# Per-org API keys use envelope encryption (see org_keys.py): values encrypted
+# with the org's own DEK, DEK wrapped by the server master key. Only masked
+# previews ever leave the server, and only org admins reach these endpoints.
 class SecretsIn(BaseModel):
     anthropicKey: Optional[str] = None
     samKey: Optional[str] = None
     openaiKey: Optional[str] = None
 
 
-def _keep_or_encrypt(new_value, old_encrypted):
-    """Only overwrite when a non-masked, non-empty value is provided."""
-    if new_value is not None and new_value.strip() and "…" not in new_value:
-        return encrypt_secret(new_value.strip())
-    return old_encrypted or ""
+def _masked_payload(values, extra=None):
+    out = {
+        "anthropicKey": org_keys.mask_secret(values["anthropic"]),
+        "samKey": org_keys.mask_secret(values["sam"]),
+        "openaiKey": org_keys.mask_secret(values["openai"]),
+        "anthropicSet": bool(values["anthropic"]),
+        "samSet": bool(values["sam"]),
+        "openaiSet": bool(values["openai"]),
+    }
+    out.update(extra or {})
+    return out
 
 
 @router.get("/{orgId}/secrets")
 async def get_secrets(ctx: dict = Depends(require_role("admin"))):
-    rec = await db.fetchrow("select * from org_secrets where organization_id = $1",
-                            ctx["org_id"])
-    if not rec:
-        return {"anthropicKey": "", "samKey": "", "openaiKey": "",
-                "anthropicSet": False, "samSet": False, "openaiSet": False}
-    a = decrypt_secret(rec.get("anthropic_key", ""))
-    s = decrypt_secret(rec.get("sam_key", ""))
-    o = decrypt_secret(rec.get("openai_key", ""))
-    return {
-        "anthropicKey": mask_secret(a),
-        "samKey": mask_secret(s),
-        "openaiKey": mask_secret(o),
-        "anthropicSet": bool(a),
-        "samSet": bool(s),
-        "openaiSet": bool(o),
-        "updatedAt": serialize(rec).get("updatedAt"),
-    }
+    values = await org_keys.get_keys(ctx["org_id"], ctx["user"], purpose="admin.view_masked")
+    rec = await db.fetchrow(
+        "select key_version, updated_at from org_secrets where organization_id = $1",
+        ctx["org_id"])
+    return _masked_payload(values, {
+        "keyVersion": (rec or {}).get("key_version", 1),
+        "updatedAt": serialize(rec or {}).get("updatedAt"),
+    })
 
 
 @router.put("/{orgId}/secrets")
 async def update_secrets(body: SecretsIn, ctx: dict = Depends(require_role("admin"))):
-    rec = await db.fetchrow("select * from org_secrets where organization_id = $1",
-                            ctx["org_id"]) or {}
-    anthropic_key = _keep_or_encrypt(body.anthropicKey, rec.get("anthropic_key"))
-    sam_key = _keep_or_encrypt(body.samKey, rec.get("sam_key"))
-    openai_key = _keep_or_encrypt(body.openaiKey, rec.get("openai_key"))
-    await db.execute(
-        """insert into org_secrets (organization_id, anthropic_key, sam_key, openai_key,
-                                    updated_by, updated_at)
-           values ($1, $2, $3, $4, $5, $6)
-           on conflict (organization_id) do update set
-               anthropic_key = excluded.anthropic_key,
-               sam_key = excluded.sam_key,
-               openai_key = excluded.openai_key,
-               updated_by = excluded.updated_by,
-               updated_at = excluded.updated_at""",
-        ctx["org_id"], anthropic_key, sam_key, openai_key,
-        as_uuid(ctx["user"]["id"]), now_utc())
+    values = await org_keys.store_keys(
+        ctx["org_id"],
+        {"anthropic": body.anthropicKey, "sam": body.samKey, "openai": body.openaiKey},
+        ctx["user"]["id"])
     await write_audit(ctx["org_id"], ctx["user"], "secrets.update", "API keys")
-    a = decrypt_secret(anthropic_key)
-    s = decrypt_secret(sam_key)
-    o = decrypt_secret(openai_key)
-    return {
+    return _masked_payload(values, {
         "ok": True,
-        "anthropicKey": mask_secret(a), "samKey": mask_secret(s), "openaiKey": mask_secret(o),
-        "anthropicSet": bool(a), "samSet": bool(s), "openaiSet": bool(o),
         "validation": {
-            "anthropic": "saved" if a else "not set",
-            "sam": "saved" if s else "not set",
-            "openai": "saved" if o else "not set",
+            "anthropic": "saved" if values["anthropic"] else "not set",
+            "sam": "saved" if values["sam"] else "not set",
+            "openai": "saved" if values["openai"] else "not set",
         },
-    }
+    })
+
+
+@router.post("/{orgId}/secrets/rotate-key")
+async def rotate_secrets_key(ctx: dict = Depends(require_role("admin"))):
+    """Re-encrypt this org's API keys under a brand-new data-encryption key."""
+    version = await org_keys.rotate_key(ctx["org_id"], ctx["user"]["id"])
+    await write_audit(ctx["org_id"], ctx["user"], "secrets.rotate_key", "API keys",
+                      {"keyVersion": version})
+    return {"ok": True, "keyVersion": version}

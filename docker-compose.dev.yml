@@ -16,6 +16,8 @@ services:
       - .:/app
       - pipcache:/root/.cache/pip
     env_file: backend/.env
+    environment:
+      PYTHONUNBUFFERED: "1"   # show [migrate]/[seed] lines live in the console
     command: bash -c "pip install -q -r requirements.txt && uvicorn server:app --host 0.0.0.0 --port 8000"
     ports:
       - "8000:8000"
