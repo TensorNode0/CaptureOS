@@ -1,25 +1,17 @@
-# Test Credentials — GovCon Command Center
+# Test Credentials — CaptureAgent (captureagent.us)
 
-## Admin / Owner
-- Email: `admin@govcon.io`
-- Password: `Admin#2026`
-- Role in 'Orbital Defense Systems': owner
+## Database
+- External Supabase PostgreSQL (DATABASE_URL in backend/.env). SEED_DEMO=0 → NO seeded demo users.
+- Old GovCon-era accounts (admin@govcon.io etc.) DO NOT exist in this database.
 
-## Editor
-- Email: `editor@govcon.io`
-- Password: `Editor#2026`
-- Role: editor
-
-## Viewer
-- Email: `viewer@govcon.io`
-- Password: `Editor#2026`
-- Role: viewer
+## QA account (created during deployment verification)
+- Email: `qa.captureagent@testmail.dev`
+- Password: `CaptureQA#2026`
+- Org: created via onboarding flow
 
 ## Notes
-- Demo org: **Orbital Defense Systems** (seeded with 12 opportunities + org profile).
-- Email verification is MOCKED: register returns a `verifyUrl`; password reset returns `resetUrl`.
-- AI 'Verify & Refresh' and 'Pull from SAM/Grants' are MOCKED (Phase 5 wires real keys).
-
-## Auth endpoints
-- POST /api/auth/register | /login | /logout | /refresh | /forgot-password | /reset-password | /verify-email
-- GET  /api/auth/me
+- Email verification is MOCKED: `POST /api/auth/register` returns `verifyUrl` in the JSON payload.
+  The link points at FRONTEND_URL (https://captureagent.us) — use only the `token` param:
+  either `POST /api/auth/verify-email {"token": ...}` or open `{preview}/verify-email?token=...`.
+- Auth uses JWT cookies (set on register/login).
+- Preview URL: https://govcon-workspace.preview.emergentagent.com
