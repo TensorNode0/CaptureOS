@@ -7,7 +7,7 @@ pip install -q -r requirements.txt -r requirements-dev.txt
 
 python - <<'PY'
 import os, socket, time
-host = os.environ.get("QA_PG_HOST", "captureos-qa-pg")
+host = os.environ.get("QA_PG_HOST", "captureagent-qa-pg")
 for _ in range(60):
     try:
         socket.create_connection((host, 5432), 1).close()

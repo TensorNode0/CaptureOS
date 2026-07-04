@@ -1,4 +1,6 @@
-# CaptureOS — GovCon Command Center
+# CaptureAgent
+
+**Production: [captureagent.us](https://captureagent.us)**
 
 An AI-powered capture & proposal manager for U.S. government contractors.
 Track opportunities, verify them against live sources, score fit and

@@ -10,7 +10,7 @@ from apply_migrations import apply_migrations
 from seed import seed
 from routers import auth, orgs, opportunities, intel, capabilities, proposals
 
-app = FastAPI(title="CaptureOS API")
+app = FastAPI(title="CaptureAgent API")
 
 frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 app.add_middleware(
@@ -31,7 +31,7 @@ app.include_router(proposals.router)
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "service": "captureos"}
+    return {"status": "ok", "service": "captureagent"}
 
 
 @app.on_event("startup")

@@ -1,4 +1,4 @@
-# CaptureOS Security Architecture
+# CaptureAgent Security Architecture
 
 ## Per-organization API keys (SAM.gov, Anthropic, OpenAI)
 
@@ -67,13 +67,13 @@ the operator's reach.
 
 CMMC certification is an **organizational** assessment (the NIST SP 800-171
 control set, an SSP, and scoping of where CUI lives) — no single application
-feature makes a company "CMMC compliant." CaptureOS supports the relevant
+feature makes a company "CMMC compliant." CaptureAgent supports the relevant
 practice families for the data it holds: access control (RBAC, least
 privilege), identification & authentication (unique accounts, lockout),
 audit & accountability (per-org audit log incl. key access), and protection
 of data at rest and in transit (envelope encryption, TLS).
 
-**Policy**: CaptureOS workspaces are for *unclassified pipeline metadata*.
+**Policy**: CaptureAgent workspaces are for *unclassified pipeline metadata*.
 Do not store CUI or ITAR-controlled technical data in the app; that belongs
 in a separately scoped, controlled environment.
 

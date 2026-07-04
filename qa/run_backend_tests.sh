@@ -6,8 +6,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 REPO="$(pwd -W 2>/dev/null || pwd)"
 
-NET=captureos-qa-net
-PG=captureos-qa-pg
+NET=captureagent-qa-net
+PG=captureagent-qa-pg
 
 docker rm -f "$PG" >/dev/null 2>&1 || true
 docker network rm "$NET" >/dev/null 2>&1 || true
