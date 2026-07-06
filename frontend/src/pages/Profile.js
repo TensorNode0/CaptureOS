@@ -19,14 +19,28 @@ const CMMC = ["Level 1", "Level 2", "Level 3", "Not assessed"];
 
 export default function Profile() {
   const { activeOrgId, activeOrg } = useAuth();
-  const admin = canAdmin(activeOrg?.role);
   const [p, setP] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [requesting, setRequesting] = useState(false);
+  // Entity info is admin-managed; a capture manager can hold a 24h edit grant
+  // (backend computes canEdit accordingly).
+  const admin = p?.canEdit ?? canAdmin(activeOrg?.role);
+  const isCM = activeOrg?.role === "capture_manager";
 
   useEffect(() => {
     if (!activeOrgId) return;
     api.get(`/orgs/${activeOrgId}/profile`).then((r) => setP(r.data || {})).catch(() => setP({}));
   }, [activeOrgId]);
+
+  const requestEdit = async () => {
+    setRequesting(true);
+    try {
+      await api.post(`/orgs/${activeOrgId}/profile/edit-request`);
+      setP((x) => ({ ...x, editRequestPending: true }));
+      toast.success("Request sent", { description: "Your administrator will approve a 24-hour edit window." });
+    } catch (e) { toast.error(errMsg(e)); }
+    finally { setRequesting(false); }
+  };
 
   const set = (patch) => setP((x) => ({ ...x, ...patch }));
   const setCert = (k, v) => setP((x) => ({ ...x, certs: { ...(x.certs || {}), [k]: v } }));
@@ -58,7 +72,17 @@ export default function Profile() {
           <SectionLabel>Company Profile</SectionLabel>
           <h1 className="mt-1 flex items-center gap-2 text-2xl font-semibold text-ink"><Building2 size={22} className="text-cyan" /> {activeOrg?.name}</h1>
         </div>
-        {admin && <button className="btn btn-primary" onClick={save} disabled={saving} data-testid="save-profile">{saving ? <Spinner /> : <Save size={16} />} Save</button>}
+        {admin ? (
+          <button className="btn btn-primary" onClick={save} disabled={saving} data-testid="save-profile">{saving ? <Spinner /> : <Save size={16} />} Save</button>
+        ) : isCM ? (
+          p.editRequestPending ? (
+            <span className="rounded-lg border border-warn/40 bg-warn/10 px-3 py-2 text-xs text-warn" data-testid="edit-request-pending">Edit request pending admin approval</span>
+          ) : (
+            <button className="btn btn-ghost" onClick={requestEdit} disabled={requesting} data-testid="request-edit-access">
+              {requesting ? <Spinner /> : <ShieldCheck size={16} />} Request edit access
+            </button>
+          )
+        ) : null}
       </div>
 
       <Card className="p-5">

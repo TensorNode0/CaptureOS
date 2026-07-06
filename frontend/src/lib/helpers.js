@@ -68,7 +68,20 @@ export const STAGE_COLORS = {
 
 export const CHART_SERIES = ["#38e1ff", "#8b7bff", "#34d399", "#fbbf24", "#ff5cae", "#5d6b8a"];
 
-export const ROLE_RANK = { viewer: 1, editor: 2, admin: 3, owner: 4 };
-export function canEdit(role) { return ROLE_RANK[role] >= ROLE_RANK.editor; }
-export function canAdmin(role) { return ROLE_RANK[role] >= ROLE_RANK.admin; }
+export const ROLE_RANK = {
+  viewer: 1,
+  editor: 2, technical_writer: 2, proposal_writer: 2, pi: 2,
+  capture_manager: 3,
+  admin: 4, owner: 5,
+};
+export function canEdit(role) { return (ROLE_RANK[role] || 0) >= ROLE_RANK.editor; }
+export function canAdmin(role) { return (ROLE_RANK[role] || 0) >= ROLE_RANK.admin; }
 export function isOwner(role) { return role === "owner"; }
+// Product rules: only the capture manager creates/approves proposal work;
+// only the admin submits; dashboards are admin + capture manager.
+export function isCaptureManager(role) { return role === "capture_manager"; }
+export function canCreateProposal(role) { return role === "capture_manager"; }
+export function canSubmitProposal(role) { return role === "admin" || role === "owner"; }
+export function canSeeDashboard(role) {
+  return role === "admin" || role === "owner" || role === "capture_manager";
+}

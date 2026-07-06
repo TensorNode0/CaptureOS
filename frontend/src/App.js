@@ -4,6 +4,7 @@ import { Toaster } from "sonner";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { Spinner } from "./components/ui";
 import Shell from "./components/Shell";
+import { canSeeDashboard } from "./lib/helpers";
 
 import Login from "./pages/Login";
 import Register from "./pages/Register";
@@ -47,6 +48,15 @@ function PublicOnly({ children }) {
   return children;
 }
 
+// Dashboards are for the admin and the capture manager; contributors land on
+// the opportunities pipeline instead.
+function DashboardGate({ children }) {
+  const { activeOrg } = useAuth();
+  if (activeOrg && !canSeeDashboard(activeOrg.role))
+    return <Navigate to="/opportunities" replace />;
+  return children;
+}
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -71,7 +81,7 @@ export default function App() {
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/verify-email" element={<VerifyEmail />} />
           <Route path="/onboarding" element={<Onboarding />} />
-          <Route path="/dashboard" element={<Protected><Dashboard /></Protected>} />
+          <Route path="/dashboard" element={<Protected><DashboardGate><Dashboard /></DashboardGate></Protected>} />
           <Route path="/intelligence" element={<Protected><Intelligence /></Protected>} />
           <Route path="/opportunities" element={<Protected><Opportunities /></Protected>} />
           <Route path="/opportunities/:id" element={<Protected><OpportunityDetail /></Protected>} />

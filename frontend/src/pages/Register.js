@@ -22,8 +22,12 @@ export default function Register() {
       const data = await register(name, email, password);
       if (data.verifyUrl) {
         toast.success("Account created", {
-          description: "Email verification is mocked — verify any time.",
+          description: "Email is in dev mode — verify any time.",
           action: { label: "Verify now", onClick: () => (window.location.href = data.verifyUrl) },
+        });
+      } else {
+        toast.success("Account created", {
+          description: "We sent a verification link to your email — check your inbox.",
         });
       }
       navigate(data.organizations?.length ? "/dashboard" : "/onboarding");

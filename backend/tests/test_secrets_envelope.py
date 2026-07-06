@@ -19,7 +19,7 @@ def env_org(admin_session):
     s, _ = admin_session
     r = s.post(f"{BASE_URL}/api/orgs",
                json={"name": f"Envelope Org {uuid.uuid4().hex[:6]}",
-                     "naics": ["541511"], "keywords": ["crypto"]}, timeout=15)
+                     "naics": ["541511"], "keywords": ["crypto"], "certifyAor": True}, timeout=15)
     assert r.status_code == 200, r.text
     return r.json()["id"]
 

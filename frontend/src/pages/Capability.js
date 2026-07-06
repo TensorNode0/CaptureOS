@@ -12,7 +12,7 @@ import { toast } from "sonner";
 import { api, errMsg } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { Card, SectionLabel, Pill, Spinner, PageReveal, EmptyState } from "../components/ui";
-import { fmtMoney, CHART_SERIES, canEdit } from "../lib/helpers";
+import { fmtMoney, CHART_SERIES, canEdit, canCreateProposal } from "../lib/helpers";
 
 const tooltipStyle = {
   background: "var(--bg-elev)", border: "1px solid var(--line)",
@@ -65,6 +65,7 @@ export default function Capability() {
   const navigate = useNavigate();
   const { activeOrgId, activeOrg } = useAuth();
   const editor = canEdit(activeOrg?.role);
+  const cm = canCreateProposal(activeOrg?.role);
   const [opp, setOpp] = useState(null);
   const [cap, setCap] = useState(undefined); // undefined = loading, null = none
   const [content, setContent] = useState(null);
@@ -193,15 +194,17 @@ export default function Capability() {
           )}
           {editor && cap?.generationStatus === "ready" && (
             <>
-              <button className="btn btn-ghost" onClick={generate} disabled={!!busy || generating}
-                data-testid="regenerate-capability">
-                <RefreshCw size={15} /> Regenerate
-              </button>
+              {cm && (
+                <button className="btn btn-ghost" onClick={generate} disabled={!!busy || generating}
+                  data-testid="regenerate-capability">
+                  <RefreshCw size={15} /> Regenerate
+                </button>
+              )}
               <button className="btn btn-primary" onClick={save}
                 disabled={!dirty || !!busy} data-testid="save-capability">
                 {busy === "save" ? <Spinner /> : <Save size={15} />} {dirty ? "Save changes" : "Saved"}
               </button>
-              {cap.status !== "approved" && (
+              {cm && cap.status !== "approved" && (
                 <button className="btn btn-violet" onClick={approve} disabled={!!busy}
                   data-testid="approve-capability">
                   {busy === "approve" ? <Spinner /> : <CheckCircle2 size={15} />} Approve
@@ -217,11 +220,13 @@ export default function Capability() {
         <Card className="p-6">
           <EmptyState icon={Sparkles} title="No proposed capability yet"
             subtitle="The AI capture manager will design a capability for this solicitation from your company profile: title, abstract, executive summary, concept rendering, SoW, WBS schedule, and budget."
-            action={editor && (
+            action={cm ? (
               <button className="btn btn-primary" onClick={generate} disabled={busy === "generate"}
                 data-testid="generate-capability">
                 {busy === "generate" ? <Spinner /> : <Sparkles size={16} />} Generate with AI
               </button>
+            ) : (
+              <span className="text-xs text-faint">Your capture manager creates the proposed capability.</span>
             )} />
         </Card>
       )}
@@ -240,7 +245,7 @@ export default function Capability() {
           <div className="min-w-0">
             <div className="text-sm text-ink">Generation failed</div>
             <div className="text-xs text-faint">{cap.generationError}</div>
-            {editor && (
+            {cm && (
               <button className="btn btn-ghost mt-3" onClick={generate} disabled={!!busy}>
                 <RefreshCw size={14} /> Try again
               </button>
