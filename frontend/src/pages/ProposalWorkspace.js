@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { api, errMsg } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { Card, SectionLabel, Pill, Spinner, PageReveal, EmptyState, Modal, Field } from "../components/ui";
-import { canEdit } from "../lib/helpers";
+import { canEdit, canCreateProposal, canSubmitProposal } from "../lib/helpers";
 
 const FMT_META = {
   docx: { icon: FileText, label: "Word", tone: "cyan" },
@@ -39,6 +39,8 @@ export default function ProposalWorkspace() {
   const navigate = useNavigate();
   const { activeOrgId, activeOrg } = useAuth();
   const editor = canEdit(activeOrg?.role);
+  const cm = canCreateProposal(activeOrg?.role);
+  const admin = canSubmitProposal(activeOrg?.role);
   const [opp, setOpp] = useState(null);
   const [proposal, setProposal] = useState(undefined);
   const [secrets, setSecrets] = useState(null);
@@ -139,6 +141,18 @@ export default function ProposalWorkspace() {
     finally { setBusy(""); }
   };
 
+  const markSubmitted = async () => {
+    if (!window.confirm("Mark this proposal package as submitted to the government? "
+        + "This sets the opportunity stage to Submitted.")) return;
+    setBusy("submit");
+    try {
+      const { data } = await api.post(`/orgs/${activeOrgId}/opportunities/${id}/proposal/submit`);
+      setProposal(data);
+      toast.success("Proposal marked as submitted");
+    } catch (e) { toast.error(errMsg(e)); }
+    finally { setBusy(""); }
+  };
+
   if (!opp || proposal === undefined) {
     return <div className="flex h-64 items-center justify-center"><Spinner size={26} className="text-cyan" /></div>;
   }
@@ -159,6 +173,7 @@ export default function ProposalWorkspace() {
           <h1 className="flex flex-wrap items-center gap-3 text-2xl font-semibold text-ink">
             Proposal Package
             {proposal && <Pill tone="cyan">{drafted}/{docs.length} drafted</Pill>}
+            {proposal?.status === "submitted" && <Pill tone="ok">Submitted</Pill>}
           </h1>
           <div className="mt-1 text-sm text-faint">
             <span className="mono">{opp.solNumber || "—"}</span> · {opp.agency} · {opp.vehicle}
@@ -187,6 +202,12 @@ export default function ProposalWorkspace() {
               {busy === "zip" ? <Spinner /> : <Package size={15} />} Download package (.zip)
             </button>
           )}
+          {admin && proposal && drafted > 0 && proposal.status !== "submitted" && (
+            <button className="btn btn-violet" onClick={markSubmitted} disabled={busy === "submit"}
+              data-testid="mark-submitted">
+              {busy === "submit" ? <Spinner /> : <CheckCircle2 size={15} />} Mark as Submitted
+            </button>
+          )}
         </div>
       </div>
 
@@ -194,11 +215,13 @@ export default function ProposalWorkspace() {
         <Card className="p-6">
           <EmptyState icon={Package} title="No proposal package yet"
             subtitle={`Creates the volume set for a ${opp.vehicle} solicitation — each volume gets a one-click AI draft button, human review/editing, and Word/Excel/PowerPoint export.`}
-            action={editor && (
+            action={cm ? (
               <button className="btn btn-primary" onClick={createPackage} disabled={busy === "create"}
                 data-testid="create-proposal">
                 {busy === "create" ? <Spinner /> : <Package size={16} />} Create proposal package
               </button>
+            ) : (
+              <span className="text-xs text-faint">Your capture manager creates the proposal package.</span>
             )} />
         </Card>
       )}

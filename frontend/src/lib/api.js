@@ -1,9 +1,7 @@
 import axios from "axios";
 
-const BASE =
-  process.env.NODE_ENV === "production"
-    ? window.location.origin
-    : process.env.REACT_APP_BACKEND_URL;
+// Empty REACT_APP_BACKEND_URL → same-origin "/api" (CRA dev proxy / reverse proxy)
+const BASE = process.env.REACT_APP_BACKEND_URL || "";
 
 export const api = axios.create({
   baseURL: `${BASE}/api`,

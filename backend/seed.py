@@ -106,8 +106,8 @@ async def seed():
         ["UAS", "hypersonic", "cyber", "autonomy"], admin["id"], "DEMO2026")
     org_id = org["id"]
     for user, email, role, inviter in (
-        (admin, admin_email, "owner", None),
-        (editor, "editor@govcon.io", "editor", admin["id"]),
+        (admin, admin_email, "admin", None),
+        (editor, "editor@govcon.io", "capture_manager", admin["id"]),
         (viewer, "viewer@govcon.io", "viewer", admin["id"]),
     ):
         await db.execute(

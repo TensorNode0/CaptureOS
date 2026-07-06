@@ -1,74 +1,89 @@
-# CaptureAgent (captureagent.us) — PRD & Deployment Log
+# GovCon Command Center — PRD & Build Log
 
-## Current Source of Truth
-GitHub repo **TensorNode0/CaptureOS**, branch `main`, HEAD `f849235` (PR #3 "Rebrand to CaptureAgent",
-on top of PR #2 "Per-organization envelope encryption"). The codebase was developed OUTSIDE Emergent;
-the user's standing instruction is to deploy it exactly as-is — **no rebuilding, redesigning, or
-regenerating features, and no database-layer changes**. If a check fails, show the error instead of
-rewriting app code.
+## Original Problem Statement
+Multi-tenant SaaS (React + FastAPI + MongoDB) for federal-contracting capture teams. Email auth
+with verification; Organizations with server-side RBAC (Owner/Admin/Editor/Viewer); Admin→Members
+(invite by email, assign roles); home dashboard (KPI cards + bar/pie/line charts via Recharts over
+an org-scoped opportunity pipeline); Opportunities table (search/sort/filter, set-aside eligibility
+coloring, Last-Verified) with two Editor-only actions — "Verify & Refresh with AI" (Anthropic
+Messages API + web search/fetch) and "Pull from SAM/Grants" (SAM.gov + Grants.gov, dedupe by sol#);
+per-opportunity workspace (fit matrix, set-aside eligibility, compliance matrix w/ CMMC no-bid gate,
+budget vs ceiling, scorecard keeping Proposal Strength and Capture Probability SEPARATE — never a
+fabricated win-rate); org/company profile drives eligibility; Settings stores Anthropic + SAM keys
+as encrypted, masked, server-only org secrets; dark space theme. Build in phases; mock external APIs
+until the final phase; keep AI cheap.
 
-## Architecture (post-migration — replaces the old GovCon/MongoDB build)
-- Backend: FastAPI + **asyncpg → external Supabase PostgreSQL** via `DATABASE_URL` (backend/.env).
-  NO MongoDB (no MONGO_URL/motor/pymongo). Runs under supervisor: uvicorn on 0.0.0.0:8001, routes under /api.
-- Migrations: `supabase/migrations/*.sql`, auto-applied at startup (`AUTO_MIGRATE=1` default),
-  tracked in `schema_migrations`. Startup log prints `[migrate] applied ...` / `[migrate] up to date`.
-- Frontend: CRA in frontend/, `REACT_APP_BACKEND_URL` (frontend/.env) = preview URL; code appends /api.
-- Auth: JWT httpOnly cookies (access+refresh, SameSite=None Secure), bcrypt, mocked email
-  (register/reset return verifyUrl/resetUrl in JSON; links point at FRONTEND_URL).
-- Secrets: per-org API keys envelope-encrypted (master `SECRETS_ENC_KEY` Fernet in backend/.env),
-  key rotation + access audit endpoints. Keys masked server-side; never sent to browser.
-- backend/.env (git-ignored, values never shown in chat): DATABASE_URL (user's Supabase session-pooler URI),
-  JWT_SECRET (openssl rand -hex 32), SECRETS_ENC_KEY (Fernet), FRONTEND_URL=https://captureagent.us, SEED_DEMO=0.
+## User Choices (from kickoff)
+- Custom JWT email+password auth.
+- Email verification MOCKED (verifyUrl/resetUrl surfaced in-app).
+- External integrations (AI verify, SAM/Grants pull) MOCKED this iteration; user will provide
+  Anthropic + SAM keys to wire live next.
+- Scope: Phases 1–4 MVP. Follow the spec's dark space design system exactly.
 
-## Implemented / Verified (2026-07-04)
-- Repo pulled (public window) and mirrored into /app; repo may be private again now.
-- Deps installed exactly from backend/requirements.txt + frontend package.json (yarn).
-- Secrets generated directly into backend/.env without display; user supplied DATABASE_URL out-of-chat
-  (initially pasted into docker-compose.dev.yml by mistake — value moved to backend/.env programmatically,
-  file restored byte-identical before any auto-commit; `git log -S` confirms secret never entered history).
-- Verification (test_reports/iteration_4.json — 100% pass, backend 7/7 + full Playwright UI flow):
-  1. GET /api/health → {"status":"ok","service":"captureagent"} ✅
-  2. Startup log shows `[migrate] up to date` ✅
-  3. Register → verify(token) → login → onboarding org creation → Settings→API Keys masked fields ✅
-- QA data in live Supabase: qa.captureagent@testmail.dev / org "QA Verification Org" (see test_credentials.md).
-- Testing agent added /app/backend/tests/test_deploy_verification.py (regression harness; not app code).
+## Architecture
+- Backend: FastAPI, modular routers (auth, orgs[+profile/members/audit/secrets], opportunities),
+  Motor/MongoDB (tz_aware=True), JWT httpOnly cookies (SameSite=None; Secure), bcrypt, Fernet for
+  secret encryption, rbac.require_role(orgId) dependency on every org-scoped route.
+- Frontend: React 18 (CRA) + Tailwind (CSS-variable tokens) + Recharts + framer-motion +
+  lucide-react + sonner. AuthContext + org switcher. Pages per spec.
+- Collections: users, organizations, memberships, orgProfile, opportunities, secrets, auditLog,
+  refreshJobs, plus password_reset_tokens / email_verify_tokens / login_attempts.
 
-## Known findings (reported, intentionally NOT fixed per user constraint)
-- Cosmetic: Settings → API Keys info banner wraps "live, server-side" oddly (flex/word-break).
-- CORS allow_origins = [FRONTEND_URL, localhost:3000]; preview works because frontend/backend are
-  same-origin behind ingress. Fine for production at captureagent.us.
-- Preview pod's supervisor also runs an unused platform-managed mongod ([readonly config) — harmless.
-- deployment_agent "fail" findings assessed as false positives / platform-managed / intentional (.env gitignored).
+## Implemented (2026-06-06)
+- Phase 1: Auth (register/login/logout/refresh/forgot/reset/verify-email — email mocked), Orgs,
+  memberships, server-side RBAC, org switcher, onboarding (create org → owner).
+- Phase 2: Opportunity schema + org-scoped CRUD; table (search/sort/filter/eligibility coloring/
+  Last-Verified); detail workspace tabs (Fit & Overview, Set-Aside, Compliance w/ hard NO-BID gate,
+  Budget vs ceiling + donut, Scorecard w/ separate Strength & Pwin + radar, Decision w/ gate logic).
+- Phase 3: Dashboard KPIs + bar/pie(toggle setAside↔vehicle)/line/horizontal-bar charts, empty states.
+- Phase 4: Full dark space theme (tokens, nebula gradients, starfield, glass cards, IBM Plex Sans /
+  JetBrains Mono, motion, skeleton/empty/error states, reduced-motion, focus rings).
+- Admin (Members invite/role/remove/transfer + Audit log); Settings (org + encrypted/masked API keys);
+  Company Profile (drives eligibility).
+- Tested: 28/28 backend pass; all critical frontend flows verified. Fixed Motor tz_aware bug.
 
-## Production (deployed 2026-07-04)
-- LIVE at https://govcon-workspace.emergent.host — verified by testing_agent (iteration_5, read-only):
-  health JSON exact match, login page renders, external Supabase connected (startup = pool + migrations).
-- captureagent.us: DNS on Cloudflare, valid cert issued 2026-07-04 (user started Entri flow), but
-  Cloudflare error 1034 = origin route to the deployment not configured/propagated yet. User must
-  finish Link domain → Entri in deployment settings; remove old A/AAAA records at registrar if stuck;
-  escalate to support@emergent.sh with job ID if it persists. NOT an app bug — no code changes made.
+## Phase 5 — LIVE integrations wired (2026-06)
+- `/app/backend/integrations.py`: `anthropic_verify()` (claude-3-5-haiku + `web_search_20250305`
+  tool, max_uses=5, JSON-only, ~10¢/run cap), `fetch_sam()` (SAM.gov v2 search), `fetch_grants()`
+  (Grants.gov search2). Keys never logged/stored in source.
+- `routers/opportunities.py`: removed mocks. `POST /verify` and `POST /pull` now read the org's
+  Fernet-encrypted keys from `db.secrets` (decrypt at call time, server-only), Editor-RBAC gated,
+  batch capped to 25 opps for cost. Helper `_new_opp_doc()` reused by pull + AI-discovered opps.
+  Dedupe/merge by sol# preserves user fit/compliance/budget/scoring.
+- Error UX: 400 "Add it in Settings → API Keys" when unset; 400 "rejected" on invalid key;
+  502 on upstream failure. Verified via curl (no-key + invalid-key paths).
+- ⚠️ User supplies real keys via Settings → API Keys (anthropic-key / sam-key inputs). Live
+  success path validated by user since keys are user-owned.
 
-## Bug fix 2026-07-04: "can't register/login" on captureagent.us
-- Domain link completed by user (captureagent.us now serves the app; error 1034 gone).
-- Root cause: prod bundle baked REACT_APP_BACKEND_URL=https://govcon-workspace.emergent.host →
-  cross-origin calls from captureagent.us → CORS preflight 400 (no ACAO) → browser blocked all auth.
-- Fix (only authorized code change, frontend/src/lib/api.js): BASE = NODE_ENV==='production'
-  ? window.location.origin : REACT_APP_BACKEND_URL. Same-origin on any prod host, first-party cookies,
-  dev/preview unchanged. Verified by testing_agent iteration_6 (100%): preview auth e2e green,
-  new bundle has 0 govcon-workspace refs, live-domain failure reproduced pre-redeploy.
-- AWAITING: user redeploy to ship the fixed bundle to production.
-- Pre-existing LOW issue (reported, not fixed): /verify-email page double-fires API under React
-  StrictMode in dev/preview → shows "Invalid or expired token" though verification succeeded.
-  Prod builds unaffected. Fix requires user approval (their codebase).
-- QA accounts created in the SHARED live Supabase during testing: fixcheck.*/apitest.*@testmail.dev
-  (cleanup: delete from users where email like 'fixcheck.%' or email like 'apitest.%' or email like 'repro.check.%').
+## Phase 6 — AI Intelligence Scan + Org Join + Responsive Nav (2026-06-10)
+- **AI Opportunity Intelligence Scan** (LIVE): `/app/backend/intel.py` runs Claude (Sonnet tiers /
+  Haiku lean) + `web_search_20250305` against public federal sources (SAM.gov, SBIR/DSIP,
+  AFWERX/SpaceWERX, DARPA, NASA, DIU, xTech…) to discover REAL open SB-eligible solicitations and
+  fit-score (1-100 + grade) them against the org capability profile. Background job model
+  (`intelJobs`) + saved reports (`intelReports`). Tiers: lean/standard/deep cap web-searches &
+  opp count for cost control. Router `/app/backend/routers/intel.py`: scan/jobs/reports/delete/
+  add-to-pipeline (Editor-gated, keys from encrypted vault).
+- **Frontend Intelligence page** (`pages/Intelligence.js` + `components/IntelSummary.js`,
+  `components/IntelTable.js`, `lib/intel.js`): executive summary (KPIs + mission/agency/vehicle/
+  color-of-money charts + hot signals + recommended actions + source status), 20-column
+  sortable/filterable/searchable table with fit grades, compliance flags, color-of-money dots,
+  urgency row borders, CSV + standalone-HTML export, report history, add-to-pipeline. Sample-data
+  banner when previewing seeded report.
+- **Admin-editable Capability Profile** (Company Profile): capabilities, pastPerformance,
+  techFocus[], differentiators, commercialization, clearances — drive the AI Fit Score.
+- **Org create/join**: in-app "Create organization" + "Join with code" (Org switcher); shareable
+  8-char `joinCode` per org (Admin → Members card; GET/rotate). `POST /api/orgs/join`.
+- **Responsive navigation**: Shell now has a mobile hamburger drawer (`lg:hidden`) so Settings/Admin
+  are reachable below 1024px (fixes the "no Settings" report). New "Intelligence" nav item.
+- Settings copy updated — keys are LIVE (no longer mocked).
+- Tested: 12/12 new backend (`/app/backend/tests/test_intel_orgs.py`) + prior 28/28 green; 100% of
+  frontend flows verified. LIVE Anthropic/SAM success path validated by user (own keys).
 
-## Backlog / Next
-- P0: USER REDEPLOY to push fixed bundle live, then retest register/login at captureagent.us.
-- P0 (done by user): captureagent.us domain linking.
-- P0: Resend email integration — user said "yes to improvements"; awaiting answers to 4 scope questions
-  (direct edits vs patch, drop URLs-in-response when key set, sender address, which flows).
-  Playbook obtained: resend pip pkg, RESEND_API_KEY + SENDER_EMAIL in backend/.env,
-  asyncio.to_thread(resend.Emails.send, params). 4 mocked spots: auth.py:82/161/195, orgs.py:266.
-- P1: Real email provider for verify/reset links before enabling public sign-ups (currently mocked).
-- P2: Whatever the user develops next in GitHub — re-import via GitHub button when main updates.
+## Prioritized Backlog (updated 2026-06-10)
+- P1: Scheduled weekly auto-scan (Mon 3:30 AM MT) + email digest of the report (needs Resend/SendGrid).
+- P1: "Test connection" button per key in Settings to validate Anthropic/SAM before a full run.
+- P1: Phase 7 Proposal Studio (solicitation summary, requirement extraction, deliverable generation).
+- P2: USAspending incumbent recon, per-org rate limiting, auth/refresh rate limits.
+- P2: Replace window.confirm (join-code rotate) with Modal; richer source coverage (more portals).
+
+## Test Credentials → /app/memory/test_credentials.md

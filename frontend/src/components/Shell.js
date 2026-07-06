@@ -6,7 +6,8 @@ import {
   Plus, KeyRound,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
-import { canAdmin } from "../lib/helpers";
+import { canAdmin, canSeeDashboard } from "../lib/helpers";
+import { LogoMark } from "./Logo";
 import { api, errMsg } from "../lib/api";
 import { toast } from "sonner";
 import { Modal, Field, Spinner } from "./ui";
@@ -124,7 +125,7 @@ function OrgSwitcher() {
 }
 
 const NAV = [
-  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, testid: "nav-dashboard" },
+  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, testid: "nav-dashboard", dashboard: true },
   { to: "/intelligence", label: "Intelligence", icon: Satellite, testid: "nav-intelligence" },
   { to: "/opportunities", label: "Opportunities", icon: Target, testid: "nav-opportunities" },
   { to: "/profile", label: "Company Profile", icon: Building2, testid: "nav-profile" },
@@ -135,7 +136,7 @@ const NAV = [
 function NavList({ role, onNavigate }) {
   return (
     <nav className="flex flex-1 flex-col gap-1">
-      {NAV.filter((n) => !n.admin || canAdmin(role)).map((n) => (
+      {NAV.filter((n) => (!n.admin || canAdmin(role)) && (!n.dashboard || canSeeDashboard(role))).map((n) => (
         <NavLink key={n.to} to={n.to} data-testid={n.testid} onClick={onNavigate}
           className={({ isActive }) =>
             `flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors ${
@@ -151,12 +152,10 @@ function NavList({ role, onNavigate }) {
 
 function Brand() {
   return (
-    <div className="flex items-center gap-2 px-2">
-      <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-cyan/40 bg-cyan/10">
-        <Shield size={18} className="text-cyan" />
-      </div>
+    <div className="flex items-center gap-2.5 px-2 text-ink">
+      <LogoMark size={34} ink="#e8eefc" />
       <div className="leading-tight">
-        <div className="text-sm font-semibold text-ink">CaptureAgent</div>
+        <div className="text-sm font-bold tracking-tight text-ink">CaptureAgent</div>
         <div className="label-mono">captureagent.us</div>
       </div>
     </div>

@@ -1,13 +1,15 @@
 import os
+from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr, Field
 from typing import Optional, List
 from secrets import token_hex
 
 import database as db
+import email_service
 from utils import now_utc, serialize, as_uuid
 from auth_utils import get_current_user
-from rbac import require_role
+from rbac import require_role, ASSIGNABLE_ROLES
 from domain import write_audit
 import org_keys
 
@@ -21,34 +23,144 @@ def _gen_join_code():
 DEFAULT_CERTS = {"sba": False, "eightA": False, "hubzone": False,
                  "sdvosb": False, "wosb": False, "edwosb": False, "vosb": False}
 
+# Public mailbox providers never claim an org domain — those users create an
+# org without a domain (colleagues join via invite or join code instead).
+PUBLIC_EMAIL_DOMAINS = {
+    "gmail.com", "googlemail.com", "yahoo.com", "ymail.com", "outlook.com",
+    "hotmail.com", "live.com", "msn.com", "aol.com", "icloud.com", "me.com",
+    "mac.com", "proton.me", "protonmail.com", "pm.me", "mail.com", "gmx.com",
+    "zoho.com", "comcast.net", "verizon.net", "att.net",
+}
+
+
+def _email_domain(email: str) -> str:
+    return (email or "").rsplit("@", 1)[-1].lower().strip()
+
+
+def _is_public_domain(domain: str) -> bool:
+    return domain in PUBLIC_EMAIL_DOMAINS or not domain
+
+
+async def _org_admin_emails(org_id):
+    rows = await db.fetch(
+        """select u.email from memberships m join users u on u.id = m.user_id
+           where m.organization_id = $1 and m.status = 'active'
+             and m.role in ('admin', 'owner')""", org_id)
+    return [r["email"] for r in rows]
+
 
 # ---------------- Organizations ----------------
 class OrgIn(BaseModel):
     name: str = Field(min_length=1, max_length=140)
     naics: List[str] = []
     keywords: List[str] = []
+    certifyAor: bool = False
+
+
+@router.get("/domain-status")
+async def domain_status(user: dict = Depends(get_current_user)):
+    """Signup routing: does an org already exist for this user's email domain?"""
+    domain = _email_domain(user["email"])
+    public = _is_public_domain(domain)
+    org = None
+    membership = None
+    if not public:
+        org = await db.fetchrow(
+            "select id, name from organizations where lower(domain) = $1", domain)
+        if org:
+            membership = await db.fetchrow(
+                """select status from memberships
+                   where organization_id = $1 and user_id = $2""",
+                org["id"], as_uuid(user["id"]))
+    return {
+        "domain": domain,
+        "publicDomain": public,
+        "org": {"id": str(org["id"]), "name": org["name"]} if org else None,
+        "membershipStatus": membership["status"] if membership else None,
+    }
 
 
 @router.post("")
 async def create_org(body: OrgIn, user: dict = Depends(get_current_user)):
+    if not body.certifyAor:
+        raise HTTPException(status_code=400, detail=(
+            "You must certify that you are your organization's Authorized "
+            "Organizational Representative (AOR) / Administrator to create a workspace."))
     uid = as_uuid(user["id"])
+    domain = _email_domain(user["email"])
+    if _is_public_domain(domain):
+        domain = ""
+    else:
+        taken = await db.fetchrow(
+            "select id, name from organizations where lower(domain) = $1", domain)
+        if taken:
+            member = await db.fetchrow(
+                """select id from memberships where organization_id = $1
+                   and user_id = $2 and status = 'active'""", taken["id"], uid)
+            if not member:
+                raise HTTPException(status_code=409, detail=(
+                    f"{taken['name']} already has a CaptureAgent workspace for @{domain}. "
+                    "Request to join it instead — its administrator will approve you."))
+            domain = ""  # existing member spinning up an extra workspace: no new claim
     org = await db.fetchrow(
-        """insert into organizations (name, naics, keywords, owner_id, join_code)
-           values ($1, $2, $3, $4, $5) returning *""",
-        body.name.strip(), body.naics, body.keywords, uid, _gen_join_code())
+        """insert into organizations (name, naics, keywords, owner_id, join_code,
+                                      domain, aor_certified_by, aor_certified_at)
+           values ($1, $2, $3, $4, $5, $6, $4, $7) returning *""",
+        body.name.strip(), body.naics, body.keywords, uid, _gen_join_code(),
+        domain, now_utc())
     await db.execute(
         """insert into memberships (user_id, invited_email, organization_id, role,
                                     invited_by, status)
-           values ($1, $2, $3, 'owner', null, 'active')""",
+           values ($1, $2, $3, 'admin', null, 'active')""",
         uid, user["email"], org["id"])
     await db.execute(
         """insert into org_profiles (organization_id, certs)
            values ($1, $2)""",
         org["id"], DEFAULT_CERTS)
-    await write_audit(org["id"], user, "org.create", body.name)
+    await write_audit(org["id"], user, "org.create", body.name,
+                      {"aorCertified": True, "domain": domain})
     out = serialize(org)
-    out["role"] = "owner"
+    out["role"] = "admin"
     return out
+
+
+@router.post("/{orgId}/join-request")
+async def request_to_join(orgId: str, user: dict = Depends(get_current_user)):
+    """Self-signup with a known company domain → pending until admin approves."""
+    oid_ = as_uuid(orgId)
+    org = await db.fetchrow("select * from organizations where id = $1", oid_) if oid_ else None
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    if not org.get("domain") or _email_domain(user["email"]) != org["domain"].lower():
+        raise HTTPException(status_code=403, detail=(
+            "Your email domain does not match this organization. "
+            "Ask an administrator for an invite or a join code."))
+    existing = await db.fetchrow(
+        "select * from memberships where organization_id = $1 and user_id = $2",
+        org["id"], as_uuid(user["id"]))
+    if existing:
+        if existing["status"] == "pending":
+            return {"ok": True, "status": "pending"}
+        raise HTTPException(status_code=400, detail="You already have access to this organization")
+    await db.execute(
+        """insert into memberships (user_id, invited_email, organization_id, role,
+                                    invited_by, status)
+           values ($1, $2, $3, 'viewer', null, 'pending')""",
+        as_uuid(user["id"]), user["email"], org["id"])
+    await write_audit(org["id"], user, "member.join_request", user["email"])
+    for admin_email in await _org_admin_emails(org["id"]):
+        try:
+            await email_service.send(
+                admin_email, f"CaptureAgent: access request for {org['name']}",
+                email_service._layout(
+                    "New access request",
+                    f"{user.get('name') or user['email']} ({user['email']}) requested "
+                    f"access to the {org['name']} workspace. Approve or deny them and "
+                    "assign a role from the Admin page.",
+                    f"{os.environ.get('FRONTEND_URL', '')}/admin", "Review request"))
+        except Exception as e:
+            print(f"[EMAIL-ERROR] join-request notify failed: {e}")
+    return {"ok": True, "status": "pending"}
 
 
 @router.get("")
@@ -165,15 +277,122 @@ class ProfileIn(BaseModel):
     clearances: str = ""
 
 
+async def _has_edit_grant(org_id, user_id) -> bool:
+    row = await db.fetchrow(
+        """select id from profile_edit_requests
+           where organization_id = $1 and requested_by = $2
+             and status = 'approved' and expires_at > now() limit 1""",
+        org_id, as_uuid(user_id))
+    return bool(row)
+
+
+def _can_edit_entity(role: str) -> bool:
+    return role in ("admin", "owner")
+
+
 @router.get("/{orgId}/profile")
 async def get_profile(ctx: dict = Depends(require_role("viewer"))):
     prof = await db.fetchrow("select * from org_profiles where organization_id = $1",
                              ctx["org_id"])
-    return serialize(prof) if prof else None
+    out = serialize(prof) if prof else {}
+    can_edit = _can_edit_entity(ctx["role"])
+    pending_request = False
+    if not can_edit and ctx["role"] == "capture_manager":
+        if await _has_edit_grant(ctx["org_id"], ctx["user"]["id"]):
+            can_edit = True
+        else:
+            pending_request = bool(await db.fetchrow(
+                """select id from profile_edit_requests
+                   where organization_id = $1 and requested_by = $2 and status = 'pending'""",
+                ctx["org_id"], as_uuid(ctx["user"]["id"])))
+    out["canEdit"] = can_edit
+    out["editRequestPending"] = pending_request
+    return out
+
+
+@router.post("/{orgId}/profile/edit-request")
+async def request_profile_edit(ctx: dict = Depends(require_role("capture_manager"))):
+    """Capture manager asks the admin for a time-boxed entity-info edit window."""
+    if _can_edit_entity(ctx["role"]):
+        raise HTTPException(status_code=400, detail="You can already edit entity info")
+    dup = await db.fetchrow(
+        """select id from profile_edit_requests
+           where organization_id = $1 and requested_by = $2 and status = 'pending'""",
+        ctx["org_id"], as_uuid(ctx["user"]["id"]))
+    if dup:
+        return {"ok": True, "status": "pending"}
+    await db.execute(
+        """insert into profile_edit_requests (organization_id, requested_by)
+           values ($1, $2)""",
+        ctx["org_id"], as_uuid(ctx["user"]["id"]))
+    await write_audit(ctx["org_id"], ctx["user"], "profile.edit_request",
+                      ctx["org"]["name"])
+    for admin_email in await _org_admin_emails(ctx["org_id"]):
+        try:
+            await email_service.send(
+                admin_email, "CaptureAgent: entity-info edit request",
+                email_service._layout(
+                    "Entity edit request",
+                    f"{ctx['user'].get('name') or ctx['user']['email']} (capture manager) "
+                    f"requested permission to edit {ctx['org']['name']}'s entity "
+                    "information. Approve to grant a 24-hour edit window.",
+                    f"{os.environ.get('FRONTEND_URL', '')}/admin", "Review request"))
+        except Exception as e:
+            print(f"[EMAIL-ERROR] edit-request notify failed: {e}")
+    return {"ok": True, "status": "pending"}
+
+
+@router.get("/{orgId}/profile/edit-requests")
+async def list_edit_requests(ctx: dict = Depends(require_role("admin"))):
+    rows = await db.fetch(
+        """select r.*, u.name as requester_name, u.email as requester_email
+           from profile_edit_requests r join users u on u.id = r.requested_by
+           where r.organization_id = $1 order by r.created_at desc limit 50""",
+        ctx["org_id"])
+    out = []
+    for r in rows:
+        name = r.pop("requester_name", None)
+        email = r.pop("requester_email", None)
+        entry = serialize(r)
+        entry["requesterName"] = name
+        entry["requesterEmail"] = email
+        out.append(entry)
+    return out
+
+
+class DecideIn(BaseModel):
+    approve: bool
+
+
+@router.post("/{orgId}/profile/edit-requests/{reqId}/decide")
+async def decide_edit_request(reqId: str, body: DecideIn,
+                              ctx: dict = Depends(require_role("admin"))):
+    rid = as_uuid(reqId)
+    req = await db.fetchrow(
+        """select * from profile_edit_requests
+           where id = $1 and organization_id = $2 and status = 'pending'""",
+        rid, ctx["org_id"]) if rid else None
+    if not req:
+        raise HTTPException(status_code=404, detail="Pending request not found")
+    status = "approved" if body.approve else "denied"
+    expires = now_utc() + timedelta(hours=24) if body.approve else None
+    await db.execute(
+        """update profile_edit_requests
+           set status = $2, decided_by = $3, decided_at = $4, expires_at = $5
+           where id = $1""",
+        rid, status, as_uuid(ctx["user"]["id"]), now_utc(), expires)
+    await write_audit(ctx["org_id"], ctx["user"], f"profile.edit_request_{status}",
+                      ctx["org"]["name"])
+    return {"ok": True, "status": status}
 
 
 @router.put("/{orgId}/profile")
-async def update_profile(body: ProfileIn, ctx: dict = Depends(require_role("admin"))):
+async def update_profile(body: ProfileIn, ctx: dict = Depends(require_role("capture_manager"))):
+    if not _can_edit_entity(ctx["role"]):
+        if not await _has_edit_grant(ctx["org_id"], ctx["user"]["id"]):
+            raise HTTPException(status_code=403, detail=(
+                "Entity information is managed by your administrator. "
+                "Use 'Request edit access' and wait for approval."))
     prof = await db.fetchrow(
         """insert into org_profiles (organization_id, uei, cage, sam_active, is_small,
                certs, cmmc_level, sprs_score, size_note, notes, capabilities,
@@ -213,7 +432,7 @@ class TransferIn(BaseModel):
     membershipId: str
 
 
-VALID_ROLES = {"viewer", "editor", "admin"}
+VALID_ROLES = ASSIGNABLE_ROLES
 
 
 @router.get("/{orgId}/members")
@@ -264,10 +483,48 @@ async def invite_member(body: InviteIn, ctx: dict = Depends(require_role("admin"
            values ($1, $2, $3, $4, $5, $6) returning id""",
         user_id, email, ctx["org_id"], role, as_uuid(ctx["user"]["id"]), status)
     invite_url = f"{os.environ.get('FRONTEND_URL', '')}/login?invited={email}"
-    print(f"[EMAIL-MOCK] Invite for {email} to org {ctx['org']['name']}: {invite_url}")
+    try:
+        await email_service.send_invite(email, ctx["org"]["name"], invite_url)
+    except Exception as e:
+        print(f"[EMAIL-ERROR] invite send failed for {email}: {e}")
     await write_audit(ctx["org_id"], ctx["user"], "member.invite", email, {"role": role})
     return {"ok": True, "membershipId": str(membership["id"]), "status": status,
             "inviteUrl": invite_url}
+
+
+class ApproveIn(BaseModel):
+    role: str = "viewer"
+
+
+@router.post("/{orgId}/members/{membershipId}/approve")
+async def approve_member(membershipId: str, body: ApproveIn,
+                         ctx: dict = Depends(require_role("admin"))):
+    """Approve a pending (domain self-signup) member and assign their role."""
+    role = body.role.lower()
+    if role not in VALID_ROLES:
+        raise HTTPException(status_code=400, detail="Invalid role")
+    mid = as_uuid(membershipId)
+    m = await db.fetchrow(
+        """select * from memberships
+           where id = $1 and organization_id = $2 and status = 'pending'""",
+        mid, ctx["org_id"]) if mid else None
+    if not m:
+        raise HTTPException(status_code=404, detail="Pending member not found")
+    await db.execute(
+        "update memberships set status = 'active', role = $2 where id = $1", mid, role)
+    await write_audit(ctx["org_id"], ctx["user"], "member.approve",
+                      m.get("invited_email"), {"role": role})
+    try:
+        await email_service.send(
+            m["invited_email"], f"You're in — {ctx['org']['name']} on CaptureAgent",
+            email_service._layout(
+                "Access approved",
+                f"Your access request to {ctx['org']['name']} was approved with the "
+                f"role: {role.replace('_', ' ')}. You can sign in now.",
+                f"{os.environ.get('FRONTEND_URL', '')}/login", "Sign in"))
+    except Exception as e:
+        print(f"[EMAIL-ERROR] approve notify failed: {e}")
+    return {"ok": True, "role": role}
 
 
 @router.put("/{orgId}/members/{membershipId}")

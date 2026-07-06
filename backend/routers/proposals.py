@@ -8,7 +8,7 @@ from typing import Any, Dict, Optional
 
 import database as db
 from utils import now_utc, serialize, as_uuid
-from rbac import require_role
+from rbac import require_role, require_perm
 from domain import write_audit
 import proposal_ai
 import exports
@@ -82,7 +82,7 @@ async def get_proposal(oppId: str, ctx: dict = Depends(require_role("viewer"))):
 
 
 @router.post("/{orgId}/opportunities/{oppId}/proposal")
-async def create_proposal(oppId: str, ctx: dict = Depends(require_role("editor"))):
+async def create_proposal(oppId: str, ctx: dict = Depends(require_perm("proposal.create"))):
     opp = await _get_opp(ctx["org_id"], oppId)
     if not opp:
         raise HTTPException(status_code=404, detail="Opportunity not found")
@@ -288,3 +288,25 @@ async def download_package(oppId: str, ctx: dict = Depends(require_role("viewer"
                       opp_s.get("title"), {"files": len(files)})
     return Response(content=data, media_type="application/zip",
                     headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@router.post("/{orgId}/opportunities/{oppId}/proposal/submit")
+async def submit_proposal(oppId: str, ctx: dict = Depends(require_perm("proposal.submit"))):
+    """Admin-only: mark the proposal package as submitted to the government."""
+    opp = await _get_opp(ctx["org_id"], oppId)
+    proposal = await _get_proposal(ctx["org_id"], oppId)
+    if not opp or not proposal:
+        raise HTTPException(status_code=404, detail="Proposal not found")
+    if proposal.get("status") == "submitted":
+        raise HTTPException(status_code=400, detail="This proposal is already marked submitted")
+    await db.execute(
+        """update proposals set status = 'submitted', submitted_at = $2, submitted_by = $3
+           where id = $1""",
+        proposal["id"], now_utc(), as_uuid(ctx["user"]["id"]))
+    await db.execute(
+        "update opportunities set stage = 'Submitted', updated_at = $2 where id = $1",
+        opp["id"], now_utc())
+    await write_audit(ctx["org_id"], ctx["user"], "proposal.submit",
+                      serialize(opp).get("title"))
+    fresh = await _get_proposal(ctx["org_id"], oppId)
+    return await _payload(fresh)

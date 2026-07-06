@@ -5,6 +5,7 @@ from fastapi import APIRouter, Request, Response, HTTPException, Depends
 from pydantic import BaseModel, EmailStr, Field
 
 import database as db
+import email_service
 from utils import now_utc, serialize, as_uuid
 from auth_utils import (hash_password, verify_password, set_auth_cookies,
                         clear_auth_cookies, get_current_user, create_access_token)
@@ -60,6 +61,14 @@ async def _user_payload(user_row):
     u["organizations"] = [
         {"id": str(o["id"]), "name": o["name"], "role": o["role"]} for o in orgs
     ]
+    pending = await db.fetch(
+        """select o.id, o.name
+           from memberships m join organizations o on o.id = m.organization_id
+           where m.user_id = $1 and m.status = 'pending'""",
+        as_uuid(u["id"]))
+    u["pendingOrganizations"] = [
+        {"id": str(o["id"]), "name": o["name"]} for o in pending
+    ]
     return u
 
 
@@ -73,17 +82,20 @@ async def register(body: RegisterIn, response: Response):
            values ($1, $2, $3, false) returning *""",
         email, body.name.strip(), hash_password(body.password))
     await _attach_pending_invites(user["id"], email)
-    # email verification (mocked: link surfaced in response)
     token = pysecrets.token_urlsafe(32)
     await db.execute(
         """insert into email_verify_tokens (token, user_id, expires_at)
            values ($1, $2, $3)""",
         token, user["id"], now_utc() + timedelta(days=2))
     verify_url = f"{FRONTEND_URL}/verify-email?token={token}"
-    print(f"[EMAIL-MOCK] Verify link for {email}: {verify_url}")
+    try:
+        await email_service.send_verify(email, verify_url)
+    except Exception as e:  # account still created; user can resend
+        print(f"[EMAIL-ERROR] verify send failed for {email}: {e}")
     set_auth_cookies(response, str(user["id"]), email)
     payload = await _user_payload(user)
-    payload["verifyUrl"] = verify_url
+    if not email_service.configured():
+        payload["verifyUrl"] = verify_url  # dev only — never in production
     return payload
 
 
@@ -138,9 +150,10 @@ async def refresh(request: Request, response: Response):
                                  as_uuid(payload.get("sub")))
         if not user:
             raise HTTPException(status_code=401, detail="User not found")
+        from auth_utils import COOKIE_SECURE, COOKIE_SAMESITE
         access = create_access_token(str(user["id"]), user["email"])
-        response.set_cookie("access_token", access, httponly=True, secure=True,
-                            samesite="none", max_age=12 * 3600, path="/")
+        response.set_cookie("access_token", access, httponly=True, secure=COOKIE_SECURE,
+                            samesite=COOKIE_SAMESITE, max_age=12 * 3600, path="/")
         return {"ok": True}
     except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Invalid refresh token")
@@ -159,8 +172,12 @@ async def forgot_password(body: ForgotIn):
            values ($1, $2, $3)""",
         token, user["id"], now_utc() + timedelta(hours=1))
     reset_url = f"{FRONTEND_URL}/reset-password?token={token}"
-    print(f"[EMAIL-MOCK] Reset link for {email}: {reset_url}")
-    resp["resetUrl"] = reset_url  # surfaced in-app while email is mocked
+    try:
+        await email_service.send_reset(email, reset_url)
+    except Exception as e:
+        print(f"[EMAIL-ERROR] reset send failed for {email}: {e}")
+    if not email_service.configured():
+        resp["resetUrl"] = reset_url  # dev only — never in production
     return resp
 
 
@@ -193,5 +210,12 @@ async def resend_verification(user: dict = Depends(get_current_user)):
            values ($1, $2, $3)""",
         token, as_uuid(user["id"]), now_utc() + timedelta(days=2))
     verify_url = f"{FRONTEND_URL}/verify-email?token={token}"
-    print(f"[EMAIL-MOCK] Resend verify for {user['email']}: {verify_url}")
-    return {"ok": True, "verifyUrl": verify_url}
+    try:
+        await email_service.send_verify(user["email"], verify_url)
+    except Exception as e:
+        print(f"[EMAIL-ERROR] resend verify failed for {user['email']}: {e}")
+        raise HTTPException(status_code=502, detail="Could not send the email. Try again.")
+    out = {"ok": True}
+    if not email_service.configured():
+        out["verifyUrl"] = verify_url  # dev only
+    return out

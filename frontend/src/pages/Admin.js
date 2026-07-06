@@ -6,7 +6,67 @@ import { useAuth } from "../context/AuthContext";
 import { Card, SectionLabel, Pill, Spinner, PageReveal, Modal, Field, EmptyState } from "../components/ui";
 import { fmtDateTime, isOwner } from "../lib/helpers";
 
-const ROLES = ["viewer", "editor", "admin"];
+const ROLES = ["viewer", "editor", "technical_writer", "proposal_writer", "pi",
+               "capture_manager", "admin"];
+const roleLabel = (r) => r.replace(/_/g, " ");
+
+function PendingApproval({ m, orgId, onDone }) {
+  const [role, setRole] = useState("proposal_writer");
+  const [busy, setBusy] = useState(false);
+  const approve = async () => {
+    setBusy(true);
+    try {
+      await api.post(`/orgs/${orgId}/members/${m.id}/approve`, { role });
+      toast.success(`${m.email} approved as ${roleLabel(role)}`);
+      onDone();
+    } catch (e) { toast.error(errMsg(e)); } finally { setBusy(false); }
+  };
+  return (
+    <div className="flex items-center justify-end gap-2">
+      <select className="field !py-1 !w-auto" value={role} onChange={(e) => setRole(e.target.value)}
+              data-testid={`approve-role-${m.email}`}>
+        {ROLES.map((r) => <option key={r} value={r}>{roleLabel(r)}</option>)}
+      </select>
+      <button className="btn btn-primary !py-1 !px-3 text-xs" onClick={approve} disabled={busy}
+              data-testid={`approve-${m.email}`}>
+        {busy ? <Spinner /> : "Approve"}
+      </button>
+    </div>
+  );
+}
+
+function EditRequestsCard({ orgId }) {
+  const [reqs, setReqs] = useState(null);
+  const load = () => api.get(`/orgs/${orgId}/profile/edit-requests`).then((r) => setReqs(r.data)).catch(() => setReqs([]));
+  useEffect(() => { if (orgId) load(); }, [orgId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const decide = async (r, approve) => {
+    try {
+      await api.post(`/orgs/${orgId}/profile/edit-requests/${r.id}/decide`, { approve });
+      toast.success(approve ? "Edit window granted (24h)" : "Request denied");
+      load();
+    } catch (e) { toast.error(errMsg(e)); }
+  };
+  const pending = (reqs || []).filter((r) => r.status === "pending");
+  if (!pending.length) return null;
+  return (
+    <Card className="p-5" data-testid="edit-requests-card">
+      <SectionLabel>Entity Info Edit Requests</SectionLabel>
+      <p className="mt-1 text-xs text-faint">Capture managers asking for a 24-hour window to edit company/entity info.</p>
+      <div className="mt-3 space-y-2">
+        {pending.map((r) => (
+          <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-white/5 px-3 py-2">
+            <div className="text-sm text-ink">{r.requesterName || r.requesterEmail}
+              <span className="ml-2 text-xs text-faint">{r.requesterEmail}</span></div>
+            <div className="flex gap-2">
+              <button className="btn btn-primary !py-1 !px-3 text-xs" onClick={() => decide(r, true)} data-testid={`edit-req-approve-${r.id}`}>Grant 24h</button>
+              <button className="btn btn-ghost !py-1 !px-3 text-xs" onClick={() => decide(r, false)} data-testid={`edit-req-deny-${r.id}`}>Deny</button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
 
 function JoinCodeCard({ orgId }) {
   const [code, setCode] = useState("");
@@ -50,7 +110,7 @@ function InviteModal({ open, onClose, orgId, onDone }) {
     <Modal open={open} onClose={onClose} title="Invite member">
       <form onSubmit={submit} className="space-y-4" data-testid="invite-form">
         <Field label="Email"><input type="email" className="field" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="teammate@company.com" data-testid="invite-email" /></Field>
-        <Field label="Role"><select className="field" value={role} onChange={(e) => setRole(e.target.value)} data-testid="invite-role">{ROLES.map((r) => <option key={r} value={r}>{r}</option>)}</select></Field>
+        <Field label="Role"><select className="field" value={role} onChange={(e) => setRole(e.target.value)} data-testid="invite-role">{ROLES.map((r) => <option key={r} value={r}>{roleLabel(r)}</option>)}</select></Field>
         <div className="flex justify-end gap-2"><button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
           <button type="submit" className="btn btn-primary" disabled={loading} data-testid="invite-submit">{loading ? <Spinner /> : "Send invite"}</button></div>
       </form>
@@ -103,6 +163,7 @@ export default function Admin() {
 
       {tab === "members" && (
         <div className="space-y-5">
+        <EditRequestsCard orgId={activeOrgId} />
         <JoinCodeCard orgId={activeOrgId} />
         <Card className="overflow-hidden">
           {members === null ? <div className="p-4"><Spinner className="text-cyan" /></div> : (
@@ -117,17 +178,22 @@ export default function Admin() {
                     <td className="px-4 py-3"><div className="font-medium text-ink">{m.name || m.email}</div><div className="text-xs text-faint">{m.email}</div></td>
                     <td className="px-4 py-3"><Pill tone={m.status === "active" ? "ok" : "warn"}>{m.status}</Pill></td>
                     <td className="px-4 py-3">
-                      {m.role === "owner" ? <Pill tone="cyan" icon={Crown}>owner</Pill> : (
+                      {m.role === "owner" ? <Pill tone="cyan" icon={Crown}>owner</Pill>
+                        : m.status === "pending" ? <Pill tone="warn">awaiting approval</Pill> : (
                         <select className="field !py-1 !w-auto" value={m.role} onChange={(e) => changeRole(m, e.target.value)} data-testid={`role-select-${m.email}`}>
-                          {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+                          {ROLES.map((r) => <option key={r} value={r}>{roleLabel(r)}</option>)}
                         </select>
                       )}
                     </td>
                     <td className="px-4 py-3 text-right">
+                      {m.status === "pending" ? (
+                        <PendingApproval m={m} orgId={activeOrgId} onDone={loadMembers} />
+                      ) : (
                       <div className="flex justify-end gap-2">
                         {owner && m.role !== "owner" && m.userId && <button className="btn btn-ghost !py-1 !px-2 text-xs" onClick={() => transfer(m)} data-testid={`transfer-${m.email}`}><Crown size={13} /> Make owner</button>}
                         {m.role !== "owner" && <button onClick={() => remove(m)} className="text-faint hover:text-bad" data-testid={`remove-${m.email}`}><Trash2 size={15} /></button>}
                       </div>
+                      )}
                     </td>
                   </tr>
                 ))}

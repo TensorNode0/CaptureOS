@@ -23,7 +23,7 @@ class TestAuth:
     def test_login_admin(self, admin_session):
         s, me = admin_session
         assert me["email"] == "admin@govcon.io"
-        assert any(o["role"] == "owner" for o in me["organizations"])
+        assert any(o["role"] in ("owner", "admin") for o in me["organizations"])
         # cookies set
         assert s.cookies.get("access_token") is not None
 

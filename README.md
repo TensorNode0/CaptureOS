@@ -115,6 +115,33 @@ never returned to the browser in full.
 - **OpenAI** (optional) — platform.openai.com → enables the ChatGPT drafting
   engine.
 
+### 5. Email delivery (verification, password reset, invites, approvals)
+
+Set `RESEND_API_KEY` (from [resend.com](https://resend.com), free tier) and
+`EMAIL_FROM` in `backend/.env`, and verify your sending domain with the DNS
+records Resend provides. Any SMTP server works as a fallback (`SMTP_HOST`,
+`SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`). With neither configured, the app runs
+in dev mode: emails print to the server log and verification/reset links are
+surfaced in API responses — never deploy production that way.
+
+## Roles & governance
+
+Signup is domain-aware: the **first user from a company domain must certify
+they are the Authorized Organizational Representative (AOR)** and becomes the
+workspace **admin**; later signups from that domain request access, which the
+admin approves with a role. Members can also be invited by email or join via
+code.
+
+| Role | Can |
+|------|-----|
+| `admin` | **Everything** — all capture-manager powers plus entity info, members/roles, API keys, and **submit / mark proposals submitted** |
+| `capture_manager` | **Create and approve** capabilities and proposal packages; dashboards; request a 24-h entity-info edit grant |
+| `pi`, `proposal_writer`, `technical_writer`, `editor` | Edit opportunities, capability content, and proposal volumes; run AI drafting on volumes |
+| `viewer` | Read-only |
+
+Contributors cannot create/approve proposal packages, and a capture manager
+cannot submit — submission is the admin's call.
+
 ## QA (no local Python/Node needed — Docker only)
 
 ```bash
