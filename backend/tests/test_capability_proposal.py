@@ -20,9 +20,21 @@ def fresh_org(admin_session):
     s, _ = admin_session
     r = s.post(f"{BASE_URL}/api/orgs",
                json={"name": f"CapTest Org {uuid.uuid4().hex[:6]}",
-                     "naics": ["541715"], "keywords": ["autonomy"]}, timeout=15)
+                     "naics": ["541715"], "keywords": ["autonomy"], "certifyAor": True}, timeout=15)
     assert r.status_code == 200, r.text
-    return r.json()["id"]
+    org_id = r.json()["id"]
+    # Proposal/capability creation is capture_manager-only: bring in the demo
+    # capture lead (existing user -> membership becomes active immediately).
+    inv = s.post(f"{BASE_URL}/api/orgs/{org_id}/members/invite",
+                 json={"email": "editor@govcon.io", "role": "capture_manager"}, timeout=15)
+    assert inv.status_code == 200, inv.text
+    return org_id
+
+
+@pytest.fixture(scope="module")
+def cm_session(editor_session, fresh_org):
+    """The capture-manager session for the fresh org."""
+    return editor_session
 
 
 @pytest.fixture(scope="module")
@@ -65,12 +77,20 @@ class TestCapability:
         assert r.status_code == 200
         assert r.json() is None
 
-    def test_generate_requires_api_key(self, admin_session, fresh_org, opp_id):
-        s, _ = admin_session
+    def test_generate_requires_api_key(self, cm_session, fresh_org, opp_id):
+        s, _ = cm_session
         r = s.post(f"{BASE_URL}/api/orgs/{fresh_org}/opportunities/{opp_id}/capability/generate",
                    timeout=15)
         assert r.status_code == 400
         assert "Anthropic" in r.json().get("detail", "")
+
+    def test_admin_blocked_from_generate(self, admin_session, fresh_org, opp_id):
+        # Strict rule: only the capture manager creates capability work.
+        s, _ = admin_session
+        r = s.post(f"{BASE_URL}/api/orgs/{fresh_org}/opportunities/{opp_id}/capability/generate",
+                   timeout=15)
+        assert r.status_code == 403
+        assert "capture_manager" in r.json().get("detail", "")
 
     def test_edit_without_capability_404(self, admin_session, fresh_org, opp_id):
         s, _ = admin_session
@@ -87,8 +107,13 @@ class TestCapability:
 
 
 class TestProposalPackage:
-    def test_create_package_sbir_volume_set(self, admin_session, fresh_org, opp_id):
+    def test_admin_blocked_from_create_package(self, admin_session, fresh_org, opp_id):
         s, _ = admin_session
+        r = s.post(f"{BASE_URL}/api/orgs/{fresh_org}/opportunities/{opp_id}/proposal", timeout=15)
+        assert r.status_code == 403
+
+    def test_create_package_sbir_volume_set(self, cm_session, fresh_org, opp_id):
+        s, _ = cm_session
         r = s.post(f"{BASE_URL}/api/orgs/{fresh_org}/opportunities/{opp_id}/proposal", timeout=15)
         assert r.status_code == 200, r.text
         docs = r.json()["documents"]
@@ -100,8 +125,8 @@ class TestProposalPackage:
         assert "briefing_deck" in types
         assert all(d["status"] == "empty" for d in docs)
 
-    def test_create_is_idempotent(self, admin_session, fresh_org, opp_id):
-        s, _ = admin_session
+    def test_create_is_idempotent(self, cm_session, fresh_org, opp_id):
+        s, _ = cm_session
         r1 = s.post(f"{BASE_URL}/api/orgs/{fresh_org}/opportunities/{opp_id}/proposal", timeout=15)
         r2 = s.post(f"{BASE_URL}/api/orgs/{fresh_org}/opportunities/{opp_id}/proposal", timeout=15)
         assert r1.json()["id"] == r2.json()["id"]
@@ -197,3 +222,25 @@ class TestProposalPackage:
         assert r.content[:4] == DOCX_MAGIC  # zip magic
         assert "zip" in r.headers.get("content-type", "")
         assert len(r.content) > 1000
+
+
+class TestSubmission:
+    def test_cm_blocked_from_submit(self, cm_session, fresh_org, opp_id):
+        s, _ = cm_session
+        r = s.post(f"{BASE_URL}/api/orgs/{fresh_org}/opportunities/{opp_id}/proposal/submit",
+                   timeout=15)
+        assert r.status_code == 403
+
+    def test_admin_submits_and_stage_updates(self, admin_session, fresh_org, opp_id):
+        s, _ = admin_session
+        r = s.post(f"{BASE_URL}/api/orgs/{fresh_org}/opportunities/{opp_id}/proposal/submit",
+                   timeout=15)
+        assert r.status_code == 200, r.text
+        assert r.json()["status"] == "submitted"
+        # double-submit blocked
+        again = s.post(f"{BASE_URL}/api/orgs/{fresh_org}/opportunities/{opp_id}/proposal/submit",
+                       timeout=15)
+        assert again.status_code == 400
+        # opportunity stage moved to Submitted
+        opp = s.get(f"{BASE_URL}/api/orgs/{fresh_org}/opportunities/{opp_id}", timeout=15).json()
+        assert opp["stage"] == "Submitted"

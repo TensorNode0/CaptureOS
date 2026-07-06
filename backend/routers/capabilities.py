@@ -8,7 +8,7 @@ from typing import Any, Dict, Optional
 
 import database as db
 from utils import now_utc, serialize, as_uuid
-from rbac import require_role
+from rbac import require_role, require_perm
 from domain import write_audit
 import capability_ai
 import exports
@@ -80,7 +80,7 @@ async def get_capability(oppId: str, ctx: dict = Depends(require_role("viewer"))
 
 
 @router.post("/{orgId}/opportunities/{oppId}/capability/generate")
-async def generate_capability(oppId: str, ctx: dict = Depends(require_role("editor"))):
+async def generate_capability(oppId: str, ctx: dict = Depends(require_perm("proposal.create"))):
     opp = await _get_opp(ctx["org_id"], oppId)
     if not opp:
         raise HTTPException(status_code=404, detail="Opportunity not found")
@@ -144,7 +144,7 @@ async def update_capability(oppId: str, body: CapabilityUpdate,
 
 
 @router.post("/{orgId}/opportunities/{oppId}/capability/approve")
-async def approve_capability(oppId: str, ctx: dict = Depends(require_role("editor"))):
+async def approve_capability(oppId: str, ctx: dict = Depends(require_perm("proposal.approve"))):
     cap = await _get_cap(ctx["org_id"], oppId)
     if not cap:
         raise HTTPException(status_code=404, detail="No capability generated yet")
