@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { canAdmin, canSeeDashboard } from "../lib/helpers";
+import { LogoMark } from "./Logo";
 import { api, errMsg } from "../lib/api";
 import { toast } from "sonner";
 import { Modal, Field, Spinner } from "./ui";
@@ -151,12 +152,10 @@ function NavList({ role, onNavigate }) {
 
 function Brand() {
   return (
-    <div className="flex items-center gap-2 px-2">
-      <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-cyan/40 bg-cyan/10">
-        <Shield size={18} className="text-cyan" />
-      </div>
+    <div className="flex items-center gap-2.5 px-2 text-ink">
+      <LogoMark size={34} ink="#e8eefc" />
       <div className="leading-tight">
-        <div className="text-sm font-semibold text-ink">CaptureAgent</div>
+        <div className="text-sm font-bold tracking-tight text-ink">CaptureAgent</div>
         <div className="label-mono">captureagent.us</div>
       </div>
     </div>

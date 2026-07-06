@@ -6,6 +6,11 @@ import { Spinner } from "./components/ui";
 import Shell from "./components/Shell";
 import { canSeeDashboard } from "./lib/helpers";
 
+import Home from "./pages/marketing/Home";
+import Why from "./pages/marketing/Why";
+import FeaturesPage from "./pages/marketing/Features";
+import ResourcesPage from "./pages/marketing/Resources";
+import About from "./pages/marketing/About";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import ForgotPassword from "./pages/ForgotPassword";
@@ -48,6 +53,13 @@ function PublicOnly({ children }) {
   return children;
 }
 
+// Public root: marketing home for visitors, app for signed-in users.
+function RootRedirect() {
+  const { user } = useAuth();
+  if (user === null) return <FullLoader />;
+  return <Navigate to={user ? "/dashboard" : "/home"} replace />;
+}
+
 // Dashboards are for the admin and the capture manager; contributors land on
 // the opportunities pipeline instead.
 function DashboardGate({ children }) {
@@ -75,6 +87,11 @@ export default function App() {
       />
       <AuthProvider>
         <Routes>
+          <Route path="/home" element={<Home />} />
+          <Route path="/why" element={<Why />} />
+          <Route path="/features" element={<FeaturesPage />} />
+          <Route path="/resources" element={<ResourcesPage />} />
+          <Route path="/about" element={<About />} />
           <Route path="/login" element={<PublicOnly><Login /></PublicOnly>} />
           <Route path="/register" element={<PublicOnly><Register /></PublicOnly>} />
           <Route path="/forgot-password" element={<PublicOnly><ForgotPassword /></PublicOnly>} />
@@ -90,7 +107,8 @@ export default function App() {
           <Route path="/profile" element={<Protected><Profile /></Protected>} />
           <Route path="/admin" element={<Protected><Admin /></Protected>} />
           <Route path="/settings" element={<Protected><Settings /></Protected>} />
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/" element={<RootRedirect />} />
+          <Route path="*" element={<RootRedirect />} />
         </Routes>
       </AuthProvider>
     </BrowserRouter>

@@ -150,9 +150,10 @@ async def refresh(request: Request, response: Response):
                                  as_uuid(payload.get("sub")))
         if not user:
             raise HTTPException(status_code=401, detail="User not found")
+        from auth_utils import COOKIE_SECURE, COOKIE_SAMESITE
         access = create_access_token(str(user["id"]), user["email"])
-        response.set_cookie("access_token", access, httponly=True, secure=True,
-                            samesite="none", max_age=12 * 3600, path="/")
+        response.set_cookie("access_token", access, httponly=True, secure=COOKIE_SECURE,
+                            samesite=COOKIE_SAMESITE, max_age=12 * 3600, path="/")
         return {"ok": True}
     except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Invalid refresh token")
