@@ -134,13 +134,13 @@ code.
 
 | Role | Can |
 |------|-----|
-| `admin` | Everything below, plus: entity info, members/roles, API keys, **submit / mark proposals submitted** |
+| `admin` | **Everything** — all capture-manager powers plus entity info, members/roles, API keys, and **submit / mark proposals submitted** |
 | `capture_manager` | **Create and approve** capabilities and proposal packages; dashboards; request a 24-h entity-info edit grant |
 | `pi`, `proposal_writer`, `technical_writer`, `editor` | Edit opportunities, capability content, and proposal volumes; run AI drafting on volumes |
 | `viewer` | Read-only |
 
-Strict by design: an admin cannot create proposal packages (assign a
-capture manager), and a capture manager cannot submit (the admin does).
+Contributors cannot create/approve proposal packages, and a capture manager
+cannot submit — submission is the admin's call.
 
 ## QA (no local Python/Node needed — Docker only)
 
