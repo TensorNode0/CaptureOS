@@ -2,6 +2,7 @@
   "name": "captureagent",
   "version": "1.0.0",
   "private": true,
+  "proxy": "http://backend:8000",
   "dependencies": {
     "axios": "^1.7.9",
     "clsx": "^2.1.1",

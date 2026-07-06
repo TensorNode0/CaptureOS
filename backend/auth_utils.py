@@ -11,6 +11,12 @@ JWT_ALGORITHM = "HS256"
 ACCESS_MIN = 60 * 12  # 12h access for smooth UX in preview
 REFRESH_DAYS = 7
 
+# Cookie flags follow the deployment scheme: https gets Secure + SameSite=None
+# (required for cross-site cookies); plain-http local dev gets Lax without
+# Secure so non-localhost dev clients can hold a session.
+COOKIE_SECURE = os.environ.get("FRONTEND_URL", "").startswith("https")
+COOKIE_SAMESITE = "none" if COOKIE_SECURE else "lax"
+
 
 def hash_password(password: str) -> str:
     salt = bcrypt.gensalt()
@@ -50,10 +56,10 @@ def create_refresh_token(user_id: str) -> str:
 def set_auth_cookies(response, user_id: str, email: str):
     access = create_access_token(user_id, email)
     refresh = create_refresh_token(user_id)
-    response.set_cookie("access_token", access, httponly=True, secure=True,
-                        samesite="none", max_age=ACCESS_MIN * 60, path="/")
-    response.set_cookie("refresh_token", refresh, httponly=True, secure=True,
-                        samesite="none", max_age=REFRESH_DAYS * 86400, path="/")
+    response.set_cookie("access_token", access, httponly=True, secure=COOKIE_SECURE,
+                        samesite=COOKIE_SAMESITE, max_age=ACCESS_MIN * 60, path="/")
+    response.set_cookie("refresh_token", refresh, httponly=True, secure=COOKIE_SECURE,
+                        samesite=COOKIE_SAMESITE, max_age=REFRESH_DAYS * 86400, path="/")
 
 
 def clear_auth_cookies(response):
