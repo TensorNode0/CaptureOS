@@ -2,8 +2,9 @@
 
 Functional roles (one per member per org):
   admin            — the org's Authorized Organizational Representative side:
-                     manages entity info, members/roles, API keys; the only
-                     role that can submit / mark proposals as submitted.
+                     can do anything, including everything a capture manager
+                     can, plus entity info, members/roles, API keys, and the
+                     only role that can submit / mark proposals as submitted.
   capture_manager  — runs the pipeline: creates and approves capabilities and
                      proposal packages; sees dashboards; may request a
                      time-boxed grant from the admin to edit entity info.
@@ -32,12 +33,11 @@ ROLE_RANK = {
 ASSIGNABLE_ROLES = {"viewer", "editor", "technical_writer", "proposal_writer",
                     "pi", "capture_manager", "admin"}
 
-# Permission → roles that hold it. Deliberately strict per product spec:
-# only the capture manager creates/approves proposal work; only the admin
-# submits; dashboards are for admin + capture manager.
+# Permission → roles that hold it. Admins can do anything; capture managers
+# run the pipeline (create/approve) but cannot submit; contributors draft.
 PERMISSIONS = {
-    "proposal.create":  {"capture_manager"},
-    "proposal.approve": {"capture_manager"},
+    "proposal.create":  {"capture_manager", "admin", "owner"},
+    "proposal.approve": {"capture_manager", "admin", "owner"},
     "proposal.submit":  {"admin", "owner"},
     "dashboard.view":   {"admin", "owner", "capture_manager"},
     "entity.edit":      {"admin", "owner"},  # capture_manager via approved grant

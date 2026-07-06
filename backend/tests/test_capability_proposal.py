@@ -84,13 +84,14 @@ class TestCapability:
         assert r.status_code == 400
         assert "Anthropic" in r.json().get("detail", "")
 
-    def test_admin_blocked_from_generate(self, admin_session, fresh_org, opp_id):
-        # Strict rule: only the capture manager creates capability work.
+    def test_admin_can_generate_too(self, admin_session, fresh_org, opp_id):
+        # Admins can do anything a capture manager can — no key set, so the
+        # permission check passes and the API-key guard is what trips (400).
         s, _ = admin_session
         r = s.post(f"{BASE_URL}/api/orgs/{fresh_org}/opportunities/{opp_id}/capability/generate",
                    timeout=15)
-        assert r.status_code == 403
-        assert "capture_manager" in r.json().get("detail", "")
+        assert r.status_code == 400
+        assert "Anthropic" in r.json().get("detail", "")
 
     def test_edit_without_capability_404(self, admin_session, fresh_org, opp_id):
         s, _ = admin_session
@@ -107,10 +108,10 @@ class TestCapability:
 
 
 class TestProposalPackage:
-    def test_admin_blocked_from_create_package(self, admin_session, fresh_org, opp_id):
+    def test_admin_can_create_package(self, admin_session, fresh_org, opp_id):
         s, _ = admin_session
         r = s.post(f"{BASE_URL}/api/orgs/{fresh_org}/opportunities/{opp_id}/proposal", timeout=15)
-        assert r.status_code == 403
+        assert r.status_code == 200, r.text
 
     def test_create_package_sbir_volume_set(self, cm_session, fresh_org, opp_id):
         s, _ = cm_session

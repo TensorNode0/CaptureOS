@@ -77,10 +77,12 @@ export const ROLE_RANK = {
 export function canEdit(role) { return (ROLE_RANK[role] || 0) >= ROLE_RANK.editor; }
 export function canAdmin(role) { return (ROLE_RANK[role] || 0) >= ROLE_RANK.admin; }
 export function isOwner(role) { return role === "owner"; }
-// Product rules: only the capture manager creates/approves proposal work;
-// only the admin submits; dashboards are admin + capture manager.
+// Product rules: admins can do anything; capture managers create/approve
+// proposal work but only admins submit; dashboards are admin + capture manager.
 export function isCaptureManager(role) { return role === "capture_manager"; }
-export function canCreateProposal(role) { return role === "capture_manager"; }
+export function canCreateProposal(role) {
+  return role === "capture_manager" || role === "admin" || role === "owner";
+}
 export function canSubmitProposal(role) { return role === "admin" || role === "owner"; }
 export function canSeeDashboard(role) {
   return role === "admin" || role === "owner" || role === "capture_manager";
