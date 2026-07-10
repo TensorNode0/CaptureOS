@@ -3,7 +3,7 @@ import { NavLink, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Target, Building2, Users, Settings as SettingsIcon,
   Shield, LogOut, ChevronDown, Radar, AlertTriangle, X, Menu, FileText,
-  Plus, KeyRound, Landmark, Handshake, Rocket, ClipboardList, Crosshair,
+  Plus, KeyRound, Landmark, Handshake, Rocket, ClipboardList, Crosshair, FolderLock,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { canAdmin, canSeeDashboard } from "../lib/helpers";
@@ -138,10 +138,17 @@ const NAV = [
   { to: "/settings", label: "Settings", icon: SettingsIcon, testid: "nav-settings", admin: true },
 ];
 
+const SUB_NAV = [
+  { to: "/shared", label: "Shared With Me", icon: FolderLock, testid: "nav-shared" },
+];
+
 function NavList({ role, onNavigate }) {
+  const items = role === "subcontractor"
+    ? SUB_NAV
+    : NAV.filter((n) => (!n.admin || canAdmin(role)) && (!n.dashboard || canSeeDashboard(role)));
   return (
     <nav className="flex flex-1 flex-col gap-1">
-      {NAV.filter((n) => (!n.admin || canAdmin(role)) && (!n.dashboard || canSeeDashboard(role))).map((n) => (
+      {items.map((n) => (
         <NavLink key={n.to} to={n.to} data-testid={n.testid} onClick={onNavigate}
           className={({ isActive }) =>
             `flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors ${
