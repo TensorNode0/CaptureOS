@@ -25,6 +25,10 @@ import Dashboard from "./pages/Dashboard";
 import Intelligence from "./pages/Intelligence";
 import Opportunities from "./pages/Opportunities";
 import Proposals from "./pages/Proposals";
+import PrivateCapital from "./pages/venture/PrivateCapital";
+import InvestmentDeals from "./pages/venture/InvestmentDeals";
+import Accelerators from "./pages/venture/Accelerators";
+import AcceleratorApplications from "./pages/venture/AcceleratorApplications";
 import OpportunityDetail from "./pages/OpportunityDetail";
 import Capability from "./pages/Capability";
 import ProposalWorkspace from "./pages/ProposalWorkspace";
@@ -112,6 +116,10 @@ export default function App() {
           <Route path="/intelligence" element={<Protected><Intelligence /></Protected>} />
           <Route path="/opportunities" element={<Protected><Opportunities /></Protected>} />
           <Route path="/proposals" element={<Protected><Proposals /></Protected>} />
+          <Route path="/private-capital" element={<Protected><PrivateCapital /></Protected>} />
+          <Route path="/investment-deals" element={<Protected><InvestmentDeals /></Protected>} />
+          <Route path="/accelerators" element={<Protected><Accelerators /></Protected>} />
+          <Route path="/accelerator-applications" element={<Protected><AcceleratorApplications /></Protected>} />
           <Route path="/opportunities/:id" element={<Protected><OpportunityDetail /></Protected>} />
           <Route path="/opportunities/:id/capability" element={<Protected><Capability /></Protected>} />
           <Route path="/opportunities/:id/proposal" element={<Protected><ProposalWorkspace /></Protected>} />
