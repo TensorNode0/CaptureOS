@@ -25,6 +25,7 @@ import Dashboard from "./pages/Dashboard";
 import Intelligence from "./pages/Intelligence";
 import Opportunities from "./pages/Opportunities";
 import Proposals from "./pages/Proposals";
+import CompetitiveAnalysis from "./pages/CompetitiveAnalysis";
 import PrivateCapital from "./pages/venture/PrivateCapital";
 import InvestmentDeals from "./pages/venture/InvestmentDeals";
 import Accelerators from "./pages/venture/Accelerators";
@@ -116,6 +117,7 @@ export default function App() {
           <Route path="/intelligence" element={<Protected><Intelligence /></Protected>} />
           <Route path="/opportunities" element={<Protected><Opportunities /></Protected>} />
           <Route path="/proposals" element={<Protected><Proposals /></Protected>} />
+          <Route path="/competitive-analysis" element={<Protected><CompetitiveAnalysis /></Protected>} />
           <Route path="/private-capital" element={<Protected><PrivateCapital /></Protected>} />
           <Route path="/investment-deals" element={<Protected><InvestmentDeals /></Protected>} />
           <Route path="/accelerators" element={<Protected><Accelerators /></Protected>} />

@@ -3,7 +3,7 @@ import { NavLink, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Target, Building2, Users, Settings as SettingsIcon,
   Shield, LogOut, ChevronDown, Radar, AlertTriangle, X, Menu, FileText,
-  Plus, KeyRound, Landmark, Handshake, Rocket, ClipboardList,
+  Plus, KeyRound, Landmark, Handshake, Rocket, ClipboardList, Crosshair,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { canAdmin, canSeeDashboard } from "../lib/helpers";
@@ -128,6 +128,7 @@ const NAV = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, testid: "nav-dashboard", dashboard: true },
   { to: "/opportunities", label: "Federal Opportunities", icon: Target, testid: "nav-opportunities" },
   { to: "/proposals", label: "Proposals", icon: FileText, testid: "nav-proposals" },
+  { to: "/competitive-analysis", label: "Competitive Analysis", icon: Crosshair, testid: "nav-competitive" },
   { to: "/private-capital", label: "Private Capital", icon: Landmark, testid: "nav-capital" },
   { to: "/investment-deals", label: "Investment Deals", icon: Handshake, testid: "nav-deals" },
   { to: "/accelerators", label: "Accelerators", icon: Rocket, testid: "nav-accelerators" },
