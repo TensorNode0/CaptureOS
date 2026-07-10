@@ -59,7 +59,7 @@ export default function ProposalWorkspace() {
     api.get(`/orgs/${activeOrgId}/opportunities/${id}`).then((r) => setOpp(r.data))
       .catch((e) => { toast.error(errMsg(e)); navigate("/opportunities"); });
     load().catch((e) => toast.error(errMsg(e)));
-    api.get(`/orgs/${activeOrgId}/secrets`).then((r) => setSecrets(r.data)).catch(() => {});
+    api.get(`/orgs/${activeOrgId}/secrets/status`).then((r) => setSecrets(r.data)).catch(() => {});
   }, [activeOrgId, id, load, navigate]);
 
   const anyDrafting = (proposal?.documents || []).some((d) => d.draftStatus === "drafting");
@@ -192,6 +192,12 @@ export default function ProposalWorkspace() {
                 <option value="claude">Claude</option>
                 <option value="openai" disabled={!secrets?.openaiSet}>
                   ChatGPT{secrets?.openaiSet ? "" : " (no key)"}
+                </option>
+                <option value="emergent" disabled={!secrets?.emergentSet}>
+                  Emergent{secrets?.emergentSet ? "" : " (no key)"}
+                </option>
+                <option value="asksage" disabled={!secrets?.asksageSet}>
+                  AskSage{secrets?.asksageSet ? "" : " (no key)"}
                 </option>
               </select>
             </label>

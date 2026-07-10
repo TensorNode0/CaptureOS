@@ -158,9 +158,9 @@ def _deck_prompt(ctx_text, cap_content):
     )
 
 
-async def draft_document(engine, anthropic_key, openai_key, doc_type,
-                         org, profile, opp, cap_content):
-    """Draft one document. Returns (content_md, content_json, model_used)."""
+async def draft_document(engine, keys, doc_type, org, profile, opp, cap_content):
+    """Draft one document. Returns (content_md, content_json, model_used).
+    `keys` is the org_keys.get_keys() dict (all configured engines)."""
     if doc_type not in DOC_TYPES:
         raise ValueError(f"Unknown document type: {doc_type}")
     ctx_text = build_context(org, profile or {}, opp)
@@ -168,7 +168,7 @@ async def draft_document(engine, anthropic_key, openai_key, doc_type,
 
     if fmt == "docx":
         text, model = await genai.generate(
-            engine, anthropic_key, openai_key, SYSTEM,
+            engine, keys, SYSTEM,
             _narrative_prompt(doc_type, ctx_text, cap_content), max_tokens=8000)
         md = (text or "").strip()
         if md.startswith("```"):
@@ -179,8 +179,7 @@ async def draft_document(engine, anthropic_key, openai_key, doc_type,
 
     prompt = _cost_prompt(ctx_text, cap_content) if doc_type == "cost_volume" \
         else _deck_prompt(ctx_text, cap_content)
-    text, model = await genai.generate(
-        engine, anthropic_key, openai_key, SYSTEM, prompt, max_tokens=8000)
+    text, model = await genai.generate(engine, keys, SYSTEM, prompt, max_tokens=8000)
     data = genai.extract_json(text)
     if data is None:
         raise ValueError("The AI returned an unparseable draft. Try again.")

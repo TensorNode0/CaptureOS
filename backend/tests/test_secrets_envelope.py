@@ -102,3 +102,36 @@ class TestEnvelopeRBAC:
         s, _ = editor_session
         r = s.get(f"{BASE_URL}/api/orgs/{env_org}/secrets", timeout=15)
         assert r.status_code == 403
+
+
+class TestNewProviderKeys:
+    def test_emergent_and_asksage_roundtrip(self, admin_session, env_org):
+        s, _ = admin_session
+        r = s.put(f"{BASE_URL}/api/orgs/{env_org}/secrets",
+                  json={"emergentKey": "sk-emergent-test-12345678",
+                        "asksageKey": "asksage-token-abcdef99"}, timeout=15)
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["emergentSet"] is True and body["asksageSet"] is True
+        assert "…" in body["emergentKey"]  # masked preview, never the full key
+        assert body["validation"]["emergent"] == "saved"
+        assert body["validation"]["asksage"] == "saved"
+
+    def test_status_endpoint_visible_to_members(self, admin_session, env_org):
+        s, _ = admin_session
+        r = s.get(f"{BASE_URL}/api/orgs/{env_org}/secrets/status", timeout=15)
+        assert r.status_code == 200
+        body = r.json()
+        assert set(body) == {"anthropicSet", "samSet", "openaiSet",
+                             "emergentSet", "asksageSet"}
+        assert all(isinstance(v, bool) for v in body.values())
+
+    def test_new_keys_survive_rotation(self, admin_session, env_org):
+        s, _ = admin_session
+        before = s.get(f"{BASE_URL}/api/orgs/{env_org}/secrets", timeout=15).json()
+        r = s.post(f"{BASE_URL}/api/orgs/{env_org}/secrets/rotate-key", timeout=15)
+        assert r.status_code == 200
+        after = s.get(f"{BASE_URL}/api/orgs/{env_org}/secrets", timeout=15).json()
+        assert after["emergentSet"] is True and after["asksageSet"] is True
+        assert after["emergentKey"] == before["emergentKey"]  # same mask -> decrypts
+        assert after["keyVersion"] == before["keyVersion"] + 1

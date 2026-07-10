@@ -23,7 +23,8 @@ from utils import as_uuid, now_utc
 
 _master = Fernet(os.environ["SECRETS_ENC_KEY"].encode())
 
-KEY_COLUMNS = {"anthropic": "anthropic_key", "sam": "sam_key", "openai": "openai_key"}
+KEY_COLUMNS = {"anthropic": "anthropic_key", "sam": "sam_key", "openai": "openai_key",
+               "emergent": "emergent_key", "asksage": "asksage_key"}
 
 
 def mask_secret(value: str) -> str:
@@ -133,10 +134,12 @@ async def store_keys(org_id, updates: dict, updated_by):
     await db.execute(
         """update org_secrets
            set anthropic_key = $2, sam_key = $3, openai_key = $4,
-               updated_by = $5, updated_at = $6
+               emergent_key = $5, asksage_key = $6,
+               updated_by = $7, updated_at = $8
            where organization_id = $1""",
         as_uuid(org_id), encrypted["anthropic_key"], encrypted["sam_key"],
-        encrypted["openai_key"], as_uuid(updated_by), now_utc())
+        encrypted["openai_key"], encrypted["emergent_key"], encrypted["asksage_key"],
+        as_uuid(updated_by), now_utc())
     return current
 
 
@@ -151,9 +154,11 @@ async def rotate_key(org_id, rotated_by):
     fresh = await db.fetchrow(
         """update org_secrets
            set dek_wrapped = $2, anthropic_key = $3, sam_key = $4, openai_key = $5,
-               key_version = key_version + 1, updated_by = $6, updated_at = $7
+               emergent_key = $6, asksage_key = $7,
+               key_version = key_version + 1, updated_by = $8, updated_at = $9
            where organization_id = $1
            returning key_version""",
         as_uuid(org_id), _wrap_dek(new_raw), encrypted["anthropic_key"],
-        encrypted["sam_key"], encrypted["openai_key"], as_uuid(rotated_by), now_utc())
+        encrypted["sam_key"], encrypted["openai_key"], encrypted["emergent_key"],
+        encrypted["asksage_key"], as_uuid(rotated_by), now_utc())
     return fresh["key_version"]
