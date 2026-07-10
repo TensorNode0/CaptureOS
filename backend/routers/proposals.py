@@ -11,6 +11,7 @@ from utils import now_utc, serialize, as_uuid
 from rbac import require_role, require_perm
 from domain import write_audit
 import proposal_ai
+import genai
 import exports
 import org_keys
 
@@ -106,15 +107,15 @@ async def create_proposal(oppId: str, ctx: dict = Depends(require_perm("proposal
 
 
 class DraftIn(BaseModel):
-    engine: str = "claude"  # claude | openai
+    engine: str = "claude"  # claude | openai | emergent | asksage
 
 
-async def _run_draft(doc_id, engine, anthropic_key, openai_key,
+async def _run_draft(doc_id, engine, keys,
                      org, profile, opp, cap_content, user, org_id):
     try:
         doc = await db.fetchrow("select * from proposal_documents where id = $1", doc_id)
         md, data, model = await proposal_ai.draft_document(
-            engine, anthropic_key, openai_key, doc["doc_type"],
+            engine, keys, doc["doc_type"],
             org, profile, opp, cap_content)
         await db.execute(
             """update proposal_documents
@@ -147,15 +148,14 @@ async def draft_document(oppId: str, docId: str, body: DraftIn,
         raise HTTPException(status_code=404, detail="Document not found")
     if doc.get("draft_status") == "drafting":
         raise HTTPException(status_code=409, detail="Draft already in progress")
-    engine = body.engine if body.engine in ("claude", "openai") else "claude"
+    ENGINES = {"claude": "anthropic", "openai": "openai",
+               "emergent": "emergent", "asksage": "asksage"}
+    engine = body.engine if body.engine in ENGINES else "claude"
     keys = await org_keys.get_keys(ctx["org_id"], ctx["user"], purpose="proposal.draft")
-    anthropic_key, openai_key = keys["anthropic"], keys["openai"]
-    if engine == "claude" and not anthropic_key:
+    if not keys.get(ENGINES[engine]):
         raise HTTPException(status_code=400,
-            detail="No Anthropic API key set. Add it in Settings → API Keys.")
-    if engine == "openai" and not openai_key:
-        raise HTTPException(status_code=400,
-            detail="No OpenAI API key set. Add it in Settings → API Keys.")
+            detail=f"No {genai.ENGINE_LABELS[engine]} API key set. "
+                   "Add it in Settings → API Keys.")
     await db.execute(
         """update proposal_documents
            set draft_status = 'drafting', draft_error = '', updated_at = $2
@@ -165,7 +165,7 @@ async def draft_document(oppId: str, docId: str, body: DraftIn,
         "select * from org_profiles where organization_id = $1", ctx["org_id"])
     cap_content = await _cap_content(ctx["org_id"], opp["id"])
     asyncio.create_task(_run_draft(
-        doc["id"], engine, anthropic_key, openai_key, serialize(ctx["org"]),
+        doc["id"], engine, keys, serialize(ctx["org"]),
         serialize(profile), serialize(opp), cap_content, ctx["user"], ctx["org_id"]))
     return {"ok": True, "status": "drafting", "documentId": str(doc["id"])}
 
@@ -310,3 +310,66 @@ async def submit_proposal(oppId: str, ctx: dict = Depends(require_perm("proposal
                       serialize(opp).get("title"))
     fresh = await _get_proposal(ctx["org_id"], oppId)
     return await _payload(fresh)
+
+
+@router.get("/{orgId}/proposals")
+async def list_proposals(ctx: dict = Depends(require_role("viewer"))):
+    """Org-wide proposal hub: every package with its opportunity context."""
+    rows = await db.fetch(
+        """select p.id, p.status, p.submitted_at, p.evaluated_at, p.evaluation,
+                  p.created_at, p.updated_at, p.opportunity_id,
+                  o.title as opp_title, o.sol_number, o.agency, o.due_date, o.stage,
+                  (select count(*) from proposal_documents d
+                    where d.proposal_id = p.id and d.status <> 'empty') as drafted,
+                  (select count(*) from proposal_documents d
+                    where d.proposal_id = p.id) as total_docs
+           from proposals p join opportunities o on o.id = p.opportunity_id
+           where p.organization_id = $1
+           order by p.updated_at desc""",
+        ctx["org_id"])
+    out = []
+    for r in rows:
+        e = serialize(r)
+        ev = e.pop("evaluation", None) or {}
+        e["overallScore"] = ev.get("overallScore")
+        e["colorReview"] = ev.get("colorReview")
+        out.append(e)
+    return out
+
+
+@router.post("/{orgId}/opportunities/{oppId}/proposal/evaluate")
+async def evaluate_proposal(oppId: str, body: DraftIn,
+                            ctx: dict = Depends(require_role("editor"))):
+    """AI color-team evaluation of the drafted package (SSEB-style)."""
+    opp = await _get_opp(ctx["org_id"], oppId)
+    proposal = await _get_proposal(ctx["org_id"], oppId)
+    if not opp or not proposal:
+        raise HTTPException(status_code=404, detail="Proposal not found")
+    docs = [d for d in await _docs(proposal["id"]) if d.get("status") != "empty"]
+    if not docs:
+        raise HTTPException(status_code=400,
+            detail="Nothing to evaluate yet — draft at least one volume first")
+    ENGINES = {"claude": "anthropic", "openai": "openai",
+               "emergent": "emergent", "asksage": "asksage"}
+    engine = body.engine if body.engine in ENGINES else "claude"
+    keys = await org_keys.get_keys(ctx["org_id"], ctx["user"], purpose="proposal.evaluate")
+    if not keys.get(ENGINES[engine]):
+        raise HTTPException(status_code=400,
+            detail=f"No {genai.ENGINE_LABELS[engine]} API key set. "
+                   "Add it in Settings → API Keys.")
+    profile = await db.fetchrow(
+        "select * from org_profiles where organization_id = $1", ctx["org_id"])
+    try:
+        evaluation = await proposal_ai.evaluate_package(
+            engine, keys, serialize(ctx["org"]), serialize(profile),
+            serialize(opp), docs)
+    except ValueError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    await db.execute(
+        "update proposals set evaluation = $2, evaluated_at = $3 where id = $1",
+        proposal["id"], evaluation, now_utc())
+    await write_audit(ctx["org_id"], ctx["user"], "proposal.evaluate",
+                      serialize(opp).get("title"),
+                      {"score": evaluation.get("overallScore"),
+                       "color": evaluation.get("colorReview")})
+    return evaluation

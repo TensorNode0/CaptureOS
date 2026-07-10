@@ -7,8 +7,110 @@ import { Card, SectionLabel, Pill, Spinner, PageReveal, Modal, Field, EmptyState
 import { fmtDateTime, isOwner } from "../lib/helpers";
 
 const ROLES = ["viewer", "editor", "technical_writer", "proposal_writer", "pi",
-               "capture_manager", "admin"];
+               "capture_manager", "admin", "subcontractor"];
 const roleLabel = (r) => r.replace(/_/g, " ");
+
+const CAP_SECTIONS = [
+  ["summary", "Title, abstract & executive summary"],
+  ["sow", "Statement of Work"],
+  ["wbs", "WBS & schedule"],
+  ["budget", "Budget"],
+];
+
+/* Per-resource access grants for a subcontractor member. */
+function AccessModal({ member, orgId, onClose }) {
+  const [opps, setOpps] = useState([]);
+  const [oppId, setOppId] = useState("");
+  const [docs, setDocs] = useState([]);
+  const [grants, setGrants] = useState({}); // key `${type}:${id}` -> none|read|write
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!member) return;
+    api.get(`/orgs/${orgId}/opportunities`).then((r) => setOpps(r.data)).catch(() => setOpps([]));
+    setOppId(""); setDocs([]); setGrants({});
+  }, [member, orgId]);
+
+  useEffect(() => {
+    if (!member || !oppId) return;
+    Promise.all([
+      api.get(`/orgs/${orgId}/opportunities/${oppId}/proposal`).catch(() => ({ data: null })),
+      api.get(`/orgs/${orgId}/members/${member.id}/grants`).catch(() => ({ data: [] })),
+    ]).then(([prop, gr]) => {
+      setDocs(prop.data?.documents || []);
+      const map = {};
+      (gr.data || []).filter((g) => g.opportunityId === oppId).forEach((g) => {
+        map[`${g.resourceType}:${g.resourceId}`] = g.access;
+      });
+      setGrants(map);
+    });
+  }, [member, oppId, orgId]);
+
+  if (!member) return null;
+  const setG = (key, v) => setGrants((g) => ({ ...g, [key]: v }));
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const list = Object.entries(grants)
+        .filter(([, v]) => v === "read" || v === "write")
+        .map(([k, v]) => {
+          const [resourceType, ...rest] = k.split(":");
+          return { resourceType, resourceId: rest.join(":"), access: v };
+        });
+      await api.put(`/orgs/${orgId}/members/${member.id}/grants`,
+        { opportunityId: oppId, grants: list });
+      toast.success(`Access updated — ${list.length} item(s) shared with ${member.email}`);
+      onClose();
+    } catch (e) { toast.error(errMsg(e)); }
+    finally { setSaving(false); }
+  };
+
+  const Row = ({ k, label }) => (
+    <div className="flex items-center justify-between gap-2 rounded-lg border border-line bg-white/5 px-3 py-2">
+      <span className="text-sm text-dim">{label}</span>
+      <select className="field !w-auto !py-1 text-xs" value={grants[k] || "none"}
+              onChange={(e) => setG(k, e.target.value)} data-testid={`grant-${k}`}>
+        <option value="none">No access</option>
+        <option value="read">Read only</option>
+        <option value="write">Read & write</option>
+      </select>
+    </div>
+  );
+
+  return (
+    <Modal open={!!member} onClose={onClose} title={`Shared access — ${member.email}`}>
+      <p className="mb-3 text-xs text-faint">
+        Subcontractors see only what you share here — nothing else in the workspace.
+      </p>
+      <Field label="Opportunity / proposal">
+        <select className="field" value={oppId} onChange={(e) => setOppId(e.target.value)} data-testid="access-opp">
+          <option value="">Select an opportunity…</option>
+          {opps.map((o) => <option key={o.id} value={o.id}>{o.title}</option>)}
+        </select>
+      </Field>
+      {oppId && (
+        <div className="mt-3 space-y-2">
+          <div className="label-mono">Capability sections</div>
+          {CAP_SECTIONS.map(([k, label]) => (
+            <Row key={k} k={`capability_section:${k}`} label={label} />
+          ))}
+          <div className="label-mono mt-3">Proposal volumes</div>
+          {docs.length === 0 && <p className="text-xs text-faint">No proposal package yet for this opportunity.</p>}
+          {docs.map((d) => (
+            <Row key={d.id} k={`proposal_doc:${d.id}`} label={d.title} />
+          ))}
+          <div className="flex justify-end gap-2 pt-2">
+            <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+            <button className="btn btn-primary" onClick={save} disabled={saving} data-testid="save-access">
+              {saving ? <Spinner /> : "Save access"}
+            </button>
+          </div>
+        </div>
+      )}
+    </Modal>
+  );
+}
 
 function PendingApproval({ m, orgId, onDone }) {
   const [role, setRole] = useState("proposal_writer");
@@ -125,6 +227,7 @@ export default function Admin() {
   const [members, setMembers] = useState(null);
   const [audit, setAudit] = useState(null);
   const [showInvite, setShowInvite] = useState(false);
+  const [accessMember, setAccessMember] = useState(null);
 
   const loadMembers = () => api.get(`/orgs/${activeOrgId}/members`).then((r) => setMembers(r.data)).catch(() => setMembers([]));
 
@@ -190,6 +293,7 @@ export default function Admin() {
                         <PendingApproval m={m} orgId={activeOrgId} onDone={loadMembers} />
                       ) : (
                       <div className="flex justify-end gap-2">
+                        {m.role === "subcontractor" && <button className="btn btn-ghost !py-1 !px-2 text-xs" onClick={() => setAccessMember(m)} data-testid={`access-${m.email}`}><KeyRound size={13} /> Access</button>}
                         {owner && m.role !== "owner" && m.userId && <button className="btn btn-ghost !py-1 !px-2 text-xs" onClick={() => transfer(m)} data-testid={`transfer-${m.email}`}><Crown size={13} /> Make owner</button>}
                         {m.role !== "owner" && <button onClick={() => remove(m)} className="text-faint hover:text-bad" data-testid={`remove-${m.email}`}><Trash2 size={15} /></button>}
                       </div>
@@ -230,6 +334,7 @@ export default function Admin() {
       )}
 
       <InviteModal open={showInvite} onClose={() => setShowInvite(false)} orgId={activeOrgId} onDone={loadMembers} />
+      <AccessModal member={accessMember} orgId={activeOrgId} onClose={() => setAccessMember(null)} />
     </PageReveal>
   );
 }

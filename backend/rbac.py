@@ -23,6 +23,7 @@ from auth_utils import get_current_user
 from utils import as_uuid
 
 ROLE_RANK = {
+    "subcontractor": 0,  # sees ONLY explicitly granted proposal resources
     "viewer": 1,
     "editor": 2, "technical_writer": 2, "proposal_writer": 2, "pi": 2,
     "capture_manager": 3,
@@ -31,7 +32,7 @@ ROLE_RANK = {
 }
 
 ASSIGNABLE_ROLES = {"viewer", "editor", "technical_writer", "proposal_writer",
-                    "pi", "capture_manager", "admin"}
+                    "pi", "capture_manager", "admin", "subcontractor"}
 
 # Permission → roles that hold it. Admins can do anything; capture managers
 # run the pipeline (create/approve) but cannot submit; contributors draft.

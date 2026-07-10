@@ -55,6 +55,11 @@ export default function Profile() {
         sizeNote: p.sizeNote || "", notes: p.notes || "",
         capabilities: p.capabilities || "", pastPerformance: p.pastPerformance || "",
         techFocus: (Array.isArray(p.techFocus) ? p.techFocus : String(p.techFocus || "").split(",")).map((s) => String(s).trim()).filter(Boolean),
+        pscCodes: (Array.isArray(p.pscCodes) ? p.pscCodes : String(p.pscCodes || "").split(",")).map((s) => String(s).trim()).filter(Boolean),
+        targetAgencies: (Array.isArray(p.targetAgencies) ? p.targetAgencies : String(p.targetAgencies || "").split(",")).map((s) => String(s).trim()).filter(Boolean),
+        employeesCount: p.employeesCount ? Number(p.employeesCount) : null,
+        annualRevenue: p.annualRevenue || "", locations: p.locations || "",
+        keyPersonnel: p.keyPersonnel || "", website: p.website || "",
         differentiators: p.differentiators || "", commercialization: p.commercialization || "",
         clearances: p.clearances || "",
       });
@@ -92,6 +97,10 @@ export default function Profile() {
           <Field label="CAGE Code"><input className="field mono" disabled={!admin} value={p.cage || ""} onChange={(e) => set({ cage: e.target.value })} data-testid="profile-cage" /></Field>
           <label className="flex items-center gap-2 text-sm text-dim"><input type="checkbox" disabled={!admin} checked={!!p.samActive} onChange={(e) => set({ samActive: e.target.checked })} data-testid="profile-sam-active" /> SAM.gov registration active</label>
           <label className="flex items-center gap-2 text-sm text-dim"><input type="checkbox" disabled={!admin} checked={!!p.isSmall} onChange={(e) => set({ isSmall: e.target.checked })} data-testid="profile-is-small" /> Small business</label>
+          <Field label="Employees" hint="Headcount — informs size standards and staffing plans."><input type="number" className="field mono" disabled={!admin} value={p.employeesCount ?? ""} onChange={(e) => set({ employeesCount: e.target.value })} data-testid="profile-employees" /></Field>
+          <Field label="Annual revenue" hint="Range is fine, e.g. $1–5M."><input className="field" disabled={!admin} value={p.annualRevenue || ""} onChange={(e) => set({ annualRevenue: e.target.value })} data-testid="profile-revenue" /></Field>
+          <Field label="Locations" hint="HQ + places of performance."><input className="field" disabled={!admin} value={p.locations || ""} onChange={(e) => set({ locations: e.target.value })} data-testid="profile-locations" /></Field>
+          <Field label="Website"><input className="field" disabled={!admin} value={p.website || ""} onChange={(e) => set({ website: e.target.value })} placeholder="https://…" data-testid="profile-website" /></Field>
         </div>
       </Card>
 
@@ -113,6 +122,11 @@ export default function Profile() {
         <div className="mt-4 space-y-4">
           <Field label="Core capabilities" hint="What you actually build/deliver."><textarea className="field min-h-[70px]" disabled={!admin} value={p.capabilities || ""} onChange={(e) => set({ capabilities: e.target.value })} placeholder="e.g. EO/IR payload design, edge AI for ISR, autonomous flight software…" data-testid="profile-capabilities" /></Field>
           <Field label="Technology focus areas" hint="Comma-separated."><input className="field" disabled={!admin} value={Array.isArray(p.techFocus) ? p.techFocus.join(", ") : (p.techFocus || "")} onChange={(e) => set({ techFocus: e.target.value })} placeholder="Space Technology, Trusted AI & Autonomy, Hypersonics" data-testid="profile-techfocus" /></Field>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <Field label="PSC codes" hint="Comma-separated Product Service Codes — sharpen SAM.gov pulls (e.g. AC13, R425)."><input className="field mono" disabled={!admin} value={Array.isArray(p.pscCodes) ? p.pscCodes.join(", ") : (p.pscCodes || "")} onChange={(e) => set({ pscCodes: e.target.value })} data-testid="profile-psc" /></Field>
+            <Field label="Target agencies" hint="Comma-separated — steers AI discovery (e.g. USAF, DARPA, NASA)."><input className="field" disabled={!admin} value={Array.isArray(p.targetAgencies) ? p.targetAgencies.join(", ") : (p.targetAgencies || "")} onChange={(e) => set({ targetAgencies: e.target.value })} data-testid="profile-agencies" /></Field>
+          </div>
+          <Field label="Key personnel" hint="Names, roles, one-line quals — used in management volumes and pitch materials."><textarea className="field min-h-[60px]" disabled={!admin} value={p.keyPersonnel || ""} onChange={(e) => set({ keyPersonnel: e.target.value })} placeholder="e.g. Dr. Jane Roe — PI, 15 yr GNC, ex-AFRL…" data-testid="profile-personnel" /></Field>
           <Field label="Past performance" hint="Notable contracts, agencies, outcomes."><textarea className="field min-h-[70px]" disabled={!admin} value={p.pastPerformance || ""} onChange={(e) => set({ pastPerformance: e.target.value })} placeholder="e.g. AFWERX Phase II (SpaceWERX), prime on $4M AFRL SBIR…" data-testid="profile-pastperf" /></Field>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <Field label="Differentiators"><textarea className="field min-h-[60px]" disabled={!admin} value={p.differentiators || ""} onChange={(e) => set({ differentiators: e.target.value })} data-testid="profile-diff" /></Field>

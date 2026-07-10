@@ -2,8 +2,8 @@ import React, { useEffect, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Target, Building2, Users, Settings as SettingsIcon,
-  Shield, LogOut, ChevronDown, Radar, AlertTriangle, X, Menu, Satellite,
-  Plus, KeyRound,
+  Shield, LogOut, ChevronDown, Radar, AlertTriangle, X, Menu, FileText,
+  Plus, KeyRound, Landmark, Handshake, Rocket, ClipboardList, Crosshair, FolderLock,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { canAdmin, canSeeDashboard } from "../lib/helpers";
@@ -126,17 +126,29 @@ function OrgSwitcher() {
 
 const NAV = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, testid: "nav-dashboard", dashboard: true },
-  { to: "/intelligence", label: "Intelligence", icon: Satellite, testid: "nav-intelligence" },
-  { to: "/opportunities", label: "Opportunities", icon: Target, testid: "nav-opportunities" },
+  { to: "/opportunities", label: "Federal Opportunities", icon: Target, testid: "nav-opportunities" },
+  { to: "/proposals", label: "Proposals", icon: FileText, testid: "nav-proposals" },
+  { to: "/competitive-analysis", label: "Competitive Analysis", icon: Crosshair, testid: "nav-competitive" },
+  { to: "/private-capital", label: "Private Capital", icon: Landmark, testid: "nav-capital" },
+  { to: "/investment-deals", label: "Investment Deals", icon: Handshake, testid: "nav-deals" },
+  { to: "/accelerators", label: "Accelerators", icon: Rocket, testid: "nav-accelerators" },
+  { to: "/accelerator-applications", label: "Accelerator Applications", icon: ClipboardList, testid: "nav-accel-apps" },
   { to: "/profile", label: "Company Profile", icon: Building2, testid: "nav-profile" },
   { to: "/admin", label: "Admin", icon: Users, testid: "nav-admin", admin: true },
   { to: "/settings", label: "Settings", icon: SettingsIcon, testid: "nav-settings", admin: true },
 ];
 
+const SUB_NAV = [
+  { to: "/shared", label: "Shared With Me", icon: FolderLock, testid: "nav-shared" },
+];
+
 function NavList({ role, onNavigate }) {
+  const items = role === "subcontractor"
+    ? SUB_NAV
+    : NAV.filter((n) => (!n.admin || canAdmin(role)) && (!n.dashboard || canSeeDashboard(role)));
   return (
     <nav className="flex flex-1 flex-col gap-1">
-      {NAV.filter((n) => (!n.admin || canAdmin(role)) && (!n.dashboard || canSeeDashboard(role))).map((n) => (
+      {items.map((n) => (
         <NavLink key={n.to} to={n.to} data-testid={n.testid} onClick={onNavigate}
           className={({ isActive }) =>
             `flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors ${
@@ -169,11 +181,14 @@ function VerifyBanner() {
   const resend = async () => {
     try {
       const { data } = await api.post("/auth/resend-verification");
-      toast.success("Verification link generated", {
-        description: "Email is mocked — open the link to verify.",
-        action: { label: "Verify now", onClick: () => (window.location.href = data.verifyUrl) },
-      });
-    } catch { toast.error("Could not generate link"); }
+      if (data.verifyUrl) {
+        toast.success("Verification link ready", {
+          action: { label: "Verify now", onClick: () => (window.location.href = data.verifyUrl) },
+        });
+      } else {
+        toast.success("Verification email sent", { description: "Check your inbox." });
+      }
+    } catch { toast.error("Could not send the email. Try again.") ; }
   };
   return (
     <div className="flex items-center justify-between gap-3 border-b border-warn/30 bg-warn/10 px-4 py-2 text-sm text-warn" data-testid="verify-email-banner">
@@ -247,7 +262,14 @@ export default function Shell({ children }) {
           <Clock />
         </header>
         <VerifyBanner />
-        <main className="flex-1 px-4 py-6 md:px-8">{children}</main>
+        <main className="flex-1 px-4 py-6 md:px-8">
+          {children}
+          <p className="mt-10 border-t border-line pt-4 text-center text-[10px] font-semibold leading-relaxed tracking-wide text-warn/80"
+             data-testid="app-disclaimer">
+            CAPTUREAGENT DOES NOT SUPPORT CUI, ITAR, OR CLASSIFIED DATA YET. PLEASE DO
+            NOT CREATE OR STORE ANY CUI, ITAR, OR CLASSIFIED MATERIALS.
+          </p>
+        </main>
       </div>
     </div>
   );

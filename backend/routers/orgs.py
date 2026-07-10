@@ -272,6 +272,13 @@ class ProfileIn(BaseModel):
     capabilities: str = ""
     pastPerformance: str = ""
     techFocus: List[str] = []
+    pscCodes: List[str] = []
+    targetAgencies: List[str] = []
+    employeesCount: Optional[int] = None
+    annualRevenue: str = ""
+    locations: str = ""
+    keyPersonnel: str = ""
+    website: str = ""
     differentiators: str = ""
     commercialization: str = ""
     clearances: str = ""
@@ -396,8 +403,11 @@ async def update_profile(body: ProfileIn, ctx: dict = Depends(require_role("capt
     prof = await db.fetchrow(
         """insert into org_profiles (organization_id, uei, cage, sam_active, is_small,
                certs, cmmc_level, sprs_score, size_note, notes, capabilities,
-               past_performance, tech_focus, differentiators, commercialization, clearances)
-           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+               past_performance, tech_focus, differentiators, commercialization, clearances,
+               psc_codes, target_agencies, employees_count, annual_revenue,
+               locations, key_personnel, website)
+           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
+                   $17, $18, $19, $20, $21, $22, $23)
            on conflict (organization_id) do update set
                uei = excluded.uei, cage = excluded.cage, sam_active = excluded.sam_active,
                is_small = excluded.is_small, certs = excluded.certs,
@@ -408,12 +418,21 @@ async def update_profile(body: ProfileIn, ctx: dict = Depends(require_role("capt
                tech_focus = excluded.tech_focus,
                differentiators = excluded.differentiators,
                commercialization = excluded.commercialization,
-               clearances = excluded.clearances
+               clearances = excluded.clearances,
+               psc_codes = excluded.psc_codes,
+               target_agencies = excluded.target_agencies,
+               employees_count = excluded.employees_count,
+               annual_revenue = excluded.annual_revenue,
+               locations = excluded.locations,
+               key_personnel = excluded.key_personnel,
+               website = excluded.website
            returning *""",
         ctx["org_id"], body.uei, body.cage, body.samActive, body.isSmall,
         body.certs.model_dump(), body.cmmcLevel, body.sprsScore, body.sizeNote,
         body.notes, body.capabilities, body.pastPerformance, body.techFocus,
-        body.differentiators, body.commercialization, body.clearances)
+        body.differentiators, body.commercialization, body.clearances,
+        body.pscCodes, body.targetAgencies, body.employeesCount,
+        body.annualRevenue, body.locations, body.keyPersonnel, body.website)
     await write_audit(ctx["org_id"], ctx["user"], "profile.update", ctx["org"]["name"])
     return serialize(prof)
 
@@ -600,17 +619,15 @@ class SecretsIn(BaseModel):
     anthropicKey: Optional[str] = None
     samKey: Optional[str] = None
     openaiKey: Optional[str] = None
+    emergentKey: Optional[str] = None
+    asksageKey: Optional[str] = None
 
 
 def _masked_payload(values, extra=None):
-    out = {
-        "anthropicKey": org_keys.mask_secret(values["anthropic"]),
-        "samKey": org_keys.mask_secret(values["sam"]),
-        "openaiKey": org_keys.mask_secret(values["openai"]),
-        "anthropicSet": bool(values["anthropic"]),
-        "samSet": bool(values["sam"]),
-        "openaiSet": bool(values["openai"]),
-    }
+    out = {}
+    for name in org_keys.KEY_COLUMNS:
+        out[f"{name}Key"] = org_keys.mask_secret(values[name])
+        out[f"{name}Set"] = bool(values[name])
     out.update(extra or {})
     return out
 
@@ -631,17 +648,23 @@ async def get_secrets(ctx: dict = Depends(require_role("admin"))):
 async def update_secrets(body: SecretsIn, ctx: dict = Depends(require_role("admin"))):
     values = await org_keys.store_keys(
         ctx["org_id"],
-        {"anthropic": body.anthropicKey, "sam": body.samKey, "openai": body.openaiKey},
+        {"anthropic": body.anthropicKey, "sam": body.samKey, "openai": body.openaiKey,
+         "emergent": body.emergentKey, "asksage": body.asksageKey},
         ctx["user"]["id"])
     await write_audit(ctx["org_id"], ctx["user"], "secrets.update", "API keys")
     return _masked_payload(values, {
         "ok": True,
-        "validation": {
-            "anthropic": "saved" if values["anthropic"] else "not set",
-            "sam": "saved" if values["sam"] else "not set",
-            "openai": "saved" if values["openai"] else "not set",
-        },
+        "validation": {name: ("saved" if values[name] else "not set")
+                       for name in org_keys.KEY_COLUMNS},
     })
+
+
+@router.get("/{orgId}/secrets/status")
+async def secrets_status(ctx: dict = Depends(require_role("viewer"))):
+    """Which keys are configured (booleans only) — lets members see which AI
+    engines are available without any access to key material."""
+    values = await org_keys.get_keys(ctx["org_id"])
+    return {f"{name}Set": bool(values[name]) for name in org_keys.KEY_COLUMNS}
 
 
 @router.post("/{orgId}/secrets/rotate-key")

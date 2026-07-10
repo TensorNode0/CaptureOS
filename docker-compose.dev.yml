@@ -34,7 +34,7 @@ services:
       BROWSER: none
       CHOKIDAR_USEPOLLING: "true"
       WATCHPACK_POLLING: "true"
-    command: sh -c "npm install --no-audit --no-fund --loglevel=error && npm start"
+    command: sh -c "rm -rf node_modules/.cache && npm install --no-audit --no-fund --loglevel=error && npm start"
     ports:
       - "3000:3000"
     restart: unless-stopped

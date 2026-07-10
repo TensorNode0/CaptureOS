@@ -11,6 +11,10 @@ import Why from "./pages/marketing/Why";
 import FeaturesPage from "./pages/marketing/Features";
 import ResourcesPage from "./pages/marketing/Resources";
 import About from "./pages/marketing/About";
+import Article from "./pages/marketing/resources/Article";
+import { BlogIndex, BlogPost } from "./pages/marketing/Blog";
+import Privacy from "./pages/marketing/Privacy";
+import CookieConsent from "./components/CookieConsent";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import ForgotPassword from "./pages/ForgotPassword";
@@ -20,6 +24,13 @@ import Onboarding from "./pages/Onboarding";
 import Dashboard from "./pages/Dashboard";
 import Intelligence from "./pages/Intelligence";
 import Opportunities from "./pages/Opportunities";
+import Proposals from "./pages/Proposals";
+import CompetitiveAnalysis from "./pages/CompetitiveAnalysis";
+import SharedWithMe from "./pages/SharedWithMe";
+import PrivateCapital from "./pages/venture/PrivateCapital";
+import InvestmentDeals from "./pages/venture/InvestmentDeals";
+import Accelerators from "./pages/venture/Accelerators";
+import AcceleratorApplications from "./pages/venture/AcceleratorApplications";
 import OpportunityDetail from "./pages/OpportunityDetail";
 import Capability from "./pages/Capability";
 import ProposalWorkspace from "./pages/ProposalWorkspace";
@@ -61,9 +72,10 @@ function RootRedirect() {
 }
 
 // Dashboards are for the admin and the capture manager; contributors land on
-// the opportunities pipeline instead.
+// the opportunities pipeline; subcontractors only see their shared items.
 function DashboardGate({ children }) {
   const { activeOrg } = useAuth();
+  if (activeOrg?.role === "subcontractor") return <Navigate to="/shared" replace />;
   if (activeOrg && !canSeeDashboard(activeOrg.role))
     return <Navigate to="/opportunities" replace />;
   return children;
@@ -74,6 +86,7 @@ export default function App() {
     <BrowserRouter>
       <div className="space-bg" />
       <div className="starfield" />
+      <CookieConsent />
       <Toaster
         position="top-right"
         theme="dark"
@@ -91,6 +104,10 @@ export default function App() {
           <Route path="/why" element={<Why />} />
           <Route path="/features" element={<FeaturesPage />} />
           <Route path="/resources" element={<ResourcesPage />} />
+          <Route path="/resources/:slug" element={<Article />} />
+          <Route path="/blog" element={<BlogIndex />} />
+          <Route path="/blog/:slug" element={<BlogPost />} />
+          <Route path="/privacy" element={<Privacy />} />
           <Route path="/about" element={<About />} />
           <Route path="/login" element={<PublicOnly><Login /></PublicOnly>} />
           <Route path="/register" element={<PublicOnly><Register /></PublicOnly>} />
@@ -101,6 +118,13 @@ export default function App() {
           <Route path="/dashboard" element={<Protected><DashboardGate><Dashboard /></DashboardGate></Protected>} />
           <Route path="/intelligence" element={<Protected><Intelligence /></Protected>} />
           <Route path="/opportunities" element={<Protected><Opportunities /></Protected>} />
+          <Route path="/proposals" element={<Protected><Proposals /></Protected>} />
+          <Route path="/competitive-analysis" element={<Protected><CompetitiveAnalysis /></Protected>} />
+          <Route path="/shared" element={<Protected><SharedWithMe /></Protected>} />
+          <Route path="/private-capital" element={<Protected><PrivateCapital /></Protected>} />
+          <Route path="/investment-deals" element={<Protected><InvestmentDeals /></Protected>} />
+          <Route path="/accelerators" element={<Protected><Accelerators /></Protected>} />
+          <Route path="/accelerator-applications" element={<Protected><AcceleratorApplications /></Protected>} />
           <Route path="/opportunities/:id" element={<Protected><OpportunityDetail /></Protected>} />
           <Route path="/opportunities/:id/capability" element={<Protected><Capability /></Protected>} />
           <Route path="/opportunities/:id/proposal" element={<Protected><ProposalWorkspace /></Protected>} />

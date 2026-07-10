@@ -1,16 +1,16 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import { Radar, Satellite, ClipboardCheck, Sparkles, Package, ShieldCheck,
-         Users, ArrowRight } from "lucide-react";
+         Users, ArrowRight, FileText, Crosshair, Landmark } from "lucide-react";
 import MarketingLayout from "./MarketingLayout";
 
 const FEATURES = [
   {
-    icon: Radar, title: "Pipeline & live pulls",
+    icon: Radar, title: "Federal Opportunities pipeline",
     points: [
-      "One-click pull from SAM.gov (Get Opportunities v2) and Grants.gov, matched to your NAICS and keywords",
-      "Deduped by solicitation number — your fit scores and notes survive refreshes",
-      "Stage pipeline from Identified through Submitted, Won, Lost, and No-Bid",
+      "One-click pull from SAM.gov and Grants.gov matched to your NAICS, PSC codes, and keywords — expired notices never surface, real award amounts do",
+      "Filters that think like a capture manager: status (open / pre-release / closed), agency, vehicle, set-aside, stage",
+      "AI Deep Scan across SBIR/DSIP, AFWERX, DIU, DARPA, NASA and the open web, fit-scored against your profile",
       "AI Verify & Refresh checks every record against live sources and flags changed due dates or cancelled notices",
     ],
   },
@@ -51,19 +51,46 @@ const FEATURES = [
     ],
   },
   {
+    icon: FileText, title: "Proposal hub & AI evaluation",
+    points: [
+      "Every package your team creates in one Proposals tab — status, volumes drafted, due dates, submission state",
+      "AI color-team evaluation: an SSEB-style review scores the drafted package 0–100 across five factors",
+      "Strengths, weaknesses, severity-rated risks with mitigations, and compliance gaps — before the government sees it",
+      "A prioritized 'do these next' list of the edits that most raise your score; re-evaluate after each pass",
+    ],
+  },
+  {
+    icon: Crosshair, title: "Competitive analysis (OSINT)",
+    points: [
+      "Verified federal award history for any competitor straight from USASpending — totals by year, top agencies, largest contracts with links",
+      "AI research across SAM.gov, SBA DSBS, GSA eLibrary, OSDBU forecasts, and the open web — nothing fabricated, sources cited",
+      "BLUF up top: who they are, where they win, where they're beatable",
+      "Prime/sub/team strategies with specific next steps, plus a recompete watch built from contract end dates",
+    ],
+  },
+  {
+    icon: Landmark, title: "Private capital & accelerators",
+    points: [
+      "Curated directory of defense & space investors — check sizes, stages, sectors, check types, and the traction each looks for",
+      "Aerospace/defense accelerator map with terms, cohorts, and application tips (Catalyst, Techstars Space, NSIN, xTech, DIANA...)",
+      "Investment Deals workspace: AI-drafted investor emails, pitch decks, business plans, and 3-year financial models — exported to Office",
+      "Accelerator Applications workspace: per-question answers with tips on what strong applications do",
+    ],
+  },
+  {
     icon: Users, title: "Team & governance",
     points: [
-      "Domain-aware signup: the first user certifies as AOR/Admin; colleagues request access and get roles",
-      "Roles that mirror a real capture shop: admin, capture manager, PI, proposal writer, technical writer, editor, viewer",
-      "Only the capture manager (or admin) creates and approves; only the admin submits",
-      "Entity info locked to the admin, with time-boxed edit grants on request — every action audit-logged",
+      "Domain-aware signup: the first user certifies as AOR/Admin; colleagues request access and get roles — with email notifications for requests, approvals, and invites",
+      "Eight roles that mirror a real capture shop: admin, capture manager, PI, proposal writer, technical writer, editor, viewer — and subcontractor",
+      "Subcontractors see only the exact proposal sections you share (read or write, e.g. read-only SoW, writable WBS & schedule) — no tools, no pipeline, nothing else",
+      "Only the capture manager (or admin) creates and approves; only the admin submits; entity info locked behind time-boxed edit grants — every action audit-logged",
     ],
   },
   {
     icon: ShieldCheck, title: "Security architecture",
     points: [
-      "Bring-your-own API keys, envelope-encrypted per organization — invisible even to the operator",
-      "Masked previews only; full keys never reach any browser",
+      "Bring-your-own API keys for five providers — SAM.gov, Claude, ChatGPT, Emergent, and AskSage — envelope-encrypted per organization, invisible even to the operator",
+      "Masked previews only; full keys never reach any browser; per-org key rotation on demand",
       "Purpose-tagged audit trail for every key use and every admin action",
       "Postgres with row-level security on every table; login lockout; httpOnly cookies",
     ],

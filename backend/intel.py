@@ -94,6 +94,8 @@ def _user_prompt(ctx, tier_target):
         f"- Differentiators: {ctx.get('differentiators') or 'n/a'}\n"
         f"- Commercialization strategy: {ctx.get('commercialization') or 'n/a'}\n"
         f"- Clearances / facility: {ctx.get('clearances') or 'n/a'}\n"
+        f"- Target agencies (prioritize these customers): "
+        f"{', '.join(ctx.get('targetAgencies') or []) or 'n/a'}\n"
         f"- CMMC level: {ctx.get('cmmcLevel') or 'n/a'}\n"
         f"- Small business: {ctx.get('isSmall')}; SBA certs held: "
         f"{', '.join([k for k, v in (ctx.get('certs') or {}).items() if v]) or 'none'}\n"

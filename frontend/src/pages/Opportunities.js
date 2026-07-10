@@ -90,11 +90,14 @@ export default function Opportunities() {
   const [fVehicle, setFVehicle] = useState("");
   const [fSetAside, setFSetAside] = useState("");
   const [fStage, setFStage] = useState("");
+  const [fStatus, setFStatus] = useState("active"); // expired hidden by default
+  const [fAgency, setFAgency] = useState("");
   const [hideClosed, setHideClosed] = useState(false);
   const [sort, setSort] = useState({ key: "dueDate", dir: "asc" });
   const [showCreate, setShowCreate] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [pulling, setPulling] = useState(false);
+  const [scanning, setScanning] = useState(false);
 
   const load = () => {
     if (!activeOrgId) return;
@@ -105,12 +108,43 @@ export default function Opportunities() {
     api.get(`/orgs/${activeOrgId}/opportunities`).then((r) => setOpps(r.data)).catch(() => setOpps([]));
   }, [activeOrgId]);
 
+  const runDeepScan = async () => {
+    setScanning(true);
+    const tid = toast.loading("AI Deep Scan running — searching SAM, SBIR/DSIP, AFWERX, DIU, NASA and the open web…");
+    try {
+      const { data } = await api.post(`/orgs/${activeOrgId}/intel/scan`, { tier: "standard" });
+      const jobId = data.jobId;
+      for (let i = 0; i < 60; i++) {
+        await new Promise((res) => setTimeout(res, 5000));
+        const { data: job } = await api.get(`/orgs/${activeOrgId}/intel/jobs/${jobId}`);
+        if (job.status === "done") {
+          toast.success("Deep scan complete", {
+            id: tid, description: job.summary,
+            action: { label: "View report", onClick: () => navigate("/intelligence") },
+          });
+          setScanning(false);
+          return;
+        }
+        if (job.status === "error") {
+          toast.error(job.error || "Scan failed", { id: tid });
+          setScanning(false);
+          return;
+        }
+      }
+      toast.info("Scan is taking a while — check Deep-scan reports shortly", { id: tid });
+    } catch (err) {
+      toast.error(errMsg(err), { id: tid });
+    } finally {
+      setScanning(false);
+    }
+  };
+
   const runVerify = async () => {
     setVerifying(true);
     const tid = toast.loading("Running AI Verify & Refresh…");
     try {
       const { data } = await api.post(`/orgs/${activeOrgId}/opportunities/verify`);
-      toast.success(`AI Verify complete${data.mock ? " (mock)" : ""}`, { id: tid, description: data.summary });
+      toast.success("AI Verify complete", { id: tid, description: data.summary });
       load();
     } catch (err) {
       toast.error(errMsg(err), { id: tid });
@@ -124,7 +158,7 @@ export default function Opportunities() {
     const tid = toast.loading("Pulling from SAM / Grants…");
     try {
       const { data } = await api.post(`/orgs/${activeOrgId}/opportunities/pull`);
-      toast.success(`Pull complete${data.mock ? " (mock)" : ""}`, { id: tid, description: data.summary });
+      toast.success("Pull complete", { id: tid, description: data.summary });
       load();
     } catch (err) {
       toast.error(errMsg(err), { id: tid });
@@ -145,13 +179,29 @@ export default function Opportunities() {
     }
   };
 
+  // Notice lifecycle: closed = response deadline has passed; otherwise the
+  // source feed's status (pre-release = presolicitation / sources sought).
+  const noticeStatusOf = (o) => {
+    if (o.dueDate && new Date(o.dueDate) < new Date(new Date().toDateString()))
+      return "closed";
+    return o.noticeStatus === "pre-release" ? "pre-release" : "open";
+  };
+
+  const agencies = useMemo(
+    () => [...new Set((opps || []).map((o) => o.agency).filter(Boolean))].sort(),
+    [opps]);
+
   const filtered = useMemo(() => {
     if (!opps) return [];
     let list = opps.filter((o) => {
-      if (q && !(`${o.title} ${o.solNumber} ${o.agency}`.toLowerCase().includes(q.toLowerCase()))) return false;
+      if (q && !(`${o.title} ${o.solNumber} ${o.agency} ${o.naics}`.toLowerCase().includes(q.toLowerCase()))) return false;
       if (fVehicle && o.vehicle !== fVehicle) return false;
       if (fSetAside && o.setAside !== fSetAside) return false;
       if (fStage && o.stage !== fStage) return false;
+      if (fAgency && o.agency !== fAgency) return false;
+      const ns = noticeStatusOf(o);
+      if (fStatus === "active" && ns === "closed") return false;
+      if (["open", "pre-release", "closed"].includes(fStatus) && ns !== fStatus) return false;
       if (hideClosed && ["Won", "Lost", "No-Bid"].includes(o.stage)) return false;
       return true;
     });
@@ -167,7 +217,7 @@ export default function Opportunities() {
       return 0;
     });
     return list;
-  }, [opps, q, fVehicle, fSetAside, fStage, hideClosed, sort]);
+  }, [opps, q, fVehicle, fSetAside, fStage, fStatus, fAgency, hideClosed, sort]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleSort = (key) =>
     setSort((s) => ({ key, dir: s.key === key && s.dir === "asc" ? "desc" : "asc" }));
@@ -177,13 +227,21 @@ export default function Opportunities() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <SectionLabel>Pipeline</SectionLabel>
-          <h1 className="mt-1 text-2xl font-semibold text-ink">Opportunities</h1>
-          <div className="mt-1 text-xs text-faint">FEED as of {fmtDateTime(new Date())}</div>
+          <h1 className="mt-1 text-2xl font-semibold text-ink">Federal Opportunities</h1>
+          <div className="mt-1 text-xs text-faint">
+            FEED as of {fmtDateTime(new Date())} ·{" "}
+            <button className="text-cyan hover:underline" onClick={() => navigate("/intelligence")}
+              data-testid="scan-reports-link">Deep-scan reports</button>
+          </div>
         </div>
         {editor && (
           <div className="flex flex-wrap gap-2">
-            <button className="btn btn-violet" onClick={runVerify} disabled={verifying} data-testid="verify-refresh-button">
-              {verifying ? <Spinner /> : <Sparkles size={16} />} Verify &amp; Refresh with AI
+            <button className="btn btn-violet" onClick={runDeepScan} disabled={scanning} data-testid="deep-scan-button"
+              title="AI market scan across SAM, SBIR/DSIP, AFWERX, DIU, DARPA, NASA and the open web — fit-scored against your company profile">
+              {scanning ? <Spinner /> : <Sparkles size={16} />} AI Deep Scan
+            </button>
+            <button className="btn btn-ghost" onClick={runVerify} disabled={verifying} data-testid="verify-refresh-button">
+              {verifying ? <Spinner /> : <CheckCircle2 size={16} />} Verify &amp; Refresh with AI
             </button>
             <button className="btn btn-ghost" onClick={runPull} disabled={pulling} data-testid="pull-sam-button">
               {pulling ? <Spinner /> : <DownloadCloud size={16} />} Pull from SAM / Grants
@@ -202,6 +260,16 @@ export default function Opportunities() {
             <input className="field !pl-9" placeholder="Search title, sol #, agency…" value={q}
               onChange={(e) => setQ(e.target.value)} data-testid="opp-search" />
           </div>
+          <select className="field !w-auto" value={fStatus} onChange={(e) => setFStatus(e.target.value)} data-testid="filter-status">
+            <option value="active">Active (open + pre-release)</option>
+            <option value="open">Open</option>
+            <option value="pre-release">Pre-release</option>
+            <option value="closed">Closed / expired</option>
+            <option value="all">All statuses</option>
+          </select>
+          <select className="field !w-auto" value={fAgency} onChange={(e) => setFAgency(e.target.value)} data-testid="filter-agency">
+            <option value="">All agencies</option>{agencies.map((a) => <option key={a}>{a}</option>)}
+          </select>
           <select className="field !w-auto" value={fVehicle} onChange={(e) => setFVehicle(e.target.value)} data-testid="filter-vehicle">
             <option value="">All vehicles</option>{VEHICLES.map((v) => <option key={v}>{v}</option>)}
           </select>

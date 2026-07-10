@@ -22,7 +22,6 @@ export default function Register() {
       const data = await register(name, email, password);
       if (data.verifyUrl) {
         toast.success("Account created", {
-          description: "Email is in dev mode — verify any time.",
           action: { label: "Verify now", onClick: () => (window.location.href = data.verifyUrl) },
         });
       } else {

@@ -123,6 +123,12 @@ def _narrative_prompt(doc_type, ctx_text, cap_content):
     return (
         f"Today is {today}.\n\n{ctx_text}\n{_capability_block(cap_content)}\n\n"
         f"DRAFT THE FOLLOWING PROPOSAL DOCUMENT: {d['title']}\n{d['guidance']}\n\n"
+        "Evaluators reward structure: include markdown TABLES wherever they carry "
+        "the argument better than prose — at minimum a requirements-traceability "
+        "or task table, a milestone/schedule table, and (where relevant) a "
+        "risk-mitigation table and staffing/LOE table. Tables export directly "
+        "into the Word document. Use the capability's WBS/schedule/budget numbers "
+        "verbatim — never invent conflicting figures.\n\n"
         "Output the document as clean markdown ONLY (start with a # title line). "
         "No preamble, no closing commentary."
     )
@@ -158,9 +164,9 @@ def _deck_prompt(ctx_text, cap_content):
     )
 
 
-async def draft_document(engine, anthropic_key, openai_key, doc_type,
-                         org, profile, opp, cap_content):
-    """Draft one document. Returns (content_md, content_json, model_used)."""
+async def draft_document(engine, keys, doc_type, org, profile, opp, cap_content):
+    """Draft one document. Returns (content_md, content_json, model_used).
+    `keys` is the org_keys.get_keys() dict (all configured engines)."""
     if doc_type not in DOC_TYPES:
         raise ValueError(f"Unknown document type: {doc_type}")
     ctx_text = build_context(org, profile or {}, opp)
@@ -168,7 +174,7 @@ async def draft_document(engine, anthropic_key, openai_key, doc_type,
 
     if fmt == "docx":
         text, model = await genai.generate(
-            engine, anthropic_key, openai_key, SYSTEM,
+            engine, keys, SYSTEM,
             _narrative_prompt(doc_type, ctx_text, cap_content), max_tokens=8000)
         md = (text or "").strip()
         if md.startswith("```"):
@@ -179,9 +185,66 @@ async def draft_document(engine, anthropic_key, openai_key, doc_type,
 
     prompt = _cost_prompt(ctx_text, cap_content) if doc_type == "cost_volume" \
         else _deck_prompt(ctx_text, cap_content)
-    text, model = await genai.generate(
-        engine, anthropic_key, openai_key, SYSTEM, prompt, max_tokens=8000)
+    text, model = await genai.generate(engine, keys, SYSTEM, prompt, max_tokens=8000)
     data = genai.extract_json(text)
     if data is None:
         raise ValueError("The AI returned an unparseable draft. Try again.")
     return "", data, model
+EVAL_SYSTEM = (
+    "You are a Source Selection Evaluation Board (SSEB) chair and color-team lead "
+    "with 20+ years evaluating U.S. federal proposals. You score strictly against "
+    "what evaluators actually reward: compliance, specificity, evidence, and risk "
+    "mitigation — never adjectives. Be tough but constructive; unsupported claims "
+    "are weaknesses. Respond with a SINGLE JSON object ONLY — no prose, no fences."
+)
+
+
+def _eval_prompt(ctx_text, docs_digest):
+    return (
+        f"{ctx_text}\n\n"
+        "PROPOSAL PACKAGE UNDER EVALUATION (drafted volumes, truncated):\n"
+        f"{docs_digest}\n\n"
+        "Run a color-team review of this package as the evaluation board would. "
+        "Score each factor 0-100 (be honest: 85+ is rare). Return JSON EXACTLY:\n"
+        "{\n"
+        '  "overallScore": 0,\n'
+        '  "colorReview": "pink|red|gold",  // maturity: pink=storyboard-grade, red=full draft, gold=submit-ready\n'
+        '  "verdict": "<one-sentence bottom line an evaluator would write>",\n'
+        '  "factors": [{"name": "Technical Merit", "score": 0, "note": "<why>"},\n'
+        '               {"name": "Management & Schedule", "score": 0, "note": ""},\n'
+        '               {"name": "Compliance & Responsiveness", "score": 0, "note": ""},\n'
+        '               {"name": "Past Performance & Team", "score": 0, "note": ""},\n'
+        '               {"name": "Cost Realism", "score": 0, "note": ""}],\n'
+        '  "strengths": ["<specific, quotable strengths>"],\n'
+        '  "weaknesses": ["<specific gaps with the section they live in>"],\n'
+        '  "risks": [{"risk": "...", "severity": "high|medium|low", "mitigation": "..."}],\n'
+        '  "complianceGaps": ["<missing required elements, page/format concerns>"],\n'
+        '  "recommendations": ["<3-7 prioritized edits that most raise score>"]\n'
+        "}"
+    )
+
+
+def _docs_digest(docs, limit_each=4000):
+    parts = []
+    for d in docs:
+        body = d.get("content_md") or ""
+        if not body and d.get("content_json"):
+            import json as _json
+            body = _json.dumps(d["content_json"])[:limit_each]
+        if not body:
+            continue
+        parts.append(f"=== {d.get('title')} ({d.get('doc_type')}) ===\n{body[:limit_each]}")
+    return "\n\n".join(parts) if parts else "(no drafted content)"
+
+
+async def evaluate_package(engine, keys, org, profile, opp, docs):
+    """AI color-team evaluation of the drafted package. Returns evaluation dict."""
+    ctx_text = build_context(org, profile or {}, opp)
+    digest = _docs_digest([dict(d) for d in docs])
+    text, model = await genai.generate(
+        engine, keys, EVAL_SYSTEM, _eval_prompt(ctx_text, digest), max_tokens=6000)
+    data = genai.extract_json(text)
+    if data is None:
+        raise ValueError("The AI returned an unparseable evaluation. Try again.")
+    data["_model"] = model
+    return data
