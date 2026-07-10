@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   ArrowLeft, Sparkles, Save, Download, FileText, FileSpreadsheet,
-  Presentation, Package, CheckCircle2, AlertTriangle, PencilLine, Bot,
+  Presentation, Package, CheckCircle2, AlertTriangle, PencilLine, Bot, Gauge,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api, errMsg } from "../lib/api";
@@ -138,6 +138,19 @@ export default function ProposalWorkspace() {
         toast.error(JSON.parse(text).detail || "Download failed");
       } catch { toast.error(errMsg(e)); }
     }
+    finally { setBusy(""); }
+  };
+
+  const evaluate = async () => {
+    setBusy("eval");
+    const tid = toast.loading("Running the AI color-team evaluation…");
+    try {
+      const { data } = await api.post(
+        `/orgs/${activeOrgId}/opportunities/${id}/proposal/evaluate`,
+        { engine }, { timeout: 180000 });
+      setProposal((p) => ({ ...p, evaluation: data, evaluatedAt: new Date().toISOString() }));
+      toast.success(`Evaluation complete — ${data.overallScore}/100 (${data.colorReview} team)`, { id: tid });
+    } catch (e) { toast.error(errMsg(e), { id: tid }); }
     finally { setBusy(""); }
   };
 
@@ -296,6 +309,101 @@ export default function ProposalWorkspace() {
             );
           })}
         </div>
+      )}
+
+      {proposal && drafted > 0 && (
+        <Card className="p-5" data-testid="evaluation-section">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <SectionLabel>AI Evaluation</SectionLabel>
+              <p className="mt-1 text-xs text-faint">
+                A source-selection-board color review of the drafted package —
+                scores, strengths, weaknesses, risks, and the edits that raise your score.
+              </p>
+            </div>
+            {editor && (
+              <button className="btn btn-violet" onClick={evaluate} disabled={busy === "eval"}
+                data-testid="evaluate-proposal">
+                {busy === "eval" ? <Spinner /> : <Gauge size={15} />}
+                {proposal.evaluation ? "Re-evaluate with AI" : "Evaluate with AI"}
+              </button>
+            )}
+          </div>
+
+          {proposal.evaluation && (
+            <div className="mt-4 space-y-4" data-testid="evaluation-report">
+              <div className="flex flex-wrap items-center gap-4">
+                <div className="flex items-baseline gap-2">
+                  <span className="mono text-4xl font-semibold text-cyan">{proposal.evaluation.overallScore}</span>
+                  <span className="text-xs text-faint">/ 100</span>
+                </div>
+                {proposal.evaluation.colorReview && (
+                  <Pill tone={{ pink: "violet", red: "warn", gold: "ok" }[proposal.evaluation.colorReview] || "neutral"}>
+                    {proposal.evaluation.colorReview} team
+                  </Pill>
+                )}
+                <span className="text-sm text-dim">{proposal.evaluation.verdict}</span>
+              </div>
+
+              {Array.isArray(proposal.evaluation.factors) && (
+                <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+                  {proposal.evaluation.factors.map((f, i) => (
+                    <div key={i} className="rounded-lg border border-line bg-white/5 p-3">
+                      <div className="mono text-lg text-ink">{f.score}</div>
+                      <div className="text-xs font-medium text-dim">{f.name}</div>
+                      <div className="mt-1 text-[11px] leading-snug text-faint">{f.note}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <div className="label-mono mb-1.5 text-ok">Strengths</div>
+                  {(proposal.evaluation.strengths || []).map((s, i) => (
+                    <div key={i} className="mb-1 text-xs leading-relaxed text-dim">▲ {s}</div>
+                  ))}
+                </div>
+                <div>
+                  <div className="label-mono mb-1.5 text-warn">Weaknesses</div>
+                  {(proposal.evaluation.weaknesses || []).map((s, i) => (
+                    <div key={i} className="mb-1 text-xs leading-relaxed text-dim">▽ {s}</div>
+                  ))}
+                </div>
+              </div>
+
+              {(proposal.evaluation.risks || []).length > 0 && (
+                <div>
+                  <div className="label-mono mb-1.5">Risks</div>
+                  {(proposal.evaluation.risks || []).map((r, i) => (
+                    <div key={i} className="mb-1 text-xs leading-relaxed text-dim">
+                      <Pill tone={{ high: "bad", medium: "warn", low: "neutral" }[r.severity] || "neutral"}>{r.severity}</Pill>{" "}
+                      {r.risk} <span className="text-faint">— {r.mitigation}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {(proposal.evaluation.complianceGaps || []).length > 0 && (
+                <div>
+                  <div className="label-mono mb-1.5 text-bad">Compliance gaps</div>
+                  {(proposal.evaluation.complianceGaps || []).map((g, i) => (
+                    <div key={i} className="mb-1 text-xs leading-relaxed text-dim">✕ {g}</div>
+                  ))}
+                </div>
+              )}
+
+              {(proposal.evaluation.recommendations || []).length > 0 && (
+                <div className="rounded-lg border border-cyan/30 bg-cyan/5 p-3">
+                  <div className="label-mono mb-1.5 text-cyan">Do these next</div>
+                  {(proposal.evaluation.recommendations || []).map((r, i) => (
+                    <div key={i} className="mb-1 text-xs leading-relaxed text-dim">{i + 1}. {r}</div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </Card>
       )}
 
       <DocEditor doc={editDoc} onClose={() => setEditDoc(null)} orgId={activeOrgId} oppId={id}

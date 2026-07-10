@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Target, Building2, Users, Settings as SettingsIcon,
-  Shield, LogOut, ChevronDown, Radar, AlertTriangle, X, Menu,
+  Shield, LogOut, ChevronDown, Radar, AlertTriangle, X, Menu, FileText,
   Plus, KeyRound,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
@@ -127,6 +127,7 @@ function OrgSwitcher() {
 const NAV = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, testid: "nav-dashboard", dashboard: true },
   { to: "/opportunities", label: "Federal Opportunities", icon: Target, testid: "nav-opportunities" },
+  { to: "/proposals", label: "Proposals", icon: FileText, testid: "nav-proposals" },
   { to: "/profile", label: "Company Profile", icon: Building2, testid: "nav-profile" },
   { to: "/admin", label: "Admin", icon: Users, testid: "nav-admin", admin: true },
   { to: "/settings", label: "Settings", icon: SettingsIcon, testid: "nav-settings", admin: true },
