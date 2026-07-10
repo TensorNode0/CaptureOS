@@ -84,17 +84,17 @@ async def _insert_opp(ctx, rec, source):
                (organization_id, title, sol_number, agency, office, vehicle, set_aside,
                 naics, ceiling, pop, due_date, stage, url, win_themes, source,
                 last_verified, verify_report, links, fit, pwin, proposal_strength,
-                compliance, budget, criteria, decision, created_by)
+                compliance, budget, criteria, decision, created_by, notice_status)
            values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'Identified', $12, '',
                    $13, $14, null, $15, $16, 0, 0, $17, $18, $19,
-                   '{"call": "TBD", "rationale": ""}'::jsonb, $20)
+                   '{"call": "TBD", "rationale": ""}'::jsonb, $20, $21)
            returning *""",
         ctx["org_id"], rec.get("title", ""), sol, rec.get("agency", ""),
         rec.get("office", ""), rec.get("vehicle", "RFP"), rec.get("setAside") or "None",
         rec.get("naics", "") or "", ceiling, rec.get("pop", "") or "",
         rec.get("dueDate") or None, url, source, now_utc(), links, default_fit(),
         default_compliance(), default_budget(ceiling), default_criteria(),
-        as_uuid(ctx["user"]["id"]))
+        as_uuid(ctx["user"]["id"]), rec.get("noticeStatus") or "open")
 
 
 def _decorate(opp_row, profile):
@@ -198,6 +198,8 @@ async def verify_refresh(ctx: dict = Depends(require_role("editor"))):
     org = ctx["org"]
     naics = org.get("naics") or []
     keywords = org.get("keywords") or []
+    prof = await _profile(ctx["org_id"]) or {}
+    capabilities = (prof.get("capabilities") or "")[:600]
     # Cap the batch to control web-search + token cost.
     opps = await db.fetch(
         """select * from opportunities where organization_id = $1
@@ -209,7 +211,8 @@ async def verify_refresh(ctx: dict = Depends(require_role("editor"))):
         ctx["org_id"], as_uuid(ctx["user"]["id"]))
     payload = [serialize(o) for o in opps]
     try:
-        data = await integrations.anthropic_verify(anthropic_key, naics, keywords, payload)
+        data = await integrations.anthropic_verify(anthropic_key, naics, keywords,
+                                                   payload, capabilities)
     except Exception as e:
         await db.execute(
             "update refresh_jobs set status = 'error', finished_at = $2, summary = $3 where id = $1",
@@ -379,16 +382,19 @@ async def pull_sam_grants(ctx: dict = Depends(require_role("editor"))):
             await db.execute(
                 """update opportunities
                    set title = $2, agency = $3, office = $4, vehicle = $5,
-                       set_aside = $6, naics = $7, ceiling = $8,
+                       set_aside = $6, naics = $7,
+                       ceiling = greatest(ceiling, $8),
                        due_date = coalesce($9, due_date),
                        url = coalesce(nullif($10, ''), url),
-                       source = $11, last_verified = $12, updated_at = $12
+                       source = $11, last_verified = $12, updated_at = $12,
+                       notice_status = $13
                    where id = $1""",
                 existing["id"], rec.get("title", ""), rec.get("agency", ""),
                 rec.get("office", ""), rec.get("vehicle", "RFP"),
                 rec.get("setAside") or "None", rec.get("naics", ""),
                 float(rec.get("ceiling") or 0), rec.get("dueDate"),
-                rec.get("url") or "", rec.get("source", "sam"), now_utc())
+                rec.get("url") or "", rec.get("source", "sam"), now_utc(),
+                rec.get("noticeStatus") or "open")
             updated += 1
         else:
             await _insert_opp(ctx, rec, rec.get("source", "sam"))
