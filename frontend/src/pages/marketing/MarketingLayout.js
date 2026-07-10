@@ -5,10 +5,11 @@ import { LogoMark } from "../../components/Logo";
 
 const NAV = [
   { to: "/home", label: "Home" },
+  { to: "/about", label: "About" },
   { to: "/why", label: "Why CaptureAgent" },
   { to: "/features", label: "Features" },
   { to: "/resources", label: "Resources" },
-  { to: "/about", label: "About" },
+  { to: "/blog", label: "Blog" },
 ];
 
 export function Wordmark({ size = 34 }) {
@@ -88,8 +89,9 @@ export default function MarketingLayout({ children }) {
             </p>
           </div>
         </div>
-        <div className="border-t border-line py-4 text-center text-xs text-faint">
-          © {new Date().getFullYear()} CaptureAgent · captureagent.us
+        <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 border-t border-line py-4 text-center text-xs text-faint">
+          <span>© {new Date().getFullYear()} CaptureAgent · captureagent.us</span>
+          <Link to="/privacy" className="hover:text-cyan" data-testid="footer-privacy">Privacy Policy</Link>
         </div>
       </footer>
     </div>
