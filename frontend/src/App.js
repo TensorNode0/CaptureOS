@@ -26,6 +26,7 @@ import Intelligence from "./pages/Intelligence";
 import Opportunities from "./pages/Opportunities";
 import Proposals from "./pages/Proposals";
 import CompetitiveAnalysis from "./pages/CompetitiveAnalysis";
+import SharedWithMe from "./pages/SharedWithMe";
 import PrivateCapital from "./pages/venture/PrivateCapital";
 import InvestmentDeals from "./pages/venture/InvestmentDeals";
 import Accelerators from "./pages/venture/Accelerators";
@@ -71,9 +72,10 @@ function RootRedirect() {
 }
 
 // Dashboards are for the admin and the capture manager; contributors land on
-// the opportunities pipeline instead.
+// the opportunities pipeline; subcontractors only see their shared items.
 function DashboardGate({ children }) {
   const { activeOrg } = useAuth();
+  if (activeOrg?.role === "subcontractor") return <Navigate to="/shared" replace />;
   if (activeOrg && !canSeeDashboard(activeOrg.role))
     return <Navigate to="/opportunities" replace />;
   return children;
@@ -118,6 +120,7 @@ export default function App() {
           <Route path="/opportunities" element={<Protected><Opportunities /></Protected>} />
           <Route path="/proposals" element={<Protected><Proposals /></Protected>} />
           <Route path="/competitive-analysis" element={<Protected><CompetitiveAnalysis /></Protected>} />
+          <Route path="/shared" element={<Protected><SharedWithMe /></Protected>} />
           <Route path="/private-capital" element={<Protected><PrivateCapital /></Protected>} />
           <Route path="/investment-deals" element={<Protected><InvestmentDeals /></Protected>} />
           <Route path="/accelerators" element={<Protected><Accelerators /></Protected>} />
