@@ -272,6 +272,13 @@ class ProfileIn(BaseModel):
     capabilities: str = ""
     pastPerformance: str = ""
     techFocus: List[str] = []
+    pscCodes: List[str] = []
+    targetAgencies: List[str] = []
+    employeesCount: Optional[int] = None
+    annualRevenue: str = ""
+    locations: str = ""
+    keyPersonnel: str = ""
+    website: str = ""
     differentiators: str = ""
     commercialization: str = ""
     clearances: str = ""
@@ -396,8 +403,11 @@ async def update_profile(body: ProfileIn, ctx: dict = Depends(require_role("capt
     prof = await db.fetchrow(
         """insert into org_profiles (organization_id, uei, cage, sam_active, is_small,
                certs, cmmc_level, sprs_score, size_note, notes, capabilities,
-               past_performance, tech_focus, differentiators, commercialization, clearances)
-           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+               past_performance, tech_focus, differentiators, commercialization, clearances,
+               psc_codes, target_agencies, employees_count, annual_revenue,
+               locations, key_personnel, website)
+           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
+                   $17, $18, $19, $20, $21, $22, $23)
            on conflict (organization_id) do update set
                uei = excluded.uei, cage = excluded.cage, sam_active = excluded.sam_active,
                is_small = excluded.is_small, certs = excluded.certs,
@@ -408,12 +418,21 @@ async def update_profile(body: ProfileIn, ctx: dict = Depends(require_role("capt
                tech_focus = excluded.tech_focus,
                differentiators = excluded.differentiators,
                commercialization = excluded.commercialization,
-               clearances = excluded.clearances
+               clearances = excluded.clearances,
+               psc_codes = excluded.psc_codes,
+               target_agencies = excluded.target_agencies,
+               employees_count = excluded.employees_count,
+               annual_revenue = excluded.annual_revenue,
+               locations = excluded.locations,
+               key_personnel = excluded.key_personnel,
+               website = excluded.website
            returning *""",
         ctx["org_id"], body.uei, body.cage, body.samActive, body.isSmall,
         body.certs.model_dump(), body.cmmcLevel, body.sprsScore, body.sizeNote,
         body.notes, body.capabilities, body.pastPerformance, body.techFocus,
-        body.differentiators, body.commercialization, body.clearances)
+        body.differentiators, body.commercialization, body.clearances,
+        body.pscCodes, body.targetAgencies, body.employeesCount,
+        body.annualRevenue, body.locations, body.keyPersonnel, body.website)
     await write_audit(ctx["org_id"], ctx["user"], "profile.update", ctx["org"]["name"])
     return serialize(prof)
 

@@ -154,12 +154,13 @@ def _sam_amount(o):
     return 0
 
 
-async def fetch_sam(api_key, naics, keywords, limit=60):
+async def fetch_sam(api_key, naics, keywords, limit=60, psc=None):
     """Pull active SAM.gov opportunities relevant to the org.
 
     Relevance controls: response deadline must be in the future (rdlfrom),
-    queries run per-NAICS (up to 3 codes) and results must match the org's
-    keywords in title/description when keywords are configured."""
+    queries run per-NAICS (up to 3 codes) plus per-PSC classification code
+    (up to 2), and results must match the org's keywords in
+    title/description when keywords are configured."""
     posted_to = datetime.now(timezone.utc)
     posted_from = posted_to - timedelta(days=120)
     today = posted_to.strftime("%Y-%m-%d")
@@ -174,7 +175,9 @@ async def fetch_sam(api_key, naics, keywords, limit=60):
         "limit": str(limit),
         "offset": "0",
     }
-    queries = [{**base, "ncode": n} for n in (naics or [])[:3]] or [dict(base)]
+    queries = [{**base, "ncode": n} for n in (naics or [])[:3]]
+    queries += [{**base, "ccode": c} for c in (psc or [])[:2]]
+    queries = queries or [dict(base)]
 
     raw = []
     async with httpx.AsyncClient(timeout=40) as client:

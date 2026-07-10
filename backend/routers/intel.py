@@ -32,6 +32,7 @@ async def _build_ctx(org_id):
         "differentiators": prof.get("differentiators", ""),
         "commercialization": prof.get("commercialization", ""),
         "clearances": prof.get("clearances", ""),
+        "targetAgencies": prof.get("target_agencies") or [],
         "cmmcLevel": prof.get("cmmc_level", ""),
         "isSmall": prof.get("is_small", True),
         "certs": prof.get("certs") or {},
