@@ -245,3 +245,28 @@ class TestSubmission:
         # opportunity stage moved to Submitted
         opp = s.get(f"{BASE_URL}/api/orgs/{fresh_org}/opportunities/{opp_id}", timeout=15).json()
         assert opp["stage"] == "Submitted"
+
+
+class TestProposalHubAndEvaluation:
+    def test_org_wide_proposals_list(self, admin_session, fresh_org, opp_id):
+        s, _ = admin_session
+        r = s.get(f"{BASE_URL}/api/orgs/{fresh_org}/proposals", timeout=15)
+        assert r.status_code == 200, r.text
+        rows = r.json()
+        assert any(x["opportunityId"] == opp_id for x in rows)
+        row = next(x for x in rows if x["opportunityId"] == opp_id)
+        assert row["totalDocs"] >= 4 and row["drafted"] >= 1
+        assert "oppTitle" in row and "solNumber" in row
+
+    def test_evaluate_requires_api_key(self, admin_session, fresh_org, opp_id):
+        s, _ = admin_session
+        r = s.post(f"{BASE_URL}/api/orgs/{fresh_org}/opportunities/{opp_id}/proposal/evaluate",
+                   json={"engine": "claude"}, timeout=15)
+        assert r.status_code == 400
+        assert "Anthropic" in r.json().get("detail", "")
+
+    def test_viewer_blocked_from_evaluate(self, viewer_session, fresh_org, opp_id):
+        s, _ = viewer_session  # not a member of fresh org
+        r = s.post(f"{BASE_URL}/api/orgs/{fresh_org}/opportunities/{opp_id}/proposal/evaluate",
+                   json={"engine": "claude"}, timeout=15)
+        assert r.status_code == 403

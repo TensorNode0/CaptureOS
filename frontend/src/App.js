@@ -24,6 +24,7 @@ import Onboarding from "./pages/Onboarding";
 import Dashboard from "./pages/Dashboard";
 import Intelligence from "./pages/Intelligence";
 import Opportunities from "./pages/Opportunities";
+import Proposals from "./pages/Proposals";
 import OpportunityDetail from "./pages/OpportunityDetail";
 import Capability from "./pages/Capability";
 import ProposalWorkspace from "./pages/ProposalWorkspace";
@@ -110,6 +111,7 @@ export default function App() {
           <Route path="/dashboard" element={<Protected><DashboardGate><Dashboard /></DashboardGate></Protected>} />
           <Route path="/intelligence" element={<Protected><Intelligence /></Protected>} />
           <Route path="/opportunities" element={<Protected><Opportunities /></Protected>} />
+          <Route path="/proposals" element={<Protected><Proposals /></Protected>} />
           <Route path="/opportunities/:id" element={<Protected><OpportunityDetail /></Protected>} />
           <Route path="/opportunities/:id/capability" element={<Protected><Capability /></Protected>} />
           <Route path="/opportunities/:id/proposal" element={<Protected><ProposalWorkspace /></Protected>} />
