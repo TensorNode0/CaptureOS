@@ -351,6 +351,7 @@ async def pull_sam_grants(ctx: dict = Depends(require_role("editor"))):
     org = ctx["org"]
     naics = org.get("naics") or []
     keywords = org.get("keywords") or []
+    prof = serialize(await _profile(ctx["org_id"])) or {}
     job = await db.fetchrow(
         """insert into refresh_jobs (organization_id, type, status, started_by)
            values ($1, 'sam', 'running', $2) returning id""",
@@ -358,7 +359,8 @@ async def pull_sam_grants(ctx: dict = Depends(require_role("editor"))):
     records: List[Dict[str, Any]] = []
     errors: List[str] = []
     try:
-        records += await integrations.fetch_sam(sam_key, naics, keywords, limit=40)
+        records += await integrations.fetch_sam(sam_key, naics, keywords, limit=40,
+                                                psc=(prof.get("pscCodes") or []))
     except PermissionError:
         await db.execute(
             "update refresh_jobs set status = 'error', finished_at = $2, summary = $3 where id = $1",

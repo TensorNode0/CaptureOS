@@ -36,6 +36,9 @@ def _org_context(org, profile):
         f"- Differentiators: {p.get('differentiators') or 'n/a'}\n"
         f"- Commercialization: {p.get('commercialization') or 'n/a'}\n"
         f"- Certifications/clearances: {p.get('clearances') or 'n/a'}\n"
+        f"- Team size: {p.get('employeesCount') or 'n/a'}; revenue: {p.get('annualRevenue') or 'n/a'}\n"
+        f"- Key personnel: {p.get('keyPersonnel') or 'n/a'}\n"
+        f"- Locations: {p.get('locations') or 'n/a'}; website: {p.get('website') or 'n/a'}\n"
     )
 
 

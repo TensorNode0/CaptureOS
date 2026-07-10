@@ -68,14 +68,9 @@ export default function Home() {
             draft the pitch, and apply to programs — same workspace, same AI.
           </p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-            <div className="relative">
-              <Link to="/register" className="btn btn-primary !px-6 !py-3 text-base" data-testid="hero-start">
-                Start free — bring your own keys <ArrowRight size={17} />
-              </Link>
-              <span className="absolute -right-2 -top-2.5 rounded-full border border-warn/50 bg-warn/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-warn">
-                Free for a limited time
-              </span>
-            </div>
+            <Link to="/register" className="btn btn-primary !px-6 !py-3 text-base" data-testid="hero-start">
+              Start Free — For a Limited Time <ArrowRight size={17} />
+            </Link>
             <Link to="/features" className="btn btn-ghost !px-6 !py-3 text-base">See it in action</Link>
           </div>
         </motion.div>

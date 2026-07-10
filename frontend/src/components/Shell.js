@@ -260,7 +260,7 @@ export default function Shell({ children }) {
           <p className="mt-10 border-t border-line pt-4 text-center text-[10px] font-semibold leading-relaxed tracking-wide text-warn/80"
              data-testid="app-disclaimer">
             CAPTUREAGENT DOES NOT SUPPORT CUI, ITAR, OR CLASSIFIED DATA YET. PLEASE DO
-            NOT CREATE OR STORE ANY CUI, ITAR, OR CLASSIFIED MATERIALS ON CAPTUREAGENT.
+            NOT CREATE OR STORE ANY CUI, ITAR, OR CLASSIFIED MATERIALS.
           </p>
         </main>
       </div>
