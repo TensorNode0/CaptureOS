@@ -53,19 +53,14 @@ export default function Home() {
                     transition={{ duration: 0.5 }}>
           <div className="label-mono mb-4 !text-cyan">Streamlining government capture</div>
           <h1 className="mx-auto max-w-3xl text-4xl font-bold leading-tight text-ink md:text-5xl">
-            The TurboTax of GovCon — an AI capture team that wins federal work
+            The TurboTax of GovCon — an AI capture manager on your team that
+            wins federal work… and so much more!
           </h1>
           <p className="mx-auto mt-5 max-w-2xl text-lg text-dim">
-            Find and qualify opportunities closely tailored to your business, and
-            prepare and submit proposal packages in{" "}
-            <span className="text-ink">minutes — not weeks or months</span>.
+            End-to-end GovCon lifecycle in <span className="text-ink">minutes, not months</span>.
           </p>
           <p className="mx-auto mt-2 max-w-2xl text-base font-medium text-cyan">
-            Save weeks and $$$$. Never miss a relevant opportunity.
-          </p>
-          <p className="mx-auto mt-2 max-w-2xl text-sm text-faint">
-            And when you're raising or accelerating: scout defense investors,
-            draft the pitch, and apply to programs — same workspace, same AI.
+            Save Months and $$$$. Never miss a relevant opportunity.
           </p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
             <Link to="/register" className="btn btn-primary !px-6 !py-3 text-base" data-testid="hero-start">
@@ -81,6 +76,20 @@ export default function Home() {
               <div className="mt-1 text-xs text-dim">{s.l}</div>
             </div>
           ))}
+        </div>
+      </section>
+
+      {/* new-feature banner */}
+      <section className="mx-auto max-w-4xl px-5 pb-4 pt-2 text-center">
+        <div className="glass border-cyan/30 p-8">
+          <div className="label-mono !text-warn">🚨 New feature alert!</div>
+          <p className="mt-3 text-2xl font-semibold leading-snug text-ink md:text-3xl">
+            When you're raising or accelerating: scout defense investors and
+            accelerators, draft your deck, and apply to programs.
+          </p>
+          <p className="mt-3 text-lg font-medium text-cyan">
+            All your fundraising needs — now on CaptureAgent.
+          </p>
         </div>
       </section>
 

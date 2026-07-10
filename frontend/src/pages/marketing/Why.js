@@ -25,7 +25,7 @@ const WAYS = [
 ];
 
 const TABLE = [
-  { metric: "Price", sq: "Free (costly labor & loss of focus)", comp: "Typically $300–$1,000+ per seat / month", ca: "Free for a limited time — your AI usage bills at provider cost on your own keys" },
+  { metric: "Price", sq: "Free (costly labor & loss of focus)", comp: "Typically $300–$1,000+ per seat / month, hidden behind a contact form", ca: "Free for a limited time (always transparent pricing that makes sense) — your usage bills at AI provider cost on your own keys" },
   { metric: "Time to a qualified pipeline", sq: "Days of manual search per week", comp: "Minutes–hours (matching only)", ca: "Minutes — pulled, fit-scored, eligibility-checked" },
   { metric: "First reviewable draft package", sq: "Weeks of team writing, endless meetings with subs, countless email threads, personal sacrifices, losing focus, disappearing runway, increasing burn rate, and staring at the abyss eating glass while crossing “the valley”", comp: "Days (single volumes, human assembly)", ca: "Under an hour: capability + volumes + cost + deck" },
   { metric: "Proposal evaluation", sq: "Color teams you have to staff", comp: "Rarely offered", ca: "AI SSEB-style review with scores, risks, and fix list" },
