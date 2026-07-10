@@ -152,7 +152,9 @@ cannot submit — submission is the admin's call.
 ## Security notes
 
 See [SECURITY.md](SECURITY.md) for the full architecture (per-org envelope
-encryption, key rotation, access auditing, CMMC positioning).
+encryption, key rotation, access auditing, CMMC positioning) and
+[SECURITY-ASSESSMENT.md](SECURITY-ASSESSMENT.md) for the NIST 800-171-mapped
+self-assessment with the current POA&M (indicative score 92/110, product scope).
 
 - Per-org API keys: envelope-encrypted at rest (per-org data key wrapped by a
   server-side master key), masked in every API response, rotatable per org,

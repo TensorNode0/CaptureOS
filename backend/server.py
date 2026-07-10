@@ -4,6 +4,7 @@ load_dotenv()
 import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 
 import database
 from apply_migrations import apply_migrations
@@ -13,6 +14,25 @@ from routers import auth, orgs, opportunities, intel, capabilities, proposals, v
 app = FastAPI(title="CaptureAgent API")
 
 frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Baseline security headers on every API response (NIST 800-171 3.13.x)."""
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        # The API serves JSON/files only — a restrictive CSP is safe here.
+        response.headers.setdefault("Content-Security-Policy",
+                                    "default-src 'none'; frame-ancestors 'none'")
+        if frontend_url.startswith("https"):
+            response.headers.setdefault("Strict-Transport-Security",
+                                        "max-age=31536000; includeSubDomains")
+        return response
+
+
+app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[frontend_url, "http://localhost:3000"],
