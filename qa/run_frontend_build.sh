@@ -9,6 +9,6 @@ REPO="$(pwd -W 2>/dev/null || pwd)"
 MSYS_NO_PATHCONV=1 docker run --rm \
   -v "$REPO/frontend:/app" -w /app \
   -e CI=false \
-  node:20-alpine sh -c "npm install --no-audit --no-fund --loglevel=error && npm run build"
+  node:20-alpine sh -c "rm -rf node_modules/.cache && npm install --no-audit --no-fund --loglevel=error && npm run build"
 
 echo "frontend build passed"

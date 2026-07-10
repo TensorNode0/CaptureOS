@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { Search, ExternalLink, Landmark } from "lucide-react";
 import { Card, SectionLabel, Pill, PageReveal, EmptyState } from "../../components/ui";
-import { INVESTORS, VENTURE_SOURCES } from "../../lib/ventureData";
+import { INVESTORS, VENTURE_SOURCES, RESEARCH_TOOLS } from "../../lib/ventureData";
 
 const STAGES = ["Pre-seed", "Seed", "Series A", "Series B", "Growth", "Angel"];
 
@@ -87,6 +87,18 @@ export default function PrivateCapital() {
             </table>
           </div>
         )}
+      </Card>
+
+      <Card className="p-4">
+        <div className="text-xs font-medium text-dim">Go deeper (paid research tools)</div>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {RESEARCH_TOOLS.map((t) => (
+            <a key={t.label} href={t.href} target="_blank" rel="noreferrer" title={t.note}
+               className="rounded-full border border-line bg-white/5 px-3 py-1 text-xs text-dim hover:border-cyan/40 hover:text-cyan">
+              {t.label} <ExternalLink size={10} className="inline" />
+            </a>
+          ))}
+        </div>
       </Card>
     </PageReveal>
   );

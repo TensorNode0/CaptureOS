@@ -5,7 +5,17 @@
 
 export const VENTURE_SOURCES = [
   { label: "OpenVC — defense-tech investor list", href: "https://www.openvc.app/investor-lists/defensetech-investors" },
+  { label: "OpenVC — aerospace investor list", href: "https://www.openvc.app/investor-lists/aerospace-investors" },
+  { label: "VC Sheet — investor profiles", href: "https://www.vcsheet.com/investors" },
   { label: "MIT MIX — defense startup resources", href: "https://mix.mit.edu/defense-technology-startup-resources/" },
+  { label: "Pillar VC — how to build an investor list", href: "https://www.pillar.vc/playlist/article/how-to-build-an-investor-list/" },
+];
+
+/* Paid / account-gated research tools — no free data, but worth knowing. */
+export const RESEARCH_TOOLS = [
+  { label: "PitchBook", href: "https://pitchbook.com", note: "The deepest paid investor database — fund mandates, dry powder, contacts" },
+  { label: "Carta", href: "https://carta.com", note: "Cap-table platform; useful once a round is actually closing" },
+  { label: "InvestorLists.vc", href: "https://investorlists.vc", note: "Paid contact lists of active US VCs" },
 ];
 
 export const INVESTORS = [
@@ -28,7 +38,12 @@ export const INVESTORS = [
   { name: "AE Industrial (HorizonX)", checkSize: "$2M–$20M", stage: "Series A–Growth", sectors: "Aerospace, Defense, Industrial", techAreas: "Space, autonomy, digital enterprise", checkType: "Strategic equity", traction: "Scalable tech with aerospace anchor customers", url: "https://ae.industrial.com", notes: "Boeing HorizonX became AEI HorizonX under AE Industrial Partners" },
   { name: "Lockheed Martin Ventures", checkSize: "$1M–$10M", stage: "Seed–Series B", sectors: "Defense, Space", techAreas: "AI, autonomy, space, quantum, energy", checkType: "Strategic equity", traction: "Alignment with LM mission areas; co-development potential", url: "https://lockheedmartin.com/ventures", notes: "Often pairs investment with business-unit sponsorship" },
   { name: "AFVentures / AFWERX", checkSize: "$50K–$15M (STRATFI/TACFI)", stage: "SBIR-stage companies", sectors: "Air & Space", techAreas: "All USAF/USSF mission areas", checkType: "Non-dilutive SBIR + matching", traction: "Phase II SBIR + private/gov match", url: "https://afwerx.com", notes: "Not equity — the Air Force's commercial investment arm; STRATFI matches private dollars" },
-  { name: "Harpoon Ventures", checkSize: "$500K–$5M", stage: "Seed–Series A", sectors: "Defense, Enterprise", techAreas: "Cyber, AI, space, infrastructure", checkType: "Priced equity", traction: "Early gov pull; veteran/operator founders resonate", url: "https://harpoon.vc", notes: "Veteran-led; hands-on with first gov contracts" },
+  { name: "Harpoon Ventures", checkSize: "$100K–$5M", stage: "Pre-seed–Series A", sectors: "Defense, Deep tech, Energy", techAreas: "Cyber, AI, space, infrastructure", checkType: "Priced equity", traction: "Early gov pull; veteran/operator founders resonate", url: "https://harpoon.vc", notes: "Veteran-led; hands-on with first gov contracts (per VC Sheet: $100K–$5M)" },
+  { name: "Humba Ventures", checkSize: "~$750K", stage: "Pre-seed–Seed", sectors: "Deep tech, Defense", techAreas: "Robotics, AI, biotech, manufacturing", checkType: "SAFE or priced", traction: "Technical founders pre-traction; defense-curious deep tech", url: "https://humbaventures.com", notes: "Leo Polovets (ex-Susa) — active, writing-heavy defense-tech thesis" },
+  { name: "Fifty Years", checkSize: "$250K–$2M", stage: "Pre-seed–Seed", sectors: "Deep tech, Bio, Climate", techAreas: "Biotech, materials, compute", checkType: "SAFE or priced", traction: "World-positive deep tech; strong science", url: "https://fiftyyears.com", notes: "Deep-tech generalist with dual-use crossover" },
+  { name: "Spacecadet Ventures", checkSize: "$100K–$500K", stage: "Pre-seed–Seed", sectors: "Space, AI, Robotics", techAreas: "Space, AI, robotics, biotech", checkType: "SAFE", traction: "Early believers; brand-builders for frontier companies", url: "https://spacecadet.ventures", notes: "" },
+  { name: "Julian Capital", checkSize: "$400K–$2M", stage: "Pre-seed–Seed", sectors: "Deep tech", techAreas: "Robotics, biotech, infrastructure", checkType: "SAFE or priced", traction: "Technical differentiation over traction", url: "https://julian.capital", notes: "" },
+  { name: "BoxGroup", checkSize: "$250K–$1M", stage: "Pre-seed–Series A", sectors: "Generalist incl. Deep tech", techAreas: "Fintech, deep tech, devtools", checkType: "SAFE or priced", traction: "Founder quality; earliest stage", url: "https://boxgroup.com", notes: "Prolific NYC pre-seed firm" },
   { name: "Marque Ventures", checkSize: "$500K–$3M", stage: "Pre-seed–Series A", sectors: "National security", techAreas: "Autonomy, space, AI, advanced computing", checkType: "Priced equity", traction: "Dual-use with defensible tech", url: "https://marque.vc", notes: "Founded by former SecArmy Ryan McCarthy (venture arm of Section 32 lineage varies — verify)" },
   { name: "Mucker Capital", checkSize: "$100K–$1.5M", stage: "Pre-seed–Seed", sectors: "Software, Dual-use", techAreas: "SaaS, data, applied AI", checkType: "SAFE or priced", traction: "Pre-traction OK with strong team", url: "https://mucker.com", notes: "Hands-on accelerator-style early fund (MuckerLab)" },
   { name: "Backstage Capital", checkSize: "$25K–$100K", stage: "Pre-seed", sectors: "Broad", techAreas: "Software, hardware", checkType: "SAFE", traction: "Underestimated founders; earliest stage", url: "https://backstagecapital.com", notes: "Focused on underrepresented founders" },
@@ -45,7 +60,7 @@ export const INVESTORS = [
   { name: "Refinery Ventures", checkSize: "$500K–$2M", stage: "Seed", sectors: "Dual-use, Enterprise", techAreas: "AI, logistics, security", checkType: "Priced equity", traction: "Early enterprise/gov revenue", url: "https://refinery.vc", notes: "Mid-America dual-use focus" },
   { name: "Stellar Ventures", checkSize: "$250K–$2M", stage: "Pre-seed–Seed", sectors: "Space", techAreas: "Space infrastructure, defense", checkType: "Priced or SAFE", traction: "Space economy fit", url: "https://stellar.vc", notes: "Space-focused early fund" },
   { name: "Type One Ventures", checkSize: "$100K–$2M", stage: "Pre-seed–Seed", sectors: "Space, Deep tech", techAreas: "Manufacturing, robotics, space", checkType: "Priced or SAFE", traction: "Frontier-tech founders", url: "https://typeone.ventures", notes: "" },
-  { name: "Cantos Ventures", checkSize: "$250K–$1M", stage: "Pre-seed", sectors: "Deep tech", techAreas: "Space, energy, bio, compute", checkType: "SAFE", traction: "'Neo-industrial' pre-product bets", url: "https://cantos.vc", notes: "" },
+  { name: "Cantos Ventures", checkSize: "$400K–$1.5M", stage: "Pre-seed", sectors: "Deep tech", techAreas: "Space, energy, bio, compute", checkType: "SAFE", traction: "'Neo-industrial' pre-product bets", url: "https://cantos.vc", notes: "" },
   { name: "Also Capital / angels via OpenVC", checkSize: "$10K–$250K", stage: "Angel", sectors: "Defense tech", techAreas: "Varies", checkType: "SAFE", traction: "Use the OpenVC defense list to filter angels by thesis", url: "https://www.openvc.app/investor-lists/defensetech-investors", notes: "Community-maintained list — filter by check size and stage" },
 ];
 
