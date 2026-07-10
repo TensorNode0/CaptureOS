@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import database
 from apply_migrations import apply_migrations
 from seed import seed
-from routers import auth, orgs, opportunities, intel, capabilities, proposals
+from routers import auth, orgs, opportunities, intel, capabilities, proposals, venture
 
 app = FastAPI(title="CaptureAgent API")
 
@@ -27,6 +27,7 @@ app.include_router(opportunities.router)
 app.include_router(intel.router)
 app.include_router(capabilities.router)
 app.include_router(proposals.router)
+app.include_router(venture.router)
 
 
 @app.get("/api/health")
