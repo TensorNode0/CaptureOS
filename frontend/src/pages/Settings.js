@@ -12,6 +12,8 @@ export default function Settings() {
   const [anthropic, setAnthropic] = useState("");
   const [sam, setSam] = useState("");
   const [openai, setOpenai] = useState("");
+  const [emergent, setEmergent] = useState("");
+  const [asksage, setAsksage] = useState("");
   const [savingOrg, setSavingOrg] = useState(false);
   const [savingKeys, setSavingKeys] = useState(false);
   const [rotating, setRotating] = useState(false);
@@ -40,11 +42,12 @@ export default function Settings() {
     try {
       const { data } = await api.put(`/orgs/${activeOrgId}/secrets`, {
         anthropicKey: anthropic || null, samKey: sam || null, openaiKey: openai || null,
+        emergentKey: emergent || null, asksageKey: asksage || null,
       });
       setSecrets(data);
-      setAnthropic(""); setSam(""); setOpenai("");
+      setAnthropic(""); setSam(""); setOpenai(""); setEmergent(""); setAsksage("");
       toast.success("API keys saved (encrypted)", {
-        description: `Anthropic: ${data.validation.anthropic} · SAM: ${data.validation.sam} · OpenAI: ${data.validation.openai}`,
+        description: `Anthropic: ${data.validation.anthropic} · SAM: ${data.validation.sam} · OpenAI: ${data.validation.openai} · Emergent: ${data.validation.emergent} · AskSage: ${data.validation.asksage}`,
       });
     } catch (e) { toast.error(errMsg(e)); }
     finally { setSavingKeys(false); }
@@ -94,18 +97,26 @@ export default function Settings() {
           <Field label="OpenAI API key (optional)" hint={secrets.openaiSet ? `Currently set: ${secrets.openaiKey}` : "Not set — enables the ChatGPT drafting engine"}>
             <input className="field mono" value={openai} onChange={(e) => setOpenai(e.target.value)} placeholder={secrets.openaiSet ? "•••••••• (enter new to replace)" : "sk-…"} data-testid="openai-key" />
           </Field>
+          <Field label="Emergent universal LLM key (optional)" hint={secrets.emergentSet ? `Currently set: ${secrets.emergentKey}` : "Not set — enables the Emergent drafting engine (routed models)"}>
+            <input className="field mono" value={emergent} onChange={(e) => setEmergent(e.target.value)} placeholder={secrets.emergentSet ? "•••••••• (enter new to replace)" : "sk-emergent-…"} data-testid="emergent-key" />
+          </Field>
+          <Field label="AskSage API key (optional)" hint={secrets.asksageSet ? `Currently set: ${secrets.asksageKey}` : "Not set — enables the AskSage engine (GovCon compliance boundary)"}>
+            <input className="field mono" value={asksage} onChange={(e) => setAsksage(e.target.value)} placeholder={secrets.asksageSet ? "•••••••• (enter new to replace)" : "AskSage access token"} data-testid="asksage-key" />
+          </Field>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex flex-wrap gap-2">
               <Pill tone={secrets.anthropicSet ? "ok" : "neutral"}>Anthropic {secrets.anthropicSet ? "set" : "unset"}</Pill>
               <Pill tone={secrets.samSet ? "ok" : "neutral"}>SAM {secrets.samSet ? "set" : "unset"}</Pill>
               <Pill tone={secrets.openaiSet ? "ok" : "neutral"}>OpenAI {secrets.openaiSet ? "set" : "unset"}</Pill>
+              <Pill tone={secrets.emergentSet ? "ok" : "neutral"}>Emergent {secrets.emergentSet ? "set" : "unset"}</Pill>
+              <Pill tone={secrets.asksageSet ? "ok" : "neutral"}>AskSage {secrets.asksageSet ? "set" : "unset"}</Pill>
               {secrets.keyVersion && <Pill tone="violet">encryption key v{secrets.keyVersion}</Pill>}
             </div>
             <div className="flex gap-2">
               <button className="btn btn-ghost" onClick={rotateKey} disabled={rotating} data-testid="rotate-key" title="Re-encrypt stored keys under a new per-org encryption key">
                 {rotating ? <Spinner /> : <RotateCw size={15} />} Rotate encryption key
               </button>
-              <button className="btn btn-primary" onClick={saveKeys} disabled={savingKeys || (!anthropic && !sam && !openai)} data-testid="save-keys">{savingKeys ? <Spinner /> : <Save size={16} />} Save keys</button>
+              <button className="btn btn-primary" onClick={saveKeys} disabled={savingKeys || (!anthropic && !sam && !openai && !emergent && !asksage)} data-testid="save-keys">{savingKeys ? <Spinner /> : <Save size={16} />} Save keys</button>
             </div>
           </div>
         </div>

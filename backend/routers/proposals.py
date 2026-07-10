@@ -11,6 +11,7 @@ from utils import now_utc, serialize, as_uuid
 from rbac import require_role, require_perm
 from domain import write_audit
 import proposal_ai
+import genai
 import exports
 import org_keys
 
@@ -106,15 +107,15 @@ async def create_proposal(oppId: str, ctx: dict = Depends(require_perm("proposal
 
 
 class DraftIn(BaseModel):
-    engine: str = "claude"  # claude | openai
+    engine: str = "claude"  # claude | openai | emergent | asksage
 
 
-async def _run_draft(doc_id, engine, anthropic_key, openai_key,
+async def _run_draft(doc_id, engine, keys,
                      org, profile, opp, cap_content, user, org_id):
     try:
         doc = await db.fetchrow("select * from proposal_documents where id = $1", doc_id)
         md, data, model = await proposal_ai.draft_document(
-            engine, anthropic_key, openai_key, doc["doc_type"],
+            engine, keys, doc["doc_type"],
             org, profile, opp, cap_content)
         await db.execute(
             """update proposal_documents
@@ -147,15 +148,14 @@ async def draft_document(oppId: str, docId: str, body: DraftIn,
         raise HTTPException(status_code=404, detail="Document not found")
     if doc.get("draft_status") == "drafting":
         raise HTTPException(status_code=409, detail="Draft already in progress")
-    engine = body.engine if body.engine in ("claude", "openai") else "claude"
+    ENGINES = {"claude": "anthropic", "openai": "openai",
+               "emergent": "emergent", "asksage": "asksage"}
+    engine = body.engine if body.engine in ENGINES else "claude"
     keys = await org_keys.get_keys(ctx["org_id"], ctx["user"], purpose="proposal.draft")
-    anthropic_key, openai_key = keys["anthropic"], keys["openai"]
-    if engine == "claude" and not anthropic_key:
+    if not keys.get(ENGINES[engine]):
         raise HTTPException(status_code=400,
-            detail="No Anthropic API key set. Add it in Settings → API Keys.")
-    if engine == "openai" and not openai_key:
-        raise HTTPException(status_code=400,
-            detail="No OpenAI API key set. Add it in Settings → API Keys.")
+            detail=f"No {genai.ENGINE_LABELS[engine]} API key set. "
+                   "Add it in Settings → API Keys.")
     await db.execute(
         """update proposal_documents
            set draft_status = 'drafting', draft_error = '', updated_at = $2
@@ -165,7 +165,7 @@ async def draft_document(oppId: str, docId: str, body: DraftIn,
         "select * from org_profiles where organization_id = $1", ctx["org_id"])
     cap_content = await _cap_content(ctx["org_id"], opp["id"])
     asyncio.create_task(_run_draft(
-        doc["id"], engine, anthropic_key, openai_key, serialize(ctx["org"]),
+        doc["id"], engine, keys, serialize(ctx["org"]),
         serialize(profile), serialize(opp), cap_content, ctx["user"], ctx["org_id"]))
     return {"ok": True, "status": "drafting", "documentId": str(doc["id"])}
 

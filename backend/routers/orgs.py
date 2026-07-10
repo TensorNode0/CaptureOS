@@ -600,17 +600,15 @@ class SecretsIn(BaseModel):
     anthropicKey: Optional[str] = None
     samKey: Optional[str] = None
     openaiKey: Optional[str] = None
+    emergentKey: Optional[str] = None
+    asksageKey: Optional[str] = None
 
 
 def _masked_payload(values, extra=None):
-    out = {
-        "anthropicKey": org_keys.mask_secret(values["anthropic"]),
-        "samKey": org_keys.mask_secret(values["sam"]),
-        "openaiKey": org_keys.mask_secret(values["openai"]),
-        "anthropicSet": bool(values["anthropic"]),
-        "samSet": bool(values["sam"]),
-        "openaiSet": bool(values["openai"]),
-    }
+    out = {}
+    for name in org_keys.KEY_COLUMNS:
+        out[f"{name}Key"] = org_keys.mask_secret(values[name])
+        out[f"{name}Set"] = bool(values[name])
     out.update(extra or {})
     return out
 
@@ -631,17 +629,23 @@ async def get_secrets(ctx: dict = Depends(require_role("admin"))):
 async def update_secrets(body: SecretsIn, ctx: dict = Depends(require_role("admin"))):
     values = await org_keys.store_keys(
         ctx["org_id"],
-        {"anthropic": body.anthropicKey, "sam": body.samKey, "openai": body.openaiKey},
+        {"anthropic": body.anthropicKey, "sam": body.samKey, "openai": body.openaiKey,
+         "emergent": body.emergentKey, "asksage": body.asksageKey},
         ctx["user"]["id"])
     await write_audit(ctx["org_id"], ctx["user"], "secrets.update", "API keys")
     return _masked_payload(values, {
         "ok": True,
-        "validation": {
-            "anthropic": "saved" if values["anthropic"] else "not set",
-            "sam": "saved" if values["sam"] else "not set",
-            "openai": "saved" if values["openai"] else "not set",
-        },
+        "validation": {name: ("saved" if values[name] else "not set")
+                       for name in org_keys.KEY_COLUMNS},
     })
+
+
+@router.get("/{orgId}/secrets/status")
+async def secrets_status(ctx: dict = Depends(require_role("viewer"))):
+    """Which keys are configured (booleans only) — lets members see which AI
+    engines are available without any access to key material."""
+    values = await org_keys.get_keys(ctx["org_id"])
+    return {f"{name}Set": bool(values[name]) for name in org_keys.KEY_COLUMNS}
 
 
 @router.post("/{orgId}/secrets/rotate-key")
