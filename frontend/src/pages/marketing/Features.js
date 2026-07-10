@@ -1,7 +1,7 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import { Radar, Satellite, ClipboardCheck, Sparkles, Package, ShieldCheck,
-         Users, ArrowRight } from "lucide-react";
+         Users, ArrowRight, FileText, Crosshair, Landmark } from "lucide-react";
 import MarketingLayout from "./MarketingLayout";
 
 const FEATURES = [
@@ -48,6 +48,33 @@ const FEATURES = [
       "Draft any volume with Claude or ChatGPT — your choice of engine, your keys",
       "In-app editors: markdown for narratives, structured rows for cost, slides for the briefing deck",
       "Export real .docx, .xlsx, and .pptx files individually or the whole package as a zip",
+    ],
+  },
+  {
+    icon: FileText, title: "Proposal hub & AI evaluation",
+    points: [
+      "Every package your team creates in one Proposals tab — status, volumes drafted, due dates, submission state",
+      "AI color-team evaluation: an SSEB-style review scores the drafted package 0–100 across five factors",
+      "Strengths, weaknesses, severity-rated risks with mitigations, and compliance gaps — before the government sees it",
+      "A prioritized 'do these next' list of the edits that most raise your score; re-evaluate after each pass",
+    ],
+  },
+  {
+    icon: Crosshair, title: "Competitive analysis (OSINT)",
+    points: [
+      "Verified federal award history for any competitor straight from USASpending — totals by year, top agencies, largest contracts with links",
+      "AI research across SAM.gov, SBA DSBS, GSA eLibrary, OSDBU forecasts, and the open web — nothing fabricated, sources cited",
+      "BLUF up top: who they are, where they win, where they're beatable",
+      "Prime/sub/team strategies with specific next steps, plus a recompete watch built from contract end dates",
+    ],
+  },
+  {
+    icon: Landmark, title: "Private capital & accelerators",
+    points: [
+      "Curated directory of defense & space investors — check sizes, stages, sectors, check types, and the traction each looks for",
+      "Aerospace/defense accelerator map with terms, cohorts, and application tips (Catalyst, Techstars Space, NSIN, xTech, DIANA...)",
+      "Investment Deals workspace: AI-drafted investor emails, pitch decks, business plans, and 3-year financial models — exported to Office",
+      "Accelerator Applications workspace: per-question answers with tips on what strong applications do",
     ],
   },
   {

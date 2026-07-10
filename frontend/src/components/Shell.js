@@ -255,7 +255,14 @@ export default function Shell({ children }) {
           <Clock />
         </header>
         <VerifyBanner />
-        <main className="flex-1 px-4 py-6 md:px-8">{children}</main>
+        <main className="flex-1 px-4 py-6 md:px-8">
+          {children}
+          <p className="mt-10 border-t border-line pt-4 text-center text-[10px] font-semibold leading-relaxed tracking-wide text-warn/80"
+             data-testid="app-disclaimer">
+            CAPTUREAGENT DOES NOT SUPPORT CUI, ITAR, OR CLASSIFIED DATA YET. PLEASE DO
+            NOT CREATE OR STORE ANY CUI, ITAR, OR CLASSIFIED MATERIALS ON CAPTUREAGENT.
+          </p>
+        </main>
       </div>
     </div>
   );
