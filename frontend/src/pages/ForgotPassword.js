@@ -29,17 +29,17 @@ export default function ForgotPassword() {
   return (
     <AuthLayout
       title="Reset password"
-      subtitle="We'll generate a secure reset link."
+      subtitle="We'll email you a secure reset link."
       footer={<Link to="/login" className="text-cyan hover:underline">Back to sign in</Link>}
     >
       {done ? (
         <div className="space-y-3" data-testid="forgot-done">
           <div className="rounded-lg border border-ok/30 bg-ok/10 p-3 text-sm text-ok">
-            If that account exists, a reset link has been generated.
+            If that account exists, a reset link is on its way to your inbox.
           </div>
           {resetUrl && (
             <div className="rounded-lg border border-line bg-white/5 p-3 text-xs text-faint">
-              <div className="label-mono mb-1">Email mocked — use this link</div>
+              <div className="label-mono mb-1">Local development link</div>
               <a href={resetUrl} className="break-all text-cyan hover:underline" data-testid="reset-link">
                 {resetUrl}
               </a>

@@ -169,11 +169,14 @@ function VerifyBanner() {
   const resend = async () => {
     try {
       const { data } = await api.post("/auth/resend-verification");
-      toast.success("Verification link generated", {
-        description: "Email is mocked — open the link to verify.",
-        action: { label: "Verify now", onClick: () => (window.location.href = data.verifyUrl) },
-      });
-    } catch { toast.error("Could not generate link"); }
+      if (data.verifyUrl) {
+        toast.success("Verification link ready", {
+          action: { label: "Verify now", onClick: () => (window.location.href = data.verifyUrl) },
+        });
+      } else {
+        toast.success("Verification email sent", { description: "Check your inbox." });
+      }
+    } catch { toast.error("Could not send the email. Try again.") ; }
   };
   return (
     <div className="flex items-center justify-between gap-3 border-b border-warn/30 bg-warn/10 px-4 py-2 text-sm text-warn" data-testid="verify-email-banner">

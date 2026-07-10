@@ -110,7 +110,7 @@ export default function Opportunities() {
     const tid = toast.loading("Running AI Verify & Refresh…");
     try {
       const { data } = await api.post(`/orgs/${activeOrgId}/opportunities/verify`);
-      toast.success(`AI Verify complete${data.mock ? " (mock)" : ""}`, { id: tid, description: data.summary });
+      toast.success("AI Verify complete", { id: tid, description: data.summary });
       load();
     } catch (err) {
       toast.error(errMsg(err), { id: tid });
@@ -124,7 +124,7 @@ export default function Opportunities() {
     const tid = toast.loading("Pulling from SAM / Grants…");
     try {
       const { data } = await api.post(`/orgs/${activeOrgId}/opportunities/pull`);
-      toast.success(`Pull complete${data.mock ? " (mock)" : ""}`, { id: tid, description: data.summary });
+      toast.success("Pull complete", { id: tid, description: data.summary });
       load();
     } catch (err) {
       toast.error(errMsg(err), { id: tid });
