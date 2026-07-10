@@ -37,7 +37,13 @@ export default function MarketingLayout({ children }) {
               </NavLink>
             ))}
             <Link to="/login" className="text-sm text-ink hover:text-cyan" data-testid="mk-signin">Sign in</Link>
-            <Link to="/register" className="btn btn-primary !py-2" data-testid="mk-start">Start free</Link>
+            <span className="relative inline-flex">
+              <Link to="/register" className="btn btn-primary !py-2" data-testid="mk-start"
+                    title="Free for a limited time">Start free</Link>
+              <span className="absolute -right-1.5 -top-2 rounded-full border border-warn/50 bg-warn/15 px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide text-warn">
+                limited time
+              </span>
+            </span>
           </nav>
           <button className="text-ink md:hidden" onClick={() => setOpen(!open)} aria-label="Menu">
             {open ? <X size={22} /> : <Menu size={22} />}
@@ -88,6 +94,13 @@ export default function MarketingLayout({ children }) {
               or ITAR-controlled technical data.
             </p>
           </div>
+        </div>
+        <div className="border-t border-line px-5 py-3">
+          <p className="mx-auto max-w-4xl text-center text-[11px] font-semibold leading-relaxed tracking-wide text-warn"
+             data-testid="footer-disclaimer">
+            CAPTUREAGENT DOES NOT SUPPORT CUI, ITAR, OR CLASSIFIED DATA YET. PLEASE DO
+            NOT CREATE OR STORE ANY CUI, ITAR, OR CLASSIFIED MATERIALS ON CAPTUREAGENT.
+          </p>
         </div>
         <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 border-t border-line py-4 text-center text-xs text-faint">
           <span>© {new Date().getFullYear()} CaptureAgent · captureagent.us</span>

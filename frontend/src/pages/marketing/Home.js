@@ -53,17 +53,29 @@ export default function Home() {
                     transition={{ duration: 0.5 }}>
           <div className="label-mono mb-4 !text-cyan">Streamlining government capture</div>
           <h1 className="mx-auto max-w-3xl text-4xl font-bold leading-tight text-ink md:text-5xl">
-            Win federal work with an AI capture manager on your team
+            The TurboTax of GovCon — an AI capture team that wins federal work
           </h1>
           <p className="mx-auto mt-5 max-w-2xl text-lg text-dim">
-            Find and qualify opportunities closely tailored to your business in
-            <span className="text-ink"> minutes, not days</span>. Prepare and submit
-            proposal packages in <span className="text-ink">days, not weeks</span>.
+            Find and qualify opportunities closely tailored to your business, and
+            prepare and submit proposal packages in{" "}
+            <span className="text-ink">minutes — not weeks or months</span>.
           </p>
-          <div className="mt-8 flex flex-wrap justify-center gap-3">
-            <Link to="/register" className="btn btn-primary !px-6 !py-3 text-base" data-testid="hero-start">
-              Start free — bring your own keys <ArrowRight size={17} />
-            </Link>
+          <p className="mx-auto mt-2 max-w-2xl text-base font-medium text-cyan">
+            Save weeks and $$$$. Never miss a relevant opportunity.
+          </p>
+          <p className="mx-auto mt-2 max-w-2xl text-sm text-faint">
+            And when you're raising or accelerating: scout defense investors,
+            draft the pitch, and apply to programs — same workspace, same AI.
+          </p>
+          <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+            <div className="relative">
+              <Link to="/register" className="btn btn-primary !px-6 !py-3 text-base" data-testid="hero-start">
+                Start free — bring your own keys <ArrowRight size={17} />
+              </Link>
+              <span className="absolute -right-2 -top-2.5 rounded-full border border-warn/50 bg-warn/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-warn">
+                Free for a limited time
+              </span>
+            </div>
             <Link to="/features" className="btn btn-ghost !px-6 !py-3 text-base">See it in action</Link>
           </div>
         </motion.div>
