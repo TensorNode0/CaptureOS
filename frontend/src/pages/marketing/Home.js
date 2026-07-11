@@ -2,7 +2,7 @@ import React from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Radar, Sparkles, Package, ShieldCheck, ArrowRight, KeyRound,
-         Building2, FileSearch, PenTool, Send } from "lucide-react";
+         Building2, FileSearch, PenTool, Send, Gauge, Rocket } from "lucide-react";
 import MarketingLayout from "./MarketingLayout";
 
 const STATS = [
@@ -34,6 +34,29 @@ const TRIO = [
       "gets technical, management, and past-performance volumes. Draft each with Claude or " +
       "ChatGPT, edit in place, and export real Word, Excel, and PowerPoint files or one zip.",
     img: "/marketing/proposal.png", alt: "Proposal workspace screenshot",
+  },
+  {
+    icon: Gauge, title: "Source-selection-grade evaluation",
+    body: "Once every volume is drafted, one click runs an AI color-team review of the " +
+      "whole package — scores by factor, strengths, weaknesses, risks, compliance gaps, " +
+      "and the edits that raise your score. Every AI button shows live progress, tokens, " +
+      "and cost, with a Stop button — pick the provider, model, and effort per call.",
+    img: "/marketing/proposal-eval.png", alt: "Proposal evaluation and customer targeting screenshot",
+  },
+  {
+    icon: Radar, title: "Competitive intelligence",
+    body: "See who actually wins in your NAICS codes — top primes and top subs straight from " +
+      "USASpending — then run a deep OSINT profile on any competitor: verified award history, " +
+      "customers, vehicles, headcount, salaries by role, capital raised, and where they're beatable.",
+    img: "/marketing/competitive.png", alt: "Competitive analysis screenshot",
+  },
+  {
+    icon: Rocket, title: "Accelerators & private capital",
+    body: "Curated tables of defense accelerators (due dates, duration, terms, phase) and the " +
+      "investors writing checks into defense and space — click any row for the full profile, " +
+      "start an application generated from the program's own page, or let the AI scan the live " +
+      "web for programs and investors that fit your company.",
+    img: "/marketing/accelerators.png", alt: "Defense accelerators directory screenshot",
   },
 ];
 
