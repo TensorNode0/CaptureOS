@@ -5,11 +5,17 @@ import { ACCELERATORS } from "../../lib/ventureData";
 
 export default function Accelerators() {
   const [q, setQ] = useState("");
+  const [fTerms, setFTerms] = useState("");
+  const [fLocation, setFLocation] = useState("");
 
   const rows = useMemo(() => ACCELERATORS.filter((r) => {
     const hay = `${r.name} ${r.focus} ${r.location} ${r.tips}`.toLowerCase();
-    return !q || hay.includes(q.toLowerCase());
-  }), [q]);
+    if (q && !hay.includes(q.toLowerCase())) return false;
+    if (fTerms === "equity-free" && /equity/i.test(r.terms || "") && !/no equity|equity-free|non-dilutive/i.test(r.terms || "")) return false;
+    if (fTerms === "equity" && !/equity/i.test(r.terms || "")) return false;
+    if (fLocation && !`${r.location}`.toLowerCase().includes(fLocation.toLowerCase())) return false;
+    return true;
+  }), [q, fTerms, fLocation]);
 
   return (
     <PageReveal className="space-y-5">
@@ -30,6 +36,13 @@ export default function Accelerators() {
             <input className="field !pl-9" placeholder="Search program, focus, location…" value={q}
               onChange={(e) => setQ(e.target.value)} data-testid="accelerator-search" />
           </div>
+          <select className="field !w-auto" value={fTerms} onChange={(e) => setFTerms(e.target.value)} data-testid="accel-terms">
+            <option value="">All terms</option>
+            <option value="equity-free">Equity-free / non-dilutive</option>
+            <option value="equity">Takes equity</option>
+          </select>
+          <input className="field !w-40" placeholder="Location…" value={fLocation}
+            onChange={(e) => setFLocation(e.target.value)} data-testid="accel-location" />
           <Pill tone="neutral">{rows.length} programs</Pill>
         </div>
       </Card>

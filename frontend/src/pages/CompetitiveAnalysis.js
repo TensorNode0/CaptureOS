@@ -16,6 +16,7 @@ export default function CompetitiveAnalysis() {
   const [competitor, setCompetitor] = useState("");
   const [naics, setNaics] = useState("");
   const [pendingReportId, setPendingReportId] = useState(null);
+  const [reportQ, setReportQ] = useState("");
 
   const load = async () => {
     const { data } = await api.get(`/orgs/${activeOrgId}/competitive`);
@@ -273,7 +274,11 @@ export default function CompetitiveAnalysis() {
       )}
 
       <Card className="overflow-hidden">
-        <div className="p-4 pb-0"><SectionLabel>Past reports</SectionLabel></div>
+        <div className="flex flex-wrap items-center justify-between gap-2 p-4 pb-0">
+          <SectionLabel>Past reports</SectionLabel>
+          <input className="field !w-52 !py-1 text-xs" placeholder="Search competitor…"
+            value={reportQ} onChange={(e) => setReportQ(e.target.value)} data-testid="reports-search" />
+        </div>
         {reports === null ? (
           <div className="space-y-2 p-4">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-10" />)}</div>
         ) : reports.length === 0 ? (
@@ -282,7 +287,7 @@ export default function CompetitiveAnalysis() {
         ) : (
           <table className="w-full text-sm">
             <tbody>
-              {reports.map((r) => (
+              {reports.filter((r) => !reportQ || r.competitor.toLowerCase().includes(reportQ.toLowerCase())).map((r) => (
                 <tr key={r.id} onClick={() => r.status === "done" && open(r.id)}
                     className={`border-t border-line/60 ${r.status === "done" ? "cursor-pointer hover:bg-white/5" : ""}`}
                     data-testid={`report-row-${r.id}`}>

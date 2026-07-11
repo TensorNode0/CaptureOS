@@ -4,17 +4,34 @@ import { Card, SectionLabel, Pill, PageReveal, EmptyState } from "../../componen
 import { INVESTORS, VENTURE_SOURCES, RESEARCH_TOOLS } from "../../lib/ventureData";
 
 const STAGES = ["Pre-seed", "Seed", "Series A", "Series B", "Growth", "Angel"];
+const SECTORS = ["Defense", "Space", "Deep tech", "Dual-use", "Aerospace"];
+
+/* Largest $ figure mentioned in a check-size string, e.g. "$250K–$2M" → 2e6 */
+function maxCheckOf(s) {
+  let max = 0;
+  const re = /\$\s*([\d.]+)\s*([KMB])?/gi;
+  let m;
+  while ((m = re.exec(s || ""))) {
+    const mult = { K: 1e3, M: 1e6, B: 1e9 }[(m[2] || "").toUpperCase()] || 1;
+    max = Math.max(max, parseFloat(m[1]) * mult);
+  }
+  return max;
+}
 
 export default function PrivateCapital() {
   const [q, setQ] = useState("");
   const [stage, setStage] = useState("");
+  const [sector, setSector] = useState("");
+  const [checkMin, setCheckMin] = useState(0);
 
   const rows = useMemo(() => INVESTORS.filter((r) => {
     const hay = `${r.name} ${r.sectors} ${r.techAreas} ${r.notes}`.toLowerCase();
     if (q && !hay.includes(q.toLowerCase())) return false;
     if (stage && !`${r.stage}`.toLowerCase().includes(stage.toLowerCase())) return false;
+    if (sector && !`${r.sectors}`.toLowerCase().includes(sector.toLowerCase())) return false;
+    if (checkMin && maxCheckOf(r.checkSize) < checkMin) return false;
     return true;
-  }), [q, stage]);
+  }), [q, stage, sector, checkMin]);
 
   return (
     <PageReveal className="space-y-5">
@@ -43,6 +60,16 @@ export default function PrivateCapital() {
           <select className="field !w-auto" value={stage} onChange={(e) => setStage(e.target.value)} data-testid="investor-stage">
             <option value="">All stages</option>
             {STAGES.map((s) => <option key={s}>{s}</option>)}
+          </select>
+          <select className="field !w-auto" value={sector} onChange={(e) => setSector(e.target.value)} data-testid="investor-sector">
+            <option value="">All sectors</option>
+            {SECTORS.map((s) => <option key={s}>{s}</option>)}
+          </select>
+          <select className="field !w-auto" value={checkMin} onChange={(e) => setCheckMin(Number(e.target.value))} data-testid="investor-check">
+            <option value={0}>Any check size</option>
+            <option value={500000}>Writes ≥ $500K</option>
+            <option value={2000000}>Writes ≥ $2M</option>
+            <option value={10000000}>Writes ≥ $10M</option>
           </select>
           <Pill tone="neutral">{rows.length} investors</Pill>
         </div>
