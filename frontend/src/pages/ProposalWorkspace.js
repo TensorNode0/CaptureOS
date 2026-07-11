@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import {
   ArrowLeft, Sparkles, Save, Download, FileText, FileSpreadsheet,
   Presentation, Package, CheckCircle2, AlertTriangle, PencilLine, Gauge,
+  Crosshair, ExternalLink,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api, errMsg } from "../lib/api";
@@ -10,6 +11,10 @@ import { useAuth } from "../context/AuthContext";
 import { Card, SectionLabel, Pill, Spinner, PageReveal, EmptyState, Modal, Field } from "../components/ui";
 import { canEdit, canCreateProposal, canSubmitProposal } from "../lib/helpers";
 import AIButton from "../components/AIButton";
+import {
+  PEO_SOURCES, GOV_SECTORS, CIVIL_AGENCIES, DEFENSE_BRANCHES, IC_AGENCIES,
+  COMMERCIAL_MARKETS,
+} from "../lib/peoDirectory";
 
 const FMT_META = {
   docx: { icon: FileText, label: "Word", tone: "cyan" },
@@ -222,6 +227,11 @@ export default function ProposalWorkspace() {
       )}
 
       {proposal && (
+        <CustomerCard proposal={proposal} setProposal={setProposal}
+          orgId={activeOrgId} oppId={id} editor={editor} />
+      )}
+
+      {proposal && (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {docs.map((doc) => {
             const fmt = FMT_META[doc.fmt] || FMT_META.docx;
@@ -387,6 +397,167 @@ export default function ProposalWorkspace() {
       <DocEditor doc={editDoc} onClose={() => setEditDoc(null)} orgId={activeOrgId} oppId={id}
         onSaved={async () => { setEditDoc(null); await load(); }} />
     </PageReveal>
+  );
+}
+
+/* Who the proposal serves: commercial market + government customer down to
+   the PEO, TPOC, and contracting officer — with an AI directory-currency
+   check against the Stanford Gordian Knot 2026 PEO directory. */
+function CustomerCard({ proposal, setProposal, orgId, oppId, editor }) {
+  const saved = proposal.customer || {};
+  const [form, setForm] = useState(saved);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => { setForm(proposal.customer || {}); }, [proposal.customer]);
+
+  const set = (k) => (e) => {
+    const v = e.target.value;
+    setForm((f) => {
+      const next = { ...f, [k]: v };
+      if (k === "sector") { next.branch = ""; next.agency = ""; next.peo = ""; }
+      if (k === "branch") next.peo = "";
+      return next;
+    });
+  };
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const { data } = await api.put(
+        `/orgs/${orgId}/opportunities/${oppId}/proposal/customer`, {
+          commercialMarket: form.commercialMarket || "",
+          sector: form.sector || "", branch: form.branch || "",
+          agency: form.agency || "", peo: form.peo || "",
+          tpoc: form.tpoc || "", contractingOfficer: form.contractingOfficer || "",
+        });
+      setProposal(data);
+      toast.success("Customer saved");
+    } catch (e) { toast.error(errMsg(e)); }
+    finally { setSaving(false); }
+  };
+
+  const check = async ({ model, effort }) => {
+    const { data } = await api.post(
+      `/orgs/${orgId}/opportunities/${oppId}/proposal/customer/check`,
+      { engine: "claude", model: model || "", effort: effort || "standard" });
+    return data; // jobId → telemetry panel
+  };
+
+  const reload = async () => {
+    const { data } = await api.get(`/orgs/${orgId}/opportunities/${oppId}/proposal`);
+    setProposal(data);
+  };
+
+  const check_ = saved.aiCheck;
+  const isDefense = form.sector === "Defense";
+  const isIC = form.sector === "Intelligence Community";
+  const isCivil = form.sector === "Civil";
+  const dirty = JSON.stringify(form) !== JSON.stringify(saved);
+
+  return (
+    <Card className="p-5" data-testid="customer-card">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <SectionLabel>Customer</SectionLabel>
+          <p className="mt-1 max-w-2xl text-xs text-faint">
+            Who this proposal serves — the commercial market and the government
+            customer down to the program executive office, TPOC, and contracting
+            officer. Defense/IC structure follows the{" "}
+            {PEO_SOURCES.map((s, i) => (
+              <span key={s.href}>{i > 0 ? " · " : ""}
+                <a href={s.href} target="_blank" rel="noreferrer" className="text-cyan hover:underline">
+                  {i === 0 ? "Stanford 2026 PEO Directory" : i === 1 ? "SVDG DoW Directory" : "Steve Blank's guide"}
+                </a>
+              </span>
+            ))}.
+          </p>
+        </div>
+        {check_ && (
+          <div className="text-right">
+            <Pill tone={check_.upToDate ? "ok" : "warn"} data-testid="peo-check-pill">
+              <Crosshair size={11} /> {check_.upToDate ? "Up to date" : "Outdated"}
+            </Pill>
+            <div className="mt-1 max-w-[280px] text-[11px] leading-snug text-faint">
+              {check_.note}{" "}
+              {check_.source && (
+                <a href={check_.source} target="_blank" rel="noreferrer"
+                   className="text-cyan hover:underline">source <ExternalLink size={9} className="inline" /></a>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <Field label="Commercial market / user" hint="Dual-use matters — pick or type your own.">
+          <input className="field" value={form.commercialMarket || ""} onChange={set("commercialMarket")}
+            list="commercial-markets" placeholder="e.g. Critical infrastructure security"
+            disabled={!editor} data-testid="customer-market" />
+          <datalist id="commercial-markets">
+            {COMMERCIAL_MARKETS.map((m) => <option key={m} value={m} />)}
+          </datalist>
+        </Field>
+        <Field label="Government sector">
+          <select className="field" value={form.sector || ""} onChange={set("sector")}
+            disabled={!editor} data-testid="customer-sector">
+            <option value="">Select sector…</option>
+            {GOV_SECTORS.map((s) => <option key={s}>{s}</option>)}
+          </select>
+        </Field>
+        {isDefense && (
+          <Field label="Branch">
+            <select className="field" value={form.branch || ""} onChange={set("branch")}
+              disabled={!editor} data-testid="customer-branch">
+              <option value="">Select branch…</option>
+              {Object.keys(DEFENSE_BRANCHES).map((b) => <option key={b}>{b}</option>)}
+            </select>
+          </Field>
+        )}
+        {isDefense && form.branch && (
+          <Field label="Program Executive Office">
+            <select className="field" value={form.peo || ""} onChange={set("peo")}
+              disabled={!editor} data-testid="customer-peo">
+              <option value="">Select PEO…</option>
+              {(DEFENSE_BRANCHES[form.branch] || []).map((p) => <option key={p}>{p}</option>)}
+            </select>
+          </Field>
+        )}
+        {(isIC || isCivil) && (
+          <Field label="Agency">
+            <select className="field" value={form.agency || ""} onChange={set("agency")}
+              disabled={!editor} data-testid="customer-agency">
+              <option value="">Select agency…</option>
+              {(isIC ? IC_AGENCIES : CIVIL_AGENCIES).map((a) => <option key={a}>{a}</option>)}
+            </select>
+          </Field>
+        )}
+        {(form.sector || "") !== "" && (
+          <>
+            <Field label="TPOC (technical point of contact)">
+              <input className="field" value={form.tpoc || ""} onChange={set("tpoc")}
+                placeholder="Name · office · email" disabled={!editor} data-testid="customer-tpoc" />
+            </Field>
+            <Field label="Contracting officer">
+              <input className="field" value={form.contractingOfficer || ""} onChange={set("contractingOfficer")}
+                placeholder="Name · office · email" disabled={!editor} data-testid="customer-co" />
+            </Field>
+          </>
+        )}
+      </div>
+
+      {editor && (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button className="btn btn-primary" onClick={save} disabled={saving || !dirty}
+            data-testid="customer-save">
+            {saving ? <Spinner /> : <Save size={14} />} Save customer
+          </button>
+          {(saved.peo || saved.agency) && (
+            <AIButton orgId={orgId} compact lockEngine="claude" icon={Crosshair}
+              label="Check directory currency"
+              onStart={check} onDone={reload} testid="peo-check" />
+          )}
+        </div>
+      )}
+    </Card>
   );
 }
 

@@ -151,6 +151,37 @@ export const ARTICLES = {
     ],
   },
 
+  /* ─────────────────── DoW customer discovery / PEO directory ─────────────────── */
+  "dow-customer-discovery-peo-directory": {
+    tag: "GETTING STARTED · 9 MIN",
+    title: "DoW customer discovery: find your PEO before you write a line",
+    summary: "The Department of War buys through Program Executive Offices — find the PEO that owns your problem, the program office under it, and the human beings (TPOC, contracting officer) who can actually move your deal.",
+    blocks: [
+      { p: "Startups lose years pitching the wrong part of the Department of War. The military services don't buy as one customer: money and authority live in Program Executive Offices (PEOs) — portfolio organizations, each run by a general officer or SES, each owning the program offices that actually write requirements and spend budget. Customer discovery in defense means finding which PEO owns your problem, then which program office under it, then the named people: the program manager, the technical point of contact (TPOC), and the contracting officer (KO)." },
+      { h2: "Start with the directory, not the org chart" },
+      { p: "Stanford's Gordian Knot Center publishes the field's reference document: a directory of every DoW PEO with its portfolio and leadership. Read it the way you'd read a market map — each PEO is a market segment with its own budget line, and the directory tells you who runs it." },
+      { links: [
+        { label: "Stanford Gordian Knot Center — 2026 Program Executive Offices Directory", href: "https://gordianknot.fsi.stanford.edu/publication/2026-program-executive-offices-directory", note: "The reference document — every DoW PEO, portfolio, and leadership, updated for 2026. The PDF and the newsletter subscription are both on this page" },
+        { label: "Silicon Valley Defense Group — DoW Directory", href: "https://www.siliconvalleydefense.org/dow-directory", note: "Community-maintained navigator across DoW innovation orgs and buying commands" },
+        { label: "Steve Blank — How to sell to the Dept of Defense: the 2025 PEO directory", href: "https://steveblank.com/2025/09/10/how-to-sell-to-the-dept-of-defense-the-2025-peo-directory/", note: "Why the PEO directory exists and how founders should use it — from the co-creator of Hacking for Defense" },
+      ] },
+      { note: "Directories age. PEOs get created, merged, and renamed with every reorganization — verify a PEO still exists on the service's own acquisition page before you build your capture plan on it. Inside CaptureAgent, the proposal customer card has an AI currency check that does exactly this." },
+      { h2: "The discovery motion, step by step" },
+      { steps: [
+        { t: "Map your product to 2-3 candidate PEOs", d: "read the portfolio descriptions in the 2026 directory; your tech usually fits fewer places than you think" },
+        { t: "Find the program offices under each PEO", d: "PEOs contain program offices (PM shops) — the level where requirements are written and SBIR topics originate" },
+        { t: "Trace recent money", d: "search USASpending for awards out of those offices (CaptureAgent's Competitive Analysis tab does this) — who they fund tells you what they actually buy" },
+        { t: "Identify the humans", d: "SBIR topics name a TPOC; solicitations name the contracting officer; industry days and program-office pages name the PMs" },
+        { t: "Get the meeting through a warm path", d: "an SBIR Phase I, an accelerator demo day (see the Accelerators tab), a Tech Bridge / AFWERX / DIU front door, or your Hacking-for-Defense network" },
+        { t: "Validate the problem before proposing", d: "classic customer discovery: does this office have the problem, the budget line, and a transition path? If not, next PEO" },
+      ] },
+      { h2: "Use it inside CaptureAgent" },
+      { p: "When you draft a proposal, the customer card asks for the commercial market you serve and the government customer: sector (civil / defense / intelligence community), then branch, then the PEO from this directory structure, then your TPOC and contracting officer. The AI check button verifies the directory entry is still current before you commit a capture plan to it." },
+      { note: "Want directory updates in your inbox? The Gordian Knot Center page includes a newsletter subscription — sign up there for future editions." },
+      { related: ["selling-to-the-department-of-war", "new-contractor-setup", "defense-startup-resources"] },
+    ],
+  },
+
   /* ─────────────────────── Templates hub + agencies ─────────────────────── */
   "proposal-templates": {
     tag: "TEMPLATES",
@@ -422,6 +453,7 @@ export const ARTICLE_ORDER = [
   "bring-your-own-api-keys",
   "new-contractor-setup",
   "selling-to-the-department-of-war",
+  "dow-customer-discovery-peo-directory",
   "proposal-templates",
   "compliance",
   "defense-startup-resources",
