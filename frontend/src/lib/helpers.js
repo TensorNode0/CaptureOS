@@ -56,6 +56,58 @@ export const ELIGIBILITY = {
   open: { label: "Full & Open", cls: "text-dim border-line bg-white/5" },
 };
 
+// 4-state hard-gate eligibility (scoring engine)
+export const ELIG_STATUS = {
+  Eligible: { cls: "text-ok border-ok/40 bg-ok/10" },
+  Conditional: { cls: "text-warn border-warn/40 bg-warn/10" },
+  Ineligible: { cls: "text-bad border-bad/40 bg-bad/10" },
+  Unknown: { cls: "text-dim border-line bg-white/5" },
+};
+
+export const FIT_BAND_CLS = {
+  Strong: "text-ok", Good: "text-cyan", Conditional: "text-warn", Poor: "text-bad",
+};
+
+export const PRIORITY_CFG = {
+  A: { cls: "text-ok border-ok/50 bg-ok/15" },
+  B: { cls: "text-cyan border-cyan/50 bg-cyan/10" },
+  C: { cls: "text-warn border-warn/40 bg-warn/10" },
+  Watch: { cls: "text-violet border-violet/40 bg-violet/10" },
+  Pass: { cls: "text-faint border-line bg-white/5" },
+};
+
+export const PWIN_CLS = { High: "text-ok", Medium: "text-warn", Low: "text-bad", Unknown: "text-faint" };
+
+export function businessDaysUntil(d) {
+  if (!d) return null;
+  const end = new Date(d);
+  if (isNaN(end)) return null;
+  let cur = new Date();
+  cur = new Date(cur.getFullYear(), cur.getMonth(), cur.getDate());
+  if (end < cur) return 0;
+  let count = 0;
+  while (cur < end) {
+    cur.setDate(cur.getDate() + 1);
+    const day = cur.getDay();
+    if (day !== 0 && day !== 6) count++;
+  }
+  return count;
+}
+
+export function exportCsv(filename, header, rows) {
+  const esc = (v) => {
+    const s = v == null ? "" : String(v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const csv = [header.map(esc).join(","), ...rows.map((r) => r.map(esc).join(","))].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
 export const STAGE_COLORS = {
   Identified: "#5d6b8a",
   Qualifying: "#38e1ff",

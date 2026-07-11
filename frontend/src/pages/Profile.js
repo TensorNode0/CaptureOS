@@ -62,6 +62,8 @@ export default function Profile() {
         keyPersonnel: p.keyPersonnel || "", website: p.website || "",
         differentiators: p.differentiators || "", commercialization: p.commercialization || "",
         clearances: p.clearances || "",
+        vehicles: (Array.isArray(p.vehicles) ? p.vehicles : String(p.vehicles || "").split(",")).map((s) => String(s).trim()).filter(Boolean),
+        noGo: p.noGo || "", prefRole: p.prefRole || "",
       });
       toast.success("Profile saved — drives eligibility and AI Fit Score.");
     } catch (e) { toast.error(errMsg(e)); }
@@ -133,6 +135,11 @@ export default function Profile() {
             <Field label="Commercialization strategy"><textarea className="field min-h-[60px]" disabled={!admin} value={p.commercialization || ""} onChange={(e) => set({ commercialization: e.target.value })} data-testid="profile-commercial" /></Field>
           </div>
           <Field label="Clearances / facility" hint="e.g. FCL Secret, staff with TS/SCI."><input className="field" disabled={!admin} value={p.clearances || ""} onChange={(e) => set({ clearances: e.target.value })} data-testid="profile-clearances" /></Field>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <Field label="Contract vehicles held" hint="Comma-separated — drives the vehicle-access eligibility gate (e.g. GSA MAS, SeaPort-NxG, OASIS+ SB)."><input className="field" disabled={!admin} value={Array.isArray(p.vehicles) ? p.vehicles.join(", ") : (p.vehicles || "")} onChange={(e) => set({ vehicles: e.target.value })} data-testid="profile-vehicles" /></Field>
+            <Field label="Preferred pursuit role"><select className="field" disabled={!admin} value={p.prefRole || ""} onChange={(e) => set({ prefRole: e.target.value })} data-testid="profile-pref-role"><option value="">No preference</option><option>Prime</option><option>Sub</option><option>Either</option></select></Field>
+          </div>
+          <Field label="No-go conditions" hint="Comma-separated terms — any opportunity matching these is auto-flagged Pass (e.g. construction, staffing, janitorial)."><input className="field" disabled={!admin} value={p.noGo || ""} onChange={(e) => set({ noGo: e.target.value })} data-testid="profile-nogo" /></Field>
         </div>
       </Card>
 

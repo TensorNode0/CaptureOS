@@ -14,6 +14,12 @@ import org_keys
 router = APIRouter(prefix="/api/orgs", tags=["intelligence"])
 
 
+def _tbd(v):
+    """Normalize model 'TBD'/'Unknown' placeholders to empty string."""
+    s = str(v or "").strip()
+    return "" if s.lower() in ("tbd", "unknown", "n/a", "none") else s
+
+
 class ScanIn(BaseModel):
     tier: str = "standard"
 
@@ -174,14 +180,20 @@ async def add_to_pipeline(reportId: str, idx: int, ctx: dict = Depends(require_r
         """insert into opportunities
                (organization_id, title, sol_number, agency, office, vehicle, set_aside,
                 naics, ceiling, pop, due_date, stage, url, win_themes, source,
-                last_verified, links, fit, compliance, budget, criteria, created_by)
+                last_verified, links, fit, compliance, budget, criteria, created_by,
+                scope_summary, opp_type, psc, contract_type, incumbent, tags)
            values ($1, $2, $3, $4, $5, $6, $7, '', $8, '', $9, 'Identified', $10, '',
-                   'intel', $11, $12, $13, $14, $15, $16, $17)
+                   'intel', $11, $12, $13, $14, $15, $16, $17,
+                   $18, $19, $20, $21, $22, $23)
            returning id""",
         ctx["org_id"], o.get("title", ""), sol if sol != "TBD" else "",
         o.get("agency", ""), o.get("office", ""), o.get("vehicle", "RFP") or "RFP",
         o.get("setAside") or "None", ceiling, due, url, now_utc(), links,
         default_fit(), default_compliance(), default_budget(ceiling),
-        default_criteria(), as_uuid(ctx["user"]["id"]))
+        default_criteria(), as_uuid(ctx["user"]["id"]),
+        _tbd(o.get("scopeSummary") or o.get("summary")),
+        _tbd(o.get("oppType")), _tbd(o.get("psc")), _tbd(o.get("contractType")),
+        _tbd(o.get("incumbent")),
+        [c for c in (o.get("compliance") or []) if c and c != "None"])
     await write_audit(ctx["org_id"], ctx["user"], "intel.add_to_pipeline", o.get("title"))
     return {"ok": True, "id": str(opp["id"])}

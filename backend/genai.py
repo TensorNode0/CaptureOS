@@ -84,51 +84,120 @@ def scaled_tokens(base: int, effort: str) -> int:
     return min(16000, max(1000, int(base * EFFORTS.get(effort or "standard", 1.0))))
 
 
+def _close_stack(prefix: str):
+    """Closers needed to balance `prefix`, and whether it ends inside a string."""
+    stack, in_str, esc = [], False, False
+    for ch in prefix:
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+        elif ch == '"':
+            in_str = True
+        elif ch in "{[":
+            stack.append("}" if ch == "{" else "]")
+        elif ch in "}]" and stack:
+            stack.pop()
+    return "".join(reversed(stack)), in_str
+
+
+def repair_json(raw: str):
+    """Best-effort parse of truncated model JSON: closes open strings/brackets,
+    dropping trailing incomplete elements until the document parses."""
+    end = len(raw)
+    for _ in range(120):
+        prefix = raw[:end].rstrip()
+        closers, in_str = _close_stack(prefix)
+        if in_str:
+            prefix += '"'
+        prefix = re.sub(r'[,\s]*("(?:[^"\\]|\\.)*"\s*:)?\s*$', "", prefix)
+        closers, _ = _close_stack(prefix)
+        try:
+            return json.loads(prefix + closers)
+        except Exception:
+            pass
+        cut = raw.rfind(",", 0, end - 1)
+        if cut <= 0:
+            return None
+        end = cut
+    return None
+
+
 def extract_json(text: str):
-    """Pull the first JSON object out of a model response (handles code fences)."""
+    """Pull the first JSON object out of a model response. Handles code fences
+    and salvages truncated/incomplete output via best-effort repair."""
     if not text:
         return None
     fenced = re.search(r"```(?:json)?\s*(\{.*\})\s*```", text, re.DOTALL)
     raw = fenced.group(1) if fenced else None
     if raw is None:
         start = text.find("{")
+        if start == -1:
+            return None
         end = text.rfind("}")
-        if start != -1 and end != -1 and end > start:
-            raw = text[start:end + 1]
-    if raw is None:
-        return None
+        raw = text[start:end + 1] if end > start else text[start:]
     try:
         return json.loads(raw)
     except Exception:
-        return None
+        return repair_json(raw)
 
 
 def _usage(input_tokens, output_tokens):
     return {"inputTokens": int(input_tokens or 0), "outputTokens": int(output_tokens or 0)}
 
 
-def _anthropic_call_sync(api_key, system, user, max_tokens=8000, web_search=False, model=""):
-    """Blocking Anthropic call. Returns (text, model_used, usage)."""
+def _anthropic_call_sync(api_key, system, user, max_tokens=8000, web_search=False,
+                         model="", max_uses=5, models=None):
+    """Blocking Anthropic call. Continues paused web-search turns until the
+    response is complete; usage includes stopReason/webSearches telemetry.
+    Returns (text, model_used, usage)."""
     import anthropic
     client = anthropic.Anthropic(api_key=api_key)
-    tools = [WEB_SEARCH_TOOL] if web_search else []
-    models = [model] + [m for m in CLAUDE_MODELS if m != model] if model else CLAUDE_MODELS
+    tools = [dict(WEB_SEARCH_TOOL, max_uses=max_uses)] if web_search else []
+    pool = models or CLAUDE_MODELS
+    models_try = [model] + [m for m in pool if m != model] if model else pool
     last_err = None
-    for m in models:
+    for m in models_try:
         try:
-            msg = client.messages.create(
-                model=m, max_tokens=max_tokens, system=system, tools=tools,
-                messages=[{"role": "user", "content": user}],
-            )
-            text = "".join(getattr(b, "text", "") for b in msg.content
-                           if getattr(b, "type", None) == "text")
-            u = getattr(msg, "usage", None)
-            return text, m, _usage(getattr(u, "input_tokens", 0),
-                                   getattr(u, "output_tokens", 0))
+            messages = [{"role": "user", "content": user}]
+            text, in_tok, out_tok, searches, stop = "", 0, 0, 0, None
+            for _ in range(6):
+                msg = client.messages.create(
+                    model=m, max_tokens=max_tokens, system=system, tools=tools,
+                    messages=messages,
+                )
+                text += "".join(getattr(b, "text", "") for b in msg.content
+                                if getattr(b, "type", None) == "text")
+                u = getattr(msg, "usage", None)
+                in_tok += getattr(u, "input_tokens", 0) or 0
+                out_tok += getattr(u, "output_tokens", 0) or 0
+                st = getattr(u, "server_tool_use", None)
+                searches += (getattr(st, "web_search_requests", 0) or 0) if st else 0
+                stop = getattr(msg, "stop_reason", None)
+                if stop != "pause_turn":
+                    break
+                messages = messages + [{"role": "assistant", "content": msg.content}]
+            usage = _usage(in_tok, out_tok)
+            usage["stopReason"] = stop
+            usage["webSearches"] = searches
+            return text, m, usage
         except (anthropic.NotFoundError, anthropic.BadRequestError) as e:
             last_err = e
             continue
     raise last_err if last_err else RuntimeError("Anthropic call failed")
+
+
+def anthropic_json_salvage_sync(api_key, prior_user, prior_text, max_tokens, models):
+    """One no-tools follow-up asking the model to re-emit ONLY the JSON when its
+    first answer buried or omitted the object."""
+    user = (prior_user + "\n\nYOUR PREVIOUS RESPONSE:\n" + prior_text[:60000] +
+            "\n\nOutput ONLY the single JSON object described above — no prose, "
+            "no apologies, no markdown fences. If data is missing use \"TBD\".")
+    return _anthropic_call_sync(api_key, "You return only valid JSON.", user,
+                                max_tokens, False, "", 0, models)
 
 
 async def claude_generate(api_key, system, user, max_tokens=8000, web_search=False, model=""):

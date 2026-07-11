@@ -1,32 +1,28 @@
 """AI Opportunity Intelligence Scan.
 
-Uses the org's own Anthropic key (Claude Sonnet + live web search) to discover
+Uses the org's own Anthropic key (Claude + live web search) to discover
 REAL open, SB-eligible federal solicitations, fit-score them against the org's
 capability profile, and return a structured intelligence report (JSON).
 
 Cost is capped via web-search `max_uses` and a bounded opportunity count.
 Keys are never logged or persisted in source.
 """
-import json
-import re
 import asyncio
 from datetime import datetime, timezone
 
-# Sonnet-class models, newest first. The SDK passes the string straight through,
-# so we try each until one is accepted by the caller's key.
-SONNET_MODELS = [
-    "claude-sonnet-4-5",
-    "claude-sonnet-4-20250514",
-    "claude-3-5-sonnet-latest",
-    "claude-3-5-sonnet-20241022",
-]
-HAIKU_MODELS = ["claude-3-5-haiku-latest", "claude-3-5-haiku-20241022"]
+import genai
 
-# Cost/throughput tiers chosen by the org admin.
+# Current-generation models, newest first; fallback until one is accepted.
+SONNET_MODELS = ["claude-sonnet-4-5", "claude-sonnet-4-20250514"]
+HAIKU_MODELS = ["claude-haiku-4-5", "claude-3-5-haiku-latest"]
+
+# Cost/throughput tiers chosen by the org admin. Output budgets are sized so a
+# full report can never hit the token ceiling mid-JSON (the old cause of
+# "unparseable response" failures).
 TIERS = {
-    "lean":     {"models": HAIKU_MODELS,  "max_uses": 5,  "max_tokens": 6000,  "target": 12},
-    "standard": {"models": SONNET_MODELS, "max_uses": 8,  "max_tokens": 8000,  "target": 22},
-    "deep":     {"models": SONNET_MODELS, "max_uses": 15, "max_tokens": 12000, "target": 30},
+    "lean":     {"models": HAIKU_MODELS,  "max_uses": 5,  "max_tokens": 12000, "target": 12},
+    "standard": {"models": SONNET_MODELS, "max_uses": 8,  "max_tokens": 24000, "target": 22},
+    "deep":     {"models": SONNET_MODELS, "max_uses": 15, "max_tokens": 32000, "target": 30},
 }
 
 MISSION_CATEGORIES = [
@@ -44,24 +40,6 @@ CRITICAL_TECH_AREAS = [
     "Advanced Materials", "Advanced Computing & Software", "Human-Machine Interfaces",
     "Directed Energy", "Hypersonics", "Quantum Science", "Biotechnology", "Cybersecurity",
 ]
-
-
-def _extract_json(text: str):
-    if not text:
-        return None
-    fenced = re.search(r"```(?:json)?\s*(\{.*\})\s*```", text, re.DOTALL)
-    raw = fenced.group(1) if fenced else None
-    if raw is None:
-        start = text.find("{")
-        end = text.rfind("}")
-        if start != -1 and end != -1 and end > start:
-            raw = text[start:end + 1]
-    if raw is None:
-        return None
-    try:
-        return json.loads(raw)
-    except Exception:
-        return None
 
 
 def _system_prompt():
@@ -128,36 +106,20 @@ def _user_prompt(ctx, tier_target):
         '    "agency": "", "office": "", "dueDate": "YYYY-MM-DD or TBD",\n'
         '    "awardAmount": 0, "solNumber": "", "solUrl": "https://...",\n'
         '    "title": "", "topicUrl": "https://...", "summary": "2-3 sentences",\n'
+        '    "scopeSummary": "one sentence: what the government is buying",\n'
+        '    "oppType": "Contract|Grant|SBIR|STTR|BAA|CSO|OTA", "psc": "",\n'
         '    "phase": "", "colorOfMoney": "", "vehicle": "", "contractType": "",\n'
-        '    "compliance": ["..."], "cta": ["..."], "techType": "",\n'
+        '    "incumbent": "TBD unless verified", "compliance": ["..."], "cta": ["..."], "techType": "",\n'
         '    "missionCategory": "", "missionSecondary": "", "setAside": "",\n'
         '    "teaming": "", "notes": "intel / nuance"\n'
         "  }]\n"
-        "}"
+        "}\n\n"
+        "CRITICAL: Your final message MUST be exactly one JSON object in the schema "
+        "above — no prose before or after it. If searches fail or results are thin, "
+        "STILL return the JSON with fewer (even zero) opportunities and explain the "
+        "limitation inside sourceStatus notes and executiveSummary.narrative. Never "
+        "reply with prose instead of the JSON."
     )
-
-
-def _call_sync(api_key, system, user, models, max_uses, max_tokens):
-    import anthropic
-    client = anthropic.Anthropic(api_key=api_key)
-    tool = {"type": "web_search_20250305", "name": "web_search", "max_uses": max_uses}
-    last_err = None
-    for model in models:
-        try:
-            msg = client.messages.create(
-                model=model, max_tokens=max_tokens, system=system,
-                tools=[tool], messages=[{"role": "user", "content": user}],
-            )
-            text = "".join(
-                getattr(b, "text", "") for b in msg.content
-                if getattr(b, "type", None) == "text"
-            )
-            usage = getattr(msg, "usage", None)
-            return text, model, usage
-        except (anthropic.NotFoundError, anthropic.BadRequestError) as e:
-            last_err = e
-            continue
-    raise last_err if last_err else RuntimeError("Anthropic call failed")
 
 
 async def run_scan(api_key, ctx, tier="standard"):
@@ -166,12 +128,29 @@ async def run_scan(api_key, ctx, tier="standard"):
     system = _system_prompt()
     user = _user_prompt(ctx, cfg["target"])
     text, model, usage = await asyncio.to_thread(
-        _call_sync, api_key, system, user,
-        cfg["models"], cfg["max_uses"], cfg["max_tokens"],
+        genai._anthropic_call_sync, api_key, system, user,
+        cfg["max_tokens"], True, "", cfg["max_uses"], cfg["models"],
     )
-    data = _extract_json(text)
+    data = genai.extract_json(text)
+    if data is None and text:
+        # The model replied with prose instead of JSON — one no-tools retry that
+        # re-asks for the JSON object using what it already found.
+        text2, model, usage2 = await asyncio.to_thread(
+            genai.anthropic_json_salvage_sync, api_key, user, text,
+            cfg["max_tokens"], cfg["models"])
+        data = genai.extract_json(text2)
+        usage = {k: (usage.get(k) or 0) + (usage2.get(k) or 0)
+                 for k in ("inputTokens", "outputTokens", "webSearches")} | {
+                     "stopReason": usage2.get("stopReason")}
     if data is None:
-        raise ValueError("The AI returned an unparseable response. Try again.")
+        stop = (usage or {}).get("stopReason")
+        if stop == "max_tokens":
+            raise ValueError(
+                f"The AI response was cut off at the {cfg['max_tokens']:,}-token limit "
+                "before completing the report. Try the Lean tier or run again.")
+        raise ValueError(
+            f"The AI response could not be parsed (stop reason: {stop or 'unknown'}, "
+            f"~{(usage or {}).get('outputTokens', 0):,} output tokens). Try again.")
     # Normalize / guard
     opps = data.get("opportunities") or []
     if not isinstance(opps, list):
@@ -181,12 +160,9 @@ async def run_scan(api_key, ctx, tier="standard"):
     es["totalOpportunities"] = len(opps)
     data["executiveSummary"] = es
     data["_model"] = model
-    if usage is not None:
-        si = getattr(usage, "server_tool_use", None)
-        searches = getattr(si, "web_search_requests", None) if si else None
-        data["_usage"] = {
-            "inputTokens": getattr(usage, "input_tokens", None),
-            "outputTokens": getattr(usage, "output_tokens", None),
-            "webSearches": searches,
-        }
+    data["_usage"] = {
+        "inputTokens": usage.get("inputTokens"),
+        "outputTokens": usage.get("outputTokens"),
+        "webSearches": usage.get("webSearches"),
+    }
     return data

@@ -5,11 +5,12 @@ from typing import Optional, List, Any, Dict
 import database as db
 from utils import now_utc, serialize, as_uuid, iso
 from rbac import require_role
-from domain import (write_audit, compute_eligibility, default_fit, default_compliance,
+from domain import (write_audit, default_fit, default_compliance,
                     default_budget, default_criteria)
 import integrations
 import org_keys
 import genai
+import scoring
 
 router = APIRouter(prefix="/api/orgs", tags=["opportunities"])
 
@@ -54,6 +55,27 @@ class OpportunityUpdate(BaseModel):
     criteria: Optional[List[Dict[str, Any]]] = None
     decision: Optional[Dict[str, Any]] = None
     links: Optional[List[Dict[str, Any]]] = None
+    scopeSummary: Optional[str] = None
+    tags: Optional[List[str]] = None
+    oppType: Optional[str] = None
+    acqStage: Optional[str] = None
+    recompete: Optional[str] = None
+    dueTime: Optional[str] = None
+    psc: Optional[str] = None
+    naicsTitle: Optional[str] = None
+    sizeStandard: Optional[str] = None
+    valueType: Optional[str] = None
+    valueConfidence: Optional[str] = None
+    addressableValue: Optional[float] = None
+    contractType: Optional[str] = None
+    awardsCount: Optional[str] = None
+    vehicleAccess: Optional[str] = None
+    pursuitRole: Optional[str] = None
+    incumbent: Optional[str] = None
+    competition: Optional[Dict[str, Any]] = None
+    capture: Optional[Dict[str, Any]] = None
+    watch: Optional[bool] = None
+    amendments: Optional[List[Dict[str, Any]]] = None
 
 
 # camelCase API field -> table column (whitelist for partial updates)
@@ -65,6 +87,15 @@ UPDATE_COLUMNS = {
     "pwin": "pwin", "proposalStrength": "proposal_strength",
     "compliance": "compliance", "budget": "budget", "criteria": "criteria",
     "decision": "decision", "links": "links",
+    "scopeSummary": "scope_summary", "tags": "tags", "oppType": "opp_type",
+    "acqStage": "acq_stage", "recompete": "recompete", "dueTime": "due_time",
+    "psc": "psc", "naicsTitle": "naics_title", "sizeStandard": "size_standard",
+    "valueType": "value_type", "valueConfidence": "value_confidence",
+    "addressableValue": "addressable_value", "contractType": "contract_type",
+    "awardsCount": "awards_count", "vehicleAccess": "vehicle_access",
+    "pursuitRole": "pursuit_role", "incumbent": "incumbent",
+    "competition": "competition", "capture": "capture", "watch": "watch",
+    "amendments": "amendments",
 }
 
 
@@ -85,24 +116,28 @@ async def _insert_opp(ctx, rec, source):
                (organization_id, title, sol_number, agency, office, vehicle, set_aside,
                 naics, ceiling, pop, due_date, stage, url, win_themes, source,
                 last_verified, verify_report, links, fit, pwin, proposal_strength,
-                compliance, budget, criteria, decision, created_by, notice_status)
+                compliance, budget, criteria, decision, created_by, notice_status,
+                scope_summary, psc, due_time, acq_stage, opp_type, value_type)
            values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'Identified', $12, '',
                    $13, $14, null, $15, $16, 0, 0, $17, $18, $19,
-                   '{"call": "TBD", "rationale": ""}'::jsonb, $20, $21)
+                   '{"call": "TBD", "rationale": ""}'::jsonb, $20, $21,
+                   $22, $23, $24, $25, $26, $27)
            returning *""",
         ctx["org_id"], rec.get("title", ""), sol, rec.get("agency", ""),
         rec.get("office", ""), rec.get("vehicle", "RFP"), rec.get("setAside") or "None",
         rec.get("naics", "") or "", ceiling, rec.get("pop", "") or "",
         rec.get("dueDate") or None, url, source, now_utc(), links, default_fit(),
         default_compliance(), default_budget(ceiling), default_criteria(),
-        as_uuid(ctx["user"]["id"]), rec.get("noticeStatus") or "open")
+        as_uuid(ctx["user"]["id"]), rec.get("noticeStatus") or "open",
+        rec.get("scopeSummary", "") or "", rec.get("psc", "") or "",
+        rec.get("dueTime", "") or "", rec.get("acqStage", "") or "",
+        rec.get("oppType", "") or "", rec.get("valueType", "") or "")
 
 
-def _decorate(opp_row, profile):
-    o = serialize(opp_row)
-    verdict, reason = compute_eligibility(o.get("setAside", ""), profile)
-    o["eligibility"] = {"verdict": verdict, "reason": reason}
-    return o
+def _decorate(opp_row, profile, org=None):
+    """Serialize + attach all derived qualification views (eligibility gates,
+    fit score, PWin band, financials, priority, red flags)."""
+    return scoring.decorate(serialize(opp_row), profile, org)
 
 
 async def _get_opp(org_id, opp_id):
@@ -121,7 +156,7 @@ async def list_opportunities(ctx: dict = Depends(require_role("viewer"))):
         """select * from opportunities where organization_id = $1
            order by updated_at desc limit 1000""",
         ctx["org_id"])
-    return [_decorate(o, profile) for o in opps]
+    return [_decorate(o, profile, ctx["org"]) for o in opps]
 
 
 @router.post("/{orgId}/opportunities")
@@ -141,7 +176,7 @@ async def create_opportunity(body: OpportunityIn, ctx: dict = Depends(require_ro
         as_uuid(ctx["user"]["id"]))
     await write_audit(ctx["org_id"], ctx["user"], "opportunity.create", body.title)
     profile = await _profile(ctx["org_id"])
-    return _decorate(opp, profile)
+    return _decorate(opp, profile, ctx["org"])
 
 
 @router.get("/{orgId}/opportunities/{oppId}")
@@ -150,7 +185,7 @@ async def get_opportunity(oppId: str, ctx: dict = Depends(require_role("viewer")
     if not opp:
         raise HTTPException(status_code=404, detail="Opportunity not found")
     profile = await _profile(ctx["org_id"])
-    return _decorate(opp, profile)
+    return _decorate(opp, profile, ctx["org"])
 
 
 @router.put("/{orgId}/opportunities/{oppId}")
@@ -396,6 +431,151 @@ async def dismiss_diff(oppId: str, body: AcceptIn, ctx: dict = Depends(require_r
     return {"ok": True}
 
 
+# ---------------- AI Qualify / Enrich (per opportunity) ----------------
+ENRICH_SYSTEM = (
+    "You are a senior federal capture analyst qualifying ONE saved opportunity. "
+    "NEVER invent facts: if a field cannot be verified from the provided data or "
+    "(when available) live web sources, return \"Unknown\" (or [] for lists). "
+    "Cite a source URL for every fact found online. "
+    "Respond with a SINGLE JSON object ONLY — no prose, no markdown fences."
+)
+
+
+def _enrich_prompt(today, opp, profile, live):
+    import json as _json
+    prof = {}
+    if profile:
+        prof = {k: profile.get(k) for k in
+                ("capabilities", "techFocus", "pastPerformance", "clearances",
+                 "cmmcLevel", "targetAgencies", "vehicles", "isSmall", "certs")}
+    return (
+        f"TODAY: {today}\n"
+        f"LIVE WEB SEARCH: {'yes — verify against the official notice/source pages' if live else 'no — analyze the saved data only'}\n\n"
+        f"SAVED OPPORTUNITY:\n{_json.dumps(opp, default=str)[:8000]}\n\n"
+        f"ORG CAPABILITY PROFILE (for requirement matching):\n{_json.dumps(prof, default=str)[:3000]}\n\n"
+        "Return JSON exactly in this shape (use \"Unknown\" when unverifiable):\n"
+        '{ "fields": {\n'
+        '  "scopeSummary": "one sentence: what the government is buying",\n'
+        '  "tags": ["capability tags e.g. autonomy, software, cybersecurity; also compliance flags like CMMC L2, ITAR/EAR, SECRET"],\n'
+        '  "oppType": "Contract|Grant|SBIR|STTR|BAA|CSO|OTA|Subcontract|Unknown",\n'
+        '  "acqStage": "Forecast|RFI|Sources Sought|Draft RFP|Pre-Solicitation|Active RFP/RFQ|Amendment|Awarded|Cancelled|Closed|Unknown",\n'
+        '  "recompete": "New requirement|Recompete|Follow-on|Bridge|Unknown",\n'
+        '  "psc": "", "naicsTitle": "", "sizeStandard": "e.g. $34M or 1,250 employees",\n'
+        '  "valueType": "Ceiling|Estimated|Max individual award|Task order|Guaranteed minimum|Program funding|Historical|Unknown",\n'
+        '  "contractType": "FFP|CPFF|CPAF|T&M|Labor-hour|IDIQ|OTA|Grant|Cooperative agreement|Unknown",\n'
+        '  "awardsCount": "Single|Multiple (~N)|Unknown", "incumbent": "",\n'
+        '  "pursuitRole": "Prime|Sub|JV|Either|Unknown", "dueTime": "e.g. 17:00 ET",\n'
+        '  "competition": {"intensity": "Low|Moderate|High|Unknown", "likelyBidders": "", "awardNumber": ""} },\n'
+        '  "requirementMatches": [ {"requirement": "shall-statement or key requirement", "mandatory": true, '
+        '"score": 0, "evidence": "org capability/past-performance evidence, or the gap", "source": "solicitation section/page or URL"} ],\n'
+        '  "gaps": ["material capability, compliance or teaming gaps"],\n'
+        '  "sources": ["urls actually consulted"], "confidence": "low|medium|high" }\n\n'
+        "Score each requirement: 100 = direct capability with strong evidence; 75 = direct but "
+        "limited proof/scale; 50 = adjacent capability or credible partner dependency; "
+        "25 = material gap needing development/teaming; 0 = cannot meet. "
+        "Weight mandatory ('shall') requirements above general similarity."
+    )
+
+
+# AI may only FILL these columns when they are currently empty — user edits win.
+ENRICH_FILLABLE = {
+    "scopeSummary": "scope_summary", "oppType": "opp_type", "acqStage": "acq_stage",
+    "recompete": "recompete", "psc": "psc", "naicsTitle": "naics_title",
+    "sizeStandard": "size_standard", "valueType": "value_type",
+    "contractType": "contract_type", "awardsCount": "awards_count",
+    "incumbent": "incumbent", "pursuitRole": "pursuit_role", "dueTime": "due_time",
+}
+
+
+@router.post("/{orgId}/opportunities/{oppId}/enrich")
+async def enrich_opportunity(oppId: str, body: VerifyIn = None,
+                             ctx: dict = Depends(require_role("editor"))):
+    """AI qualification of one opportunity: scope, classification, evidence-backed
+    requirement matches, gaps and sources. Only fills EMPTY fields — user-entered
+    data is never overwritten. Unknowns stay unknown."""
+    body = body or VerifyIn()
+    engine = body.engine if body.engine in AI_ENGINES else "claude"
+    keys = await org_keys.get_keys(ctx["org_id"], ctx["user"], purpose="ai.enrich")
+    if not keys.get(AI_ENGINES[engine]):
+        raise HTTPException(status_code=400,
+            detail=f"No {genai.ENGINE_LABELS[engine]} API key set. "
+                   "Add it in Settings → API Keys.")
+    opp = await _get_opp(ctx["org_id"], oppId)
+    if not opp:
+        raise HTTPException(status_code=404, detail="Opportunity not found")
+    profile = await _profile(ctx["org_id"])
+    saved = serialize(opp)
+    slim = {k: saved.get(k) for k in
+            ("title", "solNumber", "agency", "office", "vehicle", "setAside", "naics",
+             "psc", "ceiling", "dueDate", "url", "scopeSummary", "oppType", "acqStage",
+             "contractType", "incumbent", "pop")}
+    live = engine == "claude"
+    today = now_utc().strftime("%Y-%m-%d")
+    try:
+        text, model, _ = await genai.generate(
+            engine, keys, ENRICH_SYSTEM, _enrich_prompt(today, slim, profile, live),
+            max_tokens=8000, web_search=live, model=body.model, effort=body.effort)
+    except Exception as e:
+        msg = str(e)
+        label = genai.ENGINE_LABELS[engine]
+        if "authentication" in msg.lower() or "401" in msg or "invalid x-api-key" in msg.lower():
+            raise HTTPException(status_code=400,
+                detail=f"{label} rejected the API key. Update it in Settings → API Keys.")
+        raise HTTPException(status_code=502, detail=f"{label} enrichment failed: {msg}")
+    data = genai.extract_json(text)
+    if data is None:
+        raise HTTPException(status_code=502,
+            detail="The AI response could not be parsed. Try again.")
+
+    fields = data.get("fields") or {}
+    applied = []
+    sets, args = ["updated_at = $1"], [now_utc()]
+
+    def _known(v):
+        s = str(v or "").strip()
+        return bool(s) and not s.lower().startswith("unknown")
+
+    for k, col in ENRICH_FILLABLE.items():
+        v = fields.get(k)
+        if not _known(v) or (opp.get(col) or "").strip():
+            continue
+        args.append(str(v).strip())
+        sets.append(f"{col} = ${len(args)}")
+        applied.append(k)
+    tags = [str(t) for t in (fields.get("tags") or []) if _known(t)]
+    if tags:
+        merged = list(dict.fromkeys([*(opp.get("tags") or []), *tags]))[:12]
+        args.append(merged)
+        sets.append(f"tags = ${len(args)}")
+        applied.append("tags")
+    comp_new = {k: v for k, v in (fields.get("competition") or {}).items() if _known(v)}
+    if comp_new:
+        merged = {**comp_new, **{k: v for k, v in (opp.get("competition") or {}).items() if v}}
+        args.append(merged)
+        sets.append(f"competition = ${len(args)}")
+        applied.append("competition")
+
+    enrichment = {
+        "generatedAt": iso(now_utc()), "engine": engine, "model": model,
+        "confidence": data.get("confidence", "medium"),
+        "requirementMatches": (data.get("requirementMatches") or [])[:25],
+        "gaps": (data.get("gaps") or [])[:10],
+        "sources": (data.get("sources") or [])[:10],
+        "fields": fields,
+    }
+    args.append(enrichment)
+    sets.append(f"ai_enrichment = ${len(args)}")
+    args.append(opp["id"])
+    fresh = await db.fetchrow(
+        f"update opportunities set {', '.join(sets)} where id = ${len(args)} returning *",
+        *args)
+    await write_audit(ctx["org_id"], ctx["user"], "ai.enrich", opp.get("title"),
+                      {"applied": applied, "model": model})
+    out = _decorate(fresh, profile, ctx["org"])
+    out["_appliedFields"] = applied
+    return out
+
+
 # ---------------- Pull from SAM / Grants (LIVE) ----------------
 @router.post("/{orgId}/opportunities/pull")
 async def pull_sam_grants(ctx: dict = Depends(require_role("editor"))):
@@ -447,14 +627,20 @@ async def pull_sam_grants(ctx: dict = Depends(require_role("editor"))):
                        due_date = coalesce($9, due_date),
                        url = coalesce(nullif($10, ''), url),
                        source = $11, last_verified = $12, updated_at = $12,
-                       notice_status = $13
+                       notice_status = $13,
+                       psc = coalesce(nullif($14, ''), psc),
+                       due_time = coalesce(nullif($15, ''), due_time),
+                       acq_stage = coalesce(nullif($16, ''), acq_stage),
+                       opp_type = coalesce(nullif($17, ''), opp_type)
                    where id = $1""",
                 existing["id"], rec.get("title", ""), rec.get("agency", ""),
                 rec.get("office", ""), rec.get("vehicle", "RFP"),
                 rec.get("setAside") or "None", rec.get("naics", ""),
                 float(rec.get("ceiling") or 0), rec.get("dueDate"),
                 rec.get("url") or "", rec.get("source", "sam"), now_utc(),
-                rec.get("noticeStatus") or "open")
+                rec.get("noticeStatus") or "open", rec.get("psc", "") or "",
+                rec.get("dueTime", "") or "", rec.get("acqStage", "") or "",
+                rec.get("oppType", "") or "")
             updated += 1
         else:
             await _insert_opp(ctx, rec, rec.get("source", "sam"))

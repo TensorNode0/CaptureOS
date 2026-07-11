@@ -8,57 +8,13 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 
+import genai
+
 # ----------------------------- Anthropic ------------------------------------
-HAIKU_MODELS = ["claude-3-5-haiku-latest", "claude-haiku-4-5"]
-WEB_SEARCH_TOOL = {"type": "web_search_20250305", "name": "web_search", "max_uses": 5}
-
-
-def _extract_json(text: str):
-    """Pull the first JSON object out of a model response (handles code fences)."""
-    if not text:
-        return None
-    fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
-    raw = fenced.group(1) if fenced else None
-    if raw is None:
-        start = text.find("{")
-        end = text.rfind("}")
-        if start != -1 and end != -1 and end > start:
-            raw = text[start:end + 1]
-    if raw is None:
-        return None
-    try:
-        return json.loads(raw)
-    except Exception:
-        return None
-
-
-def _anthropic_call_sync(api_key: str, system: str, user: str, max_tokens: int = 2600):
-    """Blocking Anthropic call with web search. Returns (text, model_used)."""
-    import anthropic
-    client = anthropic.Anthropic(api_key=api_key)
-    last_err = None
-    for model in HAIKU_MODELS:
-        try:
-            msg = client.messages.create(
-                model=model,
-                max_tokens=max_tokens,
-                system=system,
-                tools=[WEB_SEARCH_TOOL],
-                messages=[{"role": "user", "content": user}],
-            )
-            text = "".join(
-                getattr(b, "text", "") for b in msg.content
-                if getattr(b, "type", None) == "text"
-            )
-            return text, model
-        except anthropic.NotFoundError as e:
-            last_err = e
-            continue
-        except anthropic.BadRequestError as e:
-            # model/tool not available for this key -> try next model
-            last_err = e
-            continue
-    raise last_err if last_err else RuntimeError("Anthropic call failed")
+HAIKU_MODELS = ["claude-haiku-4-5", "claude-3-5-haiku-latest"]
+# Sized so verifying a 25-opportunity batch plus discoveries can never hit the
+# output ceiling mid-JSON (the old cause of "unparseable response" failures).
+VERIFY_MAX_TOKENS = 16000
 
 
 async def anthropic_verify(api_key, naics, keywords, opps, capabilities=""):
@@ -106,10 +62,20 @@ async def anthropic_verify(api_key, naics, keywords, opps, capabilities=""):
         '"fitRationale": "<one sentence: why this matches the org>"}]\n'
         "}"
     )
-    text, model = await asyncio.to_thread(_anthropic_call_sync, api_key, system, user)
-    data = _extract_json(text)
+    text, model, usage = await asyncio.to_thread(
+        genai._anthropic_call_sync, api_key, system, user,
+        VERIFY_MAX_TOKENS, True, "", 5, HAIKU_MODELS)
+    data = genai.extract_json(text)
+    if data is None and text:
+        text2, model, usage = await asyncio.to_thread(
+            genai.anthropic_json_salvage_sync, api_key, user, text,
+            VERIFY_MAX_TOKENS, HAIKU_MODELS)
+        data = genai.extract_json(text2)
     if data is None:
-        raise ValueError("Anthropic returned an unparseable response")
+        stop = (usage or {}).get("stopReason")
+        raise ValueError(
+            f"Anthropic's response could not be parsed (stop reason: {stop or 'unknown'}, "
+            f"~{(usage or {}).get('outputTokens', 0):,} output tokens). Try again.")
     # Server-side guardrails on discoveries: drop expired or unverifiable rows.
     clean = []
     for rec in (data.get("discovered") or []):
@@ -135,6 +101,17 @@ PTYPE_VEHICLE = {"o": "RFP", "p": "RFP", "k": "RFP", "r": "RFP", "g": "Grant", "
 # SAM notice types: p=presolicitation, o=solicitation, k=combined synopsis,
 # r=sources sought, g=sale of surplus, s=special notice, a=award notice
 PTYPE_STATUS = {"p": "pre-release", "r": "pre-release", "o": "open", "k": "open", "s": "open"}
+PTYPE_STAGE = {"p": "Pre-Solicitation", "r": "Sources Sought", "o": "Active RFP/RFQ",
+               "k": "Active RFP/RFQ", "s": "Special Notice"}
+
+
+def _due_time(raw: str) -> str:
+    """Preserve the deadline's exact time + UTC offset, e.g. '17:00 (-04:00)'."""
+    if not raw or len(raw) < 16:
+        return ""
+    time_part = raw[11:16]
+    tz = raw[19:] if len(raw) > 19 else ""
+    return f"{time_part} ({tz})" if tz else time_part
 
 
 def _mmddyyyy(dt):
@@ -201,7 +178,8 @@ async def fetch_sam(api_key, naics, keywords, limit=60, psc=None):
         # keyword relevance gate (only when the org has keywords configured)
         if kws and not any(k in hay for k in kws):
             continue
-        due = (o.get("responseDeadLine") or "")[:10] or None
+        due_raw = o.get("responseDeadLine") or ""
+        due = due_raw[:10] or None
         if due and due < today:
             continue  # belt-and-suspenders: never surface expired notices
         sa_code = o.get("typeOfSetAside") or ""
@@ -217,6 +195,10 @@ async def fetch_sam(api_key, naics, keywords, limit=60, psc=None):
             "naics": o.get("naicsCode") or (naics[0] if naics else ""),
             "ceiling": _sam_amount(o),
             "dueDate": due,
+            "dueTime": _due_time(due_raw),
+            "psc": o.get("classificationCode") or "",
+            "acqStage": PTYPE_STAGE.get(ptype, ""),
+            "oppType": "Contract",
             "url": o.get("uiLink") or "",
             "source": "sam",
         })
@@ -254,6 +236,9 @@ async def fetch_grants(keywords, rows=25):
             "naics": "",
             "ceiling": ceiling,
             "dueDate": due,
+            "acqStage": "Forecast" if (h.get("oppStatus") or "posted") != "posted" else "Active RFP/RFQ",
+            "oppType": "Grant",
+            "valueType": "Max individual award" if ceiling else "",
             "url": f"https://www.grants.gov/search-results-detail/{h.get('id', '')}",
             "source": "grants",
         })

@@ -282,6 +282,9 @@ class ProfileIn(BaseModel):
     differentiators: str = ""
     commercialization: str = ""
     clearances: str = ""
+    vehicles: List[str] = []
+    noGo: str = ""
+    prefRole: str = ""
 
 
 async def _has_edit_grant(org_id, user_id) -> bool:
@@ -405,9 +408,9 @@ async def update_profile(body: ProfileIn, ctx: dict = Depends(require_role("capt
                certs, cmmc_level, sprs_score, size_note, notes, capabilities,
                past_performance, tech_focus, differentiators, commercialization, clearances,
                psc_codes, target_agencies, employees_count, annual_revenue,
-               locations, key_personnel, website)
+               locations, key_personnel, website, vehicles, no_go, pref_role)
            values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
-                   $17, $18, $19, $20, $21, $22, $23)
+                   $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
            on conflict (organization_id) do update set
                uei = excluded.uei, cage = excluded.cage, sam_active = excluded.sam_active,
                is_small = excluded.is_small, certs = excluded.certs,
@@ -425,14 +428,18 @@ async def update_profile(body: ProfileIn, ctx: dict = Depends(require_role("capt
                annual_revenue = excluded.annual_revenue,
                locations = excluded.locations,
                key_personnel = excluded.key_personnel,
-               website = excluded.website
+               website = excluded.website,
+               vehicles = excluded.vehicles,
+               no_go = excluded.no_go,
+               pref_role = excluded.pref_role
            returning *""",
         ctx["org_id"], body.uei, body.cage, body.samActive, body.isSmall,
         body.certs.model_dump(), body.cmmcLevel, body.sprsScore, body.sizeNote,
         body.notes, body.capabilities, body.pastPerformance, body.techFocus,
         body.differentiators, body.commercialization, body.clearances,
         body.pscCodes, body.targetAgencies, body.employeesCount,
-        body.annualRevenue, body.locations, body.keyPersonnel, body.website)
+        body.annualRevenue, body.locations, body.keyPersonnel, body.website,
+        body.vehicles, body.noGo, body.prefRole)
     await write_audit(ctx["org_id"], ctx["user"], "profile.update", ctx["org"]["name"])
     return serialize(prof)
 
