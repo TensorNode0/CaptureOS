@@ -154,23 +154,37 @@ def normalize_content(data):
     return out
 
 
-async def generate_capability(anthropic_key, org, profile, opp):
+async def generate_capability(anthropic_key, org, profile, opp,
+                              model="", effort="", job_id=None):
     """Two-step generation: structured content JSON, then SVG rendering.
     Returns (content_dict, model_used). Raises on unusable output."""
+    import ai_jobs
     ctx_text = build_context(org, profile or {}, opp)
-    text, model = await genai.claude_generate(
+    if job_id:
+        await ai_jobs.stage(job_id, "Analyzing the solicitation and your company profile…", 10)
+    max_toks = genai.scaled_tokens(12000, effort) if effort else 12000
+    text, used_model, usage = await genai.claude_generate(
         anthropic_key, SYSTEM, _content_prompt(ctx_text),
-        max_tokens=12000, web_search=bool(opp.get("url")))
+        max_tokens=max_toks, web_search=bool(opp.get("url")), model=model)
+    if job_id:
+        await ai_jobs.add_usage(job_id, used_model, usage)
+        await ai_jobs.stage(job_id, "Capability designed — validating structure…", 60)
     data = genai.extract_json(text)
     if data is None:
         raise ValueError("The AI returned an unparseable capability response. Try again.")
     content = normalize_content(data)
 
     try:
-        svg_text, _ = await genai.claude_generate(
-            anthropic_key, SVG_SYSTEM, _svg_prompt(content), max_tokens=4000)
+        if job_id:
+            await ai_jobs.stage(job_id, "Drawing the concept rendering…", 75)
+        svg_text, svg_model, svg_usage = await genai.claude_generate(
+            anthropic_key, SVG_SYSTEM, _svg_prompt(content), max_tokens=4000, model=model)
+        if job_id:
+            await ai_jobs.add_usage(job_id, svg_model, svg_usage)
         content["renderingSvg"] = _sanitize_svg(svg_text)
+    except ai_jobs.JobCancelled:
+        raise
     except Exception:
         content["renderingSvg"] = ""  # rendering is best-effort, never fatal
 
-    return content, model
+    return content, used_model

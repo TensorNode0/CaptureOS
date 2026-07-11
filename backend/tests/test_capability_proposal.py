@@ -258,8 +258,26 @@ class TestProposalHubAndEvaluation:
         assert row["totalDocs"] >= 4 and row["drafted"] >= 1
         assert "oppTitle" in row and "solNumber" in row
 
-    def test_evaluate_requires_api_key(self, admin_session, fresh_org, opp_id):
+    def test_evaluate_gated_until_all_volumes_drafted(self, admin_session, fresh_org, opp_id):
+        # Some volumes are still empty at this point → the gate must refuse.
         s, _ = admin_session
+        r = s.post(f"{BASE_URL}/api/orgs/{fresh_org}/opportunities/{opp_id}/proposal/evaluate",
+                   json={"engine": "claude"}, timeout=15)
+        assert r.status_code == 400
+        assert "Finish every volume" in r.json().get("detail", "")
+
+    def test_evaluate_requires_api_key_once_complete(self, admin_session, fresh_org, opp_id):
+        s, _ = admin_session
+        prop = s.get(f"{BASE_URL}/api/orgs/{fresh_org}/opportunities/{opp_id}/proposal",
+                     timeout=15).json()
+        # fill every remaining empty volume with minimal content
+        for d in prop["documents"]:
+            if d["status"] == "empty":
+                payload = {"contentMd": f"# {d['title']}\n\nPlaceholder."} \
+                    if d["fmt"] == "docx" else {"contentJson": {"rows": [], "slides": []}}
+                u = s.put(f"{BASE_URL}/api/orgs/{fresh_org}/opportunities/{opp_id}"
+                          f"/proposal/documents/{d['id']}", json=payload, timeout=15)
+                assert u.status_code == 200, u.text
         r = s.post(f"{BASE_URL}/api/orgs/{fresh_org}/opportunities/{opp_id}/proposal/evaluate",
                    json={"engine": "claude"}, timeout=15)
         assert r.status_code == 400

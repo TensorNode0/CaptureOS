@@ -108,22 +108,30 @@ def _prompt(kind, ctx_text, target, notes):
     )
 
 
-async def draft(engine, keys, kind, org, profile, target="", notes=""):
+async def draft(engine, keys, kind, org, profile, target="", notes="",
+                model="", effort="", job_id=None):
     """Returns (content_md, content_json, model)."""
+    import ai_jobs
     if kind not in KINDS:
         raise ValueError(f"Unknown document kind: {kind}")
     ctx_text = _org_context(org, profile)
     fmt = KINDS[kind]["fmt"]
     prompt = _prompt(kind, ctx_text, target, notes)
-    text, model = await genai.generate(engine, keys, SYSTEM, prompt, max_tokens=8000)
+    if job_id:
+        await ai_jobs.stage(job_id, f"Writing the {KINDS[kind]['title'].lower()}…", 15)
+    text, used_model, usage = await genai.generate(
+        engine, keys, SYSTEM, prompt, max_tokens=8000, model=model, effort=effort)
+    if job_id:
+        await ai_jobs.add_usage(job_id, used_model, usage)
+        await ai_jobs.stage(job_id, "Draft received — validating…", 85)
     if fmt in ("pptx", "xlsx"):
         data = genai.extract_json(text)
         if data is None:
             raise ValueError("The AI returned an unparseable draft. Try again.")
-        return "", data, model
+        return "", data, used_model
     md = (text or "").strip()
     if md.startswith("```"):
         md = md.strip("`").lstrip("markdown").strip()
     if not md:
         raise ValueError("The AI returned an empty draft. Try again.")
-    return md, {}, model
+    return md, {}, used_model

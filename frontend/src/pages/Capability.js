@@ -13,6 +13,7 @@ import { api, errMsg } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { Card, SectionLabel, Pill, Spinner, PageReveal, EmptyState } from "../components/ui";
 import { fmtMoney, CHART_SERIES, canEdit, canCreateProposal } from "../lib/helpers";
+import AIButton from "../components/AIButton";
 
 const tooltipStyle = {
   background: "var(--bg-elev)", border: "1px solid var(--line)",
@@ -99,14 +100,12 @@ export default function Capability() {
     return () => clearInterval(timer);
   }, [cap?.generationStatus, load]);
 
-  const generate = async () => {
-    setBusy("generate");
-    try {
-      await api.post(`/orgs/${activeOrgId}/opportunities/${id}/capability/generate`);
-      toast.info("Generation started — this can take a minute or two.");
-      await load();
-    } catch (e) { toast.error(errMsg(e)); }
-    finally { setBusy(""); }
+  const generate = async ({ engine, model, effort } = {}) => {
+    const { data } = await api.post(
+      `/orgs/${activeOrgId}/opportunities/${id}/capability/generate`,
+      { model: model || "", effort: effort || "standard" });
+    await load();
+    return data; // contains jobId for the AIButton telemetry panel
   };
 
   const patch = (p) => { setContent((c) => ({ ...c, ...p })); setDirty(true); };
@@ -195,10 +194,9 @@ export default function Capability() {
           {editor && cap?.generationStatus === "ready" && (
             <>
               {cm && (
-                <button className="btn btn-ghost" onClick={generate} disabled={!!busy || generating}
-                  data-testid="regenerate-capability">
-                  <RefreshCw size={15} /> Regenerate
-                </button>
+                <AIButton orgId={activeOrgId} label="Regenerate" icon={RefreshCw}
+                  lockEngine="claude" compact onStart={generate} onDone={load}
+                  disabled={!!busy || generating} testid="regenerate-capability" />
               )}
               <button className="btn btn-primary" onClick={save}
                 disabled={!dirty || !!busy} data-testid="save-capability">
@@ -221,10 +219,8 @@ export default function Capability() {
           <EmptyState icon={Sparkles} title="No proposed capability yet"
             subtitle="The AI capture manager will design a capability for this solicitation from your company profile: title, abstract, executive summary, concept rendering, SoW, WBS schedule, and budget."
             action={cm ? (
-              <button className="btn btn-primary" onClick={generate} disabled={busy === "generate"}
-                data-testid="generate-capability">
-                {busy === "generate" ? <Spinner /> : <Sparkles size={16} />} Generate with AI
-              </button>
+              <AIButton orgId={activeOrgId} label="Generate with AI" lockEngine="claude"
+                onStart={generate} onDone={load} testid="generate-capability" />
             ) : (
               <span className="text-xs text-faint">Your capture manager creates the proposed capability.</span>
             )} />
@@ -246,7 +242,7 @@ export default function Capability() {
             <div className="text-sm text-ink">Generation failed</div>
             <div className="text-xs text-faint">{cap.generationError}</div>
             {cm && (
-              <button className="btn btn-ghost mt-3" onClick={generate} disabled={!!busy}>
+              <button className="btn btn-ghost mt-3" onClick={() => generate({}).catch((e) => toast.error(errMsg(e)))} disabled={!!busy}>
                 <RefreshCw size={14} /> Try again
               </button>
             )}

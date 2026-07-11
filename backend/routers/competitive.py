@@ -9,6 +9,7 @@ from utils import now_utc, serialize, as_uuid
 from rbac import require_role
 from domain import write_audit
 import competitive
+import ai_jobs
 import org_keys
 
 router = APIRouter(prefix="/api/orgs", tags=["competitive"])
@@ -17,26 +18,38 @@ router = APIRouter(prefix="/api/orgs", tags=["competitive"])
 class AnalyzeIn(BaseModel):
     competitor: str = Field(min_length=2, max_length=200)
     naics: str = Field(default="", max_length=10)
+    model: str = ""
+    effort: str = "standard"
 
 
 async def _run(report_id, anthropic_key, competitor, naics, org_name, org_naics,
-               user, org_id):
+               user, org_id, model="", effort="", job_id=None):
     try:
-        usasp, analysis, model = await competitive.run_analysis(
-            anthropic_key, competitor, naics, org_name, org_naics)
+        usasp, analysis, used_model = await competitive.run_analysis(
+            anthropic_key, competitor, naics, org_name, org_naics,
+            model=model, effort=effort, job_id=job_id)
         note = "" if anthropic_key else \
             "USASpending data only — add an Anthropic API key in Settings for the AI BLUF."
         await db.execute(
             """update competitive_reports
                set status = 'done', usaspending = $2, analysis = $3, model = $4,
                    error = $5, finished_at = $6 where id = $1""",
-            report_id, usasp, analysis, model, note, now_utc())
+            report_id, usasp, analysis, used_model, note, now_utc())
+        if job_id:
+            await ai_jobs.finish(job_id, "Report ready")
         await write_audit(org_id, user, "competitive.analyze", competitor,
-                          {"awards": usasp.get("awardCount"), "model": model})
+                          {"awards": usasp.get("awardCount"), "model": used_model})
+    except ai_jobs.JobCancelled:
+        await db.execute(
+            """update competitive_reports
+               set status = 'error', error = 'Cancelled by user', finished_at = $2
+               where id = $1""", report_id, now_utc())
     except Exception as e:  # noqa: BLE001
         msg = str(e)
         if "authentication" in msg.lower() or "401" in msg.lower():
             msg = "The AI provider rejected the API key. Update it in Settings → API Keys."
+        if job_id:
+            await ai_jobs.fail(job_id, msg)
         await db.execute(
             """update competitive_reports
                set status = 'error', error = $2, finished_at = $3 where id = $1""",
@@ -55,11 +68,16 @@ async def start_analysis(body: AnalyzeIn, ctx: dict = Depends(require_role("edit
                                             status, created_by)
            values ($1, $2, $3, 'running', $4) returning *""",
         ctx["org_id"], competitor, naics, as_uuid(ctx["user"]["id"]))
+    job_id = await ai_jobs.create(ctx["org_id"], ctx["user"], "competitive.analyze",
+                                  ref_id=str(report["id"]), engine="claude",
+                                  model=body.model, effort=body.effort)
     asyncio.create_task(_run(
         report["id"], keys.get("anthropic", ""), competitor, naics,
         ctx["org"]["name"], ctx["org"].get("naics") or [],
-        ctx["user"], ctx["org_id"]))
-    return {"ok": True, "reportId": str(report["id"]), "status": "running"}
+        ctx["user"], ctx["org_id"], model=body.model, effort=body.effort,
+        job_id=job_id))
+    return {"ok": True, "reportId": str(report["id"]), "status": "running",
+            "jobId": str(job_id)}
 
 
 @router.get("/{orgId}/competitive")

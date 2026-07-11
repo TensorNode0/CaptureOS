@@ -11,6 +11,7 @@ from utils import now_utc, serialize, as_uuid
 from rbac import require_role, require_perm
 from domain import write_audit
 import proposal_ai
+import ai_jobs
 import genai
 import exports
 import org_keys
@@ -108,27 +109,42 @@ async def create_proposal(oppId: str, ctx: dict = Depends(require_perm("proposal
 
 class DraftIn(BaseModel):
     engine: str = "claude"  # claude | openai | emergent | asksage
+    model: str = ""
+    effort: str = "standard"
 
 
 async def _run_draft(doc_id, engine, keys,
-                     org, profile, opp, cap_content, user, org_id):
+                     org, profile, opp, cap_content, user, org_id,
+                     model="", effort="", job_id=None):
     try:
         doc = await db.fetchrow("select * from proposal_documents where id = $1", doc_id)
-        md, data, model = await proposal_ai.draft_document(
+        md, data, used_model = await proposal_ai.draft_document(
             engine, keys, doc["doc_type"],
-            org, profile, opp, cap_content)
+            org, profile, opp, cap_content,
+            model=model, effort=effort, job_id=job_id)
+        if job_id:
+            await ai_jobs.stage(job_id, "Saving the draft…", 95)
         await db.execute(
             """update proposal_documents
                set content_md = $2, content_json = $3, status = 'drafted',
                    draft_status = 'idle', draft_error = '', model = $4, updated_at = $5
                where id = $1""",
-            doc_id, md, data, model, now_utc())
+            doc_id, md, data, used_model, now_utc())
+        if job_id:
+            await ai_jobs.finish(job_id, "Draft ready")
         await write_audit(org_id, user, "proposal.draft", doc["title"],
-                          {"engine": engine, "model": model})
+                          {"engine": engine, "model": used_model})
+    except ai_jobs.JobCancelled:
+        await db.execute(
+            """update proposal_documents
+               set draft_status = 'idle', draft_error = '', updated_at = $2
+               where id = $1""", doc_id, now_utc())
     except Exception as e:  # noqa: BLE001
         msg = str(e)
         if "authentication" in msg.lower() or "401" in msg.lower() or "invalid x-api-key" in msg.lower():
             msg = "The AI provider rejected the API key. Update it in Settings → API Keys."
+        if job_id:
+            await ai_jobs.fail(job_id, msg)
         await db.execute(
             """update proposal_documents
                set draft_status = 'error', draft_error = $2, updated_at = $3
@@ -164,10 +180,15 @@ async def draft_document(oppId: str, docId: str, body: DraftIn,
     profile = await db.fetchrow(
         "select * from org_profiles where organization_id = $1", ctx["org_id"])
     cap_content = await _cap_content(ctx["org_id"], opp["id"])
+    job_id = await ai_jobs.create(ctx["org_id"], ctx["user"], "proposal.draft",
+                                  ref_id=str(doc["id"]), engine=engine,
+                                  model=body.model, effort=body.effort)
     asyncio.create_task(_run_draft(
         doc["id"], engine, keys, serialize(ctx["org"]),
-        serialize(profile), serialize(opp), cap_content, ctx["user"], ctx["org_id"]))
-    return {"ok": True, "status": "drafting", "documentId": str(doc["id"])}
+        serialize(profile), serialize(opp), cap_content, ctx["user"], ctx["org_id"],
+        model=body.model, effort=body.effort, job_id=job_id))
+    return {"ok": True, "status": "drafting", "documentId": str(doc["id"]),
+            "jobId": str(job_id)}
 
 
 class DocUpdate(BaseModel):
@@ -340,15 +361,19 @@ async def list_proposals(ctx: dict = Depends(require_role("viewer"))):
 @router.post("/{orgId}/opportunities/{oppId}/proposal/evaluate")
 async def evaluate_proposal(oppId: str, body: DraftIn,
                             ctx: dict = Depends(require_role("editor"))):
-    """AI color-team evaluation of the drafted package (SSEB-style)."""
+    """AI color-team evaluation — runs once EVERY volume is drafted (the AI
+    evaluates the package; the user never grades their own proposal)."""
     opp = await _get_opp(ctx["org_id"], oppId)
     proposal = await _get_proposal(ctx["org_id"], oppId)
     if not opp or not proposal:
         raise HTTPException(status_code=404, detail="Proposal not found")
-    docs = [d for d in await _docs(proposal["id"]) if d.get("status") != "empty"]
-    if not docs:
+    all_docs = await _docs(proposal["id"])
+    empty = [d["title"] for d in all_docs if d.get("status") == "empty"]
+    if empty:
         raise HTTPException(status_code=400,
-            detail="Nothing to evaluate yet — draft at least one volume first")
+            detail="Finish every volume before evaluating — still empty: "
+                   + ", ".join(empty))
+    docs = list(all_docs)
     ENGINES = {"claude": "anthropic", "openai": "openai",
                "emergent": "emergent", "asksage": "asksage"}
     engine = body.engine if body.engine in ENGINES else "claude"
@@ -359,17 +384,28 @@ async def evaluate_proposal(oppId: str, body: DraftIn,
                    "Add it in Settings → API Keys.")
     profile = await db.fetchrow(
         "select * from org_profiles where organization_id = $1", ctx["org_id"])
-    try:
-        evaluation = await proposal_ai.evaluate_package(
-            engine, keys, serialize(ctx["org"]), serialize(profile),
-            serialize(opp), docs)
-    except ValueError as e:
-        raise HTTPException(status_code=502, detail=str(e))
-    await db.execute(
-        "update proposals set evaluation = $2, evaluated_at = $3 where id = $1",
-        proposal["id"], evaluation, now_utc())
-    await write_audit(ctx["org_id"], ctx["user"], "proposal.evaluate",
-                      serialize(opp).get("title"),
-                      {"score": evaluation.get("overallScore"),
-                       "color": evaluation.get("colorReview")})
-    return evaluation
+    job_id = await ai_jobs.create(ctx["org_id"], ctx["user"], "proposal.evaluate",
+                                  ref_id=str(proposal["id"]), engine=engine,
+                                  model=body.model, effort=body.effort)
+
+    async def _run_eval():
+        try:
+            evaluation = await proposal_ai.evaluate_package(
+                engine, keys, serialize(ctx["org"]), serialize(profile),
+                serialize(opp), docs, model=body.model, effort=body.effort,
+                job_id=job_id)
+            await db.execute(
+                "update proposals set evaluation = $2, evaluated_at = $3 where id = $1",
+                proposal["id"], evaluation, now_utc())
+            await ai_jobs.finish(job_id, "Evaluation ready")
+            await write_audit(ctx["org_id"], ctx["user"], "proposal.evaluate",
+                              serialize(opp).get("title"),
+                              {"score": evaluation.get("overallScore"),
+                               "color": evaluation.get("colorReview")})
+        except ai_jobs.JobCancelled:
+            pass
+        except Exception as e:  # noqa: BLE001
+            await ai_jobs.fail(job_id, str(e))
+
+    asyncio.create_task(_run_eval())
+    return {"ok": True, "status": "evaluating", "jobId": str(job_id)}
