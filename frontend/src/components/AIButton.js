@@ -22,6 +22,14 @@ import { api, errMsg } from "../lib/api";
 
 const optionsCache = {};
 
+// Called from Settings after saving API keys so every mounted AIButton
+// picks up the fresh "configured" flags without a full page refresh.
+export function resetAIOptionsCache(orgId) {
+  if (orgId) delete optionsCache[orgId];
+  else Object.keys(optionsCache).forEach((k) => delete optionsCache[k]);
+  window.dispatchEvent(new CustomEvent("ai-options:invalidate", { detail: { orgId } }));
+}
+
 export default function AIButton({ orgId, label, icon: Icon = Sparkles, onStart, onDone,
                                    lockEngine = "", disabled = false, disabledReason = "",
                                    note = "",
@@ -37,11 +45,24 @@ export default function AIButton({ orgId, label, icon: Icon = Sparkles, onStart,
 
   useEffect(() => {
     if (!orgId) return;
-    if (optionsCache[orgId]) { setOpts(optionsCache[orgId]); return; }
-    api.get(`/orgs/${orgId}/ai/options`).then((r) => {
+    let cancelled = false;
+    // Seed instantly from cache if available, then always refetch so newly-
+    // saved keys in Settings show up here without a hard reload.
+    if (optionsCache[orgId]) setOpts(optionsCache[orgId]);
+    const load = () => api.get(`/orgs/${orgId}/ai/options`).then((r) => {
+      if (cancelled) return;
       optionsCache[orgId] = r.data;
       setOpts(r.data);
     }).catch(() => {});
+    load();
+    const onInvalidate = (e) => {
+      if (!e.detail?.orgId || e.detail.orgId === orgId) load();
+    };
+    window.addEventListener("ai-options:invalidate", onInvalidate);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("ai-options:invalidate", onInvalidate);
+    };
   }, [orgId]);
 
   useEffect(() => () => clearInterval(pollRef.current), []);

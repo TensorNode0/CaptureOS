@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { api, errMsg } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { Card, SectionLabel, Pill, Spinner, PageReveal, Field } from "../components/ui";
+import { resetAIOptionsCache } from "../components/AIButton";
 
 export default function Settings() {
   const { activeOrgId, activeOrg } = useAuth();
@@ -46,6 +47,7 @@ export default function Settings() {
       });
       setSecrets(data);
       setAnthropic(""); setSam(""); setOpenai(""); setEmergent(""); setAsksage("");
+      resetAIOptionsCache(activeOrgId);
       toast.success("API keys saved (encrypted)", {
         description: `Anthropic: ${data.validation.anthropic} · SAM: ${data.validation.sam} · OpenAI: ${data.validation.openai} · Emergent: ${data.validation.emergent} · AskSage: ${data.validation.asksage}`,
       });
@@ -60,6 +62,7 @@ export default function Settings() {
       const { data } = await api.post(`/orgs/${activeOrgId}/secrets/rotate-key`);
       const fresh = await api.get(`/orgs/${activeOrgId}/secrets`);
       setSecrets(fresh.data);
+      resetAIOptionsCache(activeOrgId);
       toast.success(`Encryption key rotated (now v${data.keyVersion})`);
     } catch (e) { toast.error(errMsg(e)); }
     finally { setRotating(false); }
