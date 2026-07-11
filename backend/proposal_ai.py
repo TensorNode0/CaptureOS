@@ -164,32 +164,45 @@ def _deck_prompt(ctx_text, cap_content):
     )
 
 
-async def draft_document(engine, keys, doc_type, org, profile, opp, cap_content):
+async def draft_document(engine, keys, doc_type, org, profile, opp, cap_content,
+                         model="", effort="", job_id=None):
     """Draft one document. Returns (content_md, content_json, model_used).
     `keys` is the org_keys.get_keys() dict (all configured engines)."""
+    import ai_jobs
     if doc_type not in DOC_TYPES:
         raise ValueError(f"Unknown document type: {doc_type}")
     ctx_text = build_context(org, profile or {}, opp)
     fmt = DOC_TYPES[doc_type]["fmt"]
+    title = DOC_TYPES[doc_type]["title"]
+    if job_id:
+        await ai_jobs.stage(job_id, f"Writing the {title}…", 15)
 
     if fmt == "docx":
-        text, model = await genai.generate(
+        text, used_model, usage = await genai.generate(
             engine, keys, SYSTEM,
-            _narrative_prompt(doc_type, ctx_text, cap_content), max_tokens=8000)
+            _narrative_prompt(doc_type, ctx_text, cap_content),
+            max_tokens=8000, model=model, effort=effort)
+        if job_id:
+            await ai_jobs.add_usage(job_id, used_model, usage)
+            await ai_jobs.stage(job_id, "Draft received — cleaning up…", 85)
         md = (text or "").strip()
         if md.startswith("```"):
             md = md.strip("`").lstrip("markdown").strip()
         if not md:
             raise ValueError("The AI returned an empty draft. Try again.")
-        return md, {}, model
+        return md, {}, used_model
 
     prompt = _cost_prompt(ctx_text, cap_content) if doc_type == "cost_volume" \
         else _deck_prompt(ctx_text, cap_content)
-    text, model = await genai.generate(engine, keys, SYSTEM, prompt, max_tokens=8000)
+    text, used_model, usage = await genai.generate(
+        engine, keys, SYSTEM, prompt, max_tokens=8000, model=model, effort=effort)
+    if job_id:
+        await ai_jobs.add_usage(job_id, used_model, usage)
+        await ai_jobs.stage(job_id, "Draft received — validating structure…", 85)
     data = genai.extract_json(text)
     if data is None:
         raise ValueError("The AI returned an unparseable draft. Try again.")
-    return "", data, model
+    return "", data, used_model
 EVAL_SYSTEM = (
     "You are a Source Selection Evaluation Board (SSEB) chair and color-team lead "
     "with 20+ years evaluating U.S. federal proposals. You score strictly against "
@@ -237,14 +250,22 @@ def _docs_digest(docs, limit_each=4000):
     return "\n\n".join(parts) if parts else "(no drafted content)"
 
 
-async def evaluate_package(engine, keys, org, profile, opp, docs):
+async def evaluate_package(engine, keys, org, profile, opp, docs,
+                           model="", effort="", job_id=None):
     """AI color-team evaluation of the drafted package. Returns evaluation dict."""
+    import ai_jobs
     ctx_text = build_context(org, profile or {}, opp)
     digest = _docs_digest([dict(d) for d in docs])
-    text, model = await genai.generate(
-        engine, keys, EVAL_SYSTEM, _eval_prompt(ctx_text, digest), max_tokens=6000)
+    if job_id:
+        await ai_jobs.stage(job_id, "Convening the color team — reading every volume…", 20)
+    text, used_model, usage = await genai.generate(
+        engine, keys, EVAL_SYSTEM, _eval_prompt(ctx_text, digest),
+        max_tokens=6000, model=model, effort=effort)
+    if job_id:
+        await ai_jobs.add_usage(job_id, used_model, usage)
+        await ai_jobs.stage(job_id, "Scoring factors and writing findings…", 80)
     data = genai.extract_json(text)
     if data is None:
         raise ValueError("The AI returned an unparseable evaluation. Try again.")
-    data["_model"] = model
+    data["_model"] = used_model
     return data

@@ -122,16 +122,29 @@ def _osint_prompt(competitor, naics, usasp, org_name, org_naics):
     )
 
 
-async def run_analysis(anthropic_key, competitor, naics, org_name, org_naics):
+async def run_analysis(anthropic_key, competitor, naics, org_name, org_naics,
+                       model="", effort="", job_id=None):
     """USASpending pull + AI OSINT synthesis. Returns (usaspending, analysis, model)."""
+    import ai_jobs
+    if job_id:
+        await ai_jobs.stage(job_id, "Pulling verified award data from USASpending…", 15)
     usasp = await fetch_usaspending(competitor, naics)
     if not anthropic_key:
+        if job_id:
+            await ai_jobs.stage(job_id, "USASpending data ready (add an AI key for the BLUF)", 90)
         return usasp, {}, ""
-    text, model = await genai.claude_generate(
+    if job_id:
+        await ai_jobs.stage(
+            job_id, "Running OSINT across SAM.gov, DSBS, eLibrary, and the web…", 45)
+    max_toks = genai.scaled_tokens(8000, effort) if effort else 8000
+    text, used_model, usage = await genai.claude_generate(
         anthropic_key, OSINT_SYSTEM,
         _osint_prompt(competitor, naics, usasp, org_name, org_naics),
-        max_tokens=8000, web_search=True)
+        max_tokens=max_toks, web_search=True, model=model)
+    if job_id:
+        await ai_jobs.add_usage(job_id, used_model, usage)
+        await ai_jobs.stage(job_id, "Writing the BLUF and strategies…", 85)
     analysis = genai.extract_json(text)
     if analysis is None:
         raise ValueError("The AI returned an unparseable analysis. Try again.")
-    return usasp, analysis, model
+    return usasp, analysis, used_model

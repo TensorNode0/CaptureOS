@@ -4,7 +4,8 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGri
 import { toast } from "sonner";
 import { api, errMsg } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
-import { Card, SectionLabel, Pill, Skeleton, EmptyState, PageReveal, Field, Spinner } from "../components/ui";
+import { Card, SectionLabel, Pill, Skeleton, EmptyState, PageReveal, Field } from "../components/ui";
+import AIButton from "../components/AIButton";
 import { fmtMoney, fmtDateTime, canEdit } from "../lib/helpers";
 
 export default function CompetitiveAnalysis() {
@@ -14,7 +15,7 @@ export default function CompetitiveAnalysis() {
   const [report, setReport] = useState(null);
   const [competitor, setCompetitor] = useState("");
   const [naics, setNaics] = useState("");
-  const [running, setRunning] = useState(false);
+  const [pendingReportId, setPendingReportId] = useState(null);
 
   const load = async () => {
     const { data } = await api.get(`/orgs/${activeOrgId}/competitive`);
@@ -34,30 +35,26 @@ export default function CompetitiveAnalysis() {
     } catch (e) { toast.error(errMsg(e)); }
   };
 
-  const run = async (e) => {
-    e.preventDefault();
-    setRunning(true);
-    const tid = toast.loading(`Analyzing ${competitor} — pulling USASpending award data and running OSINT…`);
-    try {
-      const { data } = await api.post(`/orgs/${activeOrgId}/competitive`,
-        { competitor, naics });
-      for (let i = 0; i < 60; i++) {
-        await new Promise((res) => setTimeout(res, 5000));
-        const { data: rep } = await api.get(`/orgs/${activeOrgId}/competitive/${data.reportId}`);
-        if (rep.status === "done") {
-          toast.success("Analysis complete", { id: tid });
-          setReport(rep); await load(); setRunning(false); setCompetitor(""); setNaics("");
-          return;
-        }
-        if (rep.status === "error") {
-          toast.error(rep.error || "Analysis failed", { id: tid });
-          await load(); setRunning(false);
-          return;
-        }
-      }
-      toast.info("Still running — it will appear in the list when done", { id: tid });
-    } catch (err) { toast.error(errMsg(err), { id: tid }); }
-    finally { setRunning(false); }
+  const run = async ({ engine, model, effort }) => {
+    if (!competitor || competitor.trim().length < 2) {
+      throw new Error("Enter the competitor's registered legal name first");
+    }
+    const { data } = await api.post(`/orgs/${activeOrgId}/competitive`,
+      { competitor, naics, model: model || "", effort: effort || "standard" });
+    setPendingReportId(data.reportId);
+    return data; // jobId → AIButton streams stage/tokens/cost
+  };
+
+  const onRunDone = async () => {
+    await load();
+    if (pendingReportId) {
+      try {
+        const { data: rep } = await api.get(`/orgs/${activeOrgId}/competitive/${pendingReportId}`);
+        if (rep.status === "done") { setReport(rep); setCompetitor(""); setNaics(""); }
+        else if (rep.error) toast.error(rep.error);
+      } catch { /* row list already refreshed */ }
+      setPendingReportId(null);
+    }
   };
 
   const del = async (e, r) => {
@@ -88,7 +85,7 @@ export default function CompetitiveAnalysis() {
 
       {editor && (
         <Card className="p-4">
-          <form onSubmit={run} className="flex flex-wrap items-end gap-3" data-testid="competitive-form">
+          <form onSubmit={(e) => e.preventDefault()} className="flex flex-wrap items-end gap-3" data-testid="competitive-form">
             <div className="min-w-[240px] flex-1">
               <Field label="Competitor (legal name as registered)">
                 <input className="field" required minLength={2} value={competitor}
@@ -102,9 +99,9 @@ export default function CompetitiveAnalysis() {
                   placeholder="541715" data-testid="competitor-naics" />
               </Field>
             </div>
-            <button type="submit" className="btn btn-primary" disabled={running} data-testid="run-analysis">
-              {running ? <Spinner /> : <Crosshair size={16} />} Run analysis
-            </button>
+            <AIButton orgId={activeOrgId} label="Run analysis" icon={Crosshair}
+              lockEngine="claude" onStart={run} onDone={onRunDone}
+              testid="run-analysis" />
           </form>
         </Card>
       )}
