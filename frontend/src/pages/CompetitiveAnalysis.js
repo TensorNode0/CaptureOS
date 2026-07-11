@@ -17,6 +17,7 @@ export default function CompetitiveAnalysis() {
   const [naics, setNaics] = useState("");
   const [pendingReportId, setPendingReportId] = useState(null);
   const [reportQ, setReportQ] = useState("");
+  const [market, setMarket] = useState(undefined); // undefined=loading, null=failed
 
   const load = async () => {
     const { data } = await api.get(`/orgs/${activeOrgId}/competitive`);
@@ -26,6 +27,8 @@ export default function CompetitiveAnalysis() {
   useEffect(() => {
     if (!activeOrgId) return;
     load().catch(() => setReports([]));
+    api.get(`/orgs/${activeOrgId}/competitive/market/naics`)
+      .then((r) => setMarket(r.data)).catch(() => setMarket(null));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeOrgId]);
 
@@ -107,6 +110,36 @@ export default function CompetitiveAnalysis() {
         </Card>
       )}
 
+      {!report && market !== null && (
+        <Card className="p-5" data-testid="market-panel">
+          <SectionLabel>Your market — top primes & subs (NAICS {(market?.naics || []).join(", ") || "…"})</SectionLabel>
+          <p className="mt-1 text-xs text-faint">
+            Defaults from the NAICS codes in your Company Profile — verified USASpending
+            obligations since FY2024. Click any name into the analysis box above to profile them.
+          </p>
+          {market === undefined ? (
+            <div className="mt-3 space-y-2">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-8" />)}</div>
+          ) : (
+            <div className="mt-3 grid gap-4 lg:grid-cols-2">
+              {[["Top primes", market.topPrimes], ["Top sub-awardees", market.topSubs]].map(([label, rows2]) => (
+                <div key={label}>
+                  <div className="label-mono mb-1.5">{label}</div>
+                  {(rows2 || []).length === 0 ? (
+                    <div className="text-xs text-faint">None found — add NAICS codes in your Company Profile.</div>
+                  ) : (rows2 || []).map((r) => (
+                    <button key={r.name} onClick={() => setCompetitor(r.name)}
+                      className="flex w-full items-center justify-between border-b border-line/60 py-1.5 text-left hover:bg-white/5">
+                      <span className="text-sm text-dim">{r.name}</span>
+                      <span className="mono text-xs text-ink">{fmtMoney(r.obligated)}</span>
+                    </button>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      )}
+
       {report && (
         <div className="space-y-4" data-testid="competitive-report">
           <div className="flex items-center justify-between">
@@ -178,6 +211,50 @@ export default function CompetitiveAnalysis() {
               </table>
             </Card>
           </div>
+
+          {a.profile && (a.profile.hq || a.profile.headcount || a.profile.capitalRaised) && (
+            <Card className="p-5" data-testid="company-profile-panel">
+              <SectionLabel>Company profile (OSINT)</SectionLabel>
+              <div className="mt-3 grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2 lg:grid-cols-3">
+                {a.profile.hq && <div><div className="label-mono">HQ</div><div className="text-dim">{a.profile.hq}</div></div>}
+                {(a.profile.locations || []).length > 0 && <div><div className="label-mono">Locations</div><div className="text-dim">{a.profile.locations.join("; ")}</div></div>}
+                {a.profile.headcount && <div><div className="label-mono">Headcount</div><div className="text-dim">{a.profile.headcount}</div></div>}
+                {a.profile.capitalRaised && <div><div className="label-mono">Capital raised</div><div className="text-dim">{a.profile.capitalRaised}</div></div>}
+                {a.profile.revenueEstimate && <div><div className="label-mono">Revenue</div><div className="text-dim">{a.profile.revenueEstimate}</div></div>}
+                {(a.profile.dualUseCustomers || []).length > 0 && <div><div className="label-mono">Dual-use customers</div><div className="text-dim">{a.profile.dualUseCustomers.join(", ")}</div></div>}
+              </div>
+              {(a.profile.headcountByArea || []).length > 0 && (
+                <div className="mt-4">
+                  <div className="label-mono mb-1.5">Headcount by area</div>
+                  <div className="flex flex-wrap gap-2">
+                    {a.profile.headcountByArea.map((h, i) => (
+                      <Pill key={i} tone="violet">{h.area}: {h.share}</Pill>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {(a.profile.salariesByRole || []).length > 0 && (
+                <div className="mt-4">
+                  <div className="label-mono mb-1.5">Salary benchmarks by role</div>
+                  <table className="w-full max-w-md text-sm">
+                    <tbody>
+                      {a.profile.salariesByRole.map((s, i) => (
+                        <tr key={i} className="border-b border-line/60">
+                          <td className="py-1.5 pr-2 text-dim">{s.role}</td>
+                          <td className="mono py-1.5 text-right text-ink">{s.range}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {a.profile.marketOutlook && (
+                <p className="mt-4 border-t border-line pt-3 text-xs leading-relaxed text-dim">
+                  <span className="label-mono">Market outlook · </span>{a.profile.marketOutlook}
+                </p>
+              )}
+            </Card>
+          )}
 
           {(a.insights || []).length > 0 && (
             <Card className="p-5">
