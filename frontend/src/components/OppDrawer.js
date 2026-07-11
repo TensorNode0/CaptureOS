@@ -43,29 +43,29 @@ function KV({ k, v, mono }) {
 
 export default function OppDrawer({ opp, orgId, editor, onSaved, onClose }) {
   const navigate = useNavigate();
-  const [form, setForm] = useState({});
+  const buildForm = (o) => ({
+    addressableValue: o?.financials?.addressableValue ?? "",
+    valueType: o?.valueType || "",
+    pursuitRole: o?.pursuitRole || "",
+    vehicleAccess: o?.vehicleAccess || "",
+    incumbent: o?.incumbent || "",
+    owner: o?.capture?.owner || "",
+    nextAction: o?.capture?.nextAction || "",
+    nextActionDue: (o?.capture?.nextActionDue || "").slice(0, 10),
+    call: o?.decision?.call || "TBD",
+    rationale: o?.decision?.rationale || "",
+    pwin: o?.pwinView?.pct ?? 0,
+    fitOverride: o?.fitComputed?.override?.score ? String(o.fitComputed.override.score) : "",
+    fitOverrideNote: o?.fitComputed?.override?.note || "",
+  });
+  const [form, setForm] = useState(() => buildForm(opp));
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (!opp) return;
-    setForm({
-      addressableValue: opp.financials?.addressableValue ?? "",
-      valueType: opp.valueType || "",
-      pursuitRole: opp.pursuitRole || "",
-      vehicleAccess: opp.vehicleAccess || "",
-      incumbent: opp.incumbent || "",
-      owner: opp.capture?.owner || "",
-      nextAction: opp.capture?.nextAction || "",
-      nextActionDue: (opp.capture?.nextActionDue || "").slice(0, 10),
-      call: opp.decision?.call || "TBD",
-      rationale: opp.decision?.rationale || "",
-      pwin: opp.pwinView?.pct ?? 0,
-      fitOverride: opp.fitComputed?.override?.score || "",
-      fitOverrideNote: opp.fitComputed?.override?.note || "",
-    });
+    setForm(buildForm(opp));
     setDirty(false);
-  }, [opp]);
+  }, [opp]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!opp) return null;
   const set = (k) => (e) => { setForm((f) => ({ ...f, [k]: e.target.value })); setDirty(true); };

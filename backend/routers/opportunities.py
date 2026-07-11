@@ -208,7 +208,7 @@ async def update_opportunity(oppId: str, body: OpportunityUpdate,
         *args)
     await write_audit(ctx["org_id"], ctx["user"], "opportunity.update", opp.get("title"))
     profile = await _profile(ctx["org_id"])
-    return _decorate(fresh, profile)
+    return _decorate(fresh, profile, ctx["org"])
 
 
 @router.delete("/{orgId}/opportunities/{oppId}")

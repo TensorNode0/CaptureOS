@@ -18,3 +18,8 @@
 - Auth = JWT httpOnly cookies (Secure). Login lockout after repeated failures (per ip:email).
 - frontend/.env currently points REACT_APP_BACKEND_URL at https://captureagent.us (production);
   flip to https://govcon-workspace.preview.emergentagent.com before preview auth UI testing.
+
+## QA org extras (2026-07-11)
+- QA Verification Org (499e35c6-ca12-4589-aa1a-ae22bdb72c07) has a USER-PROVIDED temp Anthropic
+  API key saved in org secrets (used to live-test verify/deep-scan/enrich). User should revoke it
+  when done. 8 seed rows titled "QA Test Opp N - Space Robotics IDIQ" remain for UI testing.
