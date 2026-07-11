@@ -113,7 +113,15 @@ def _osint_prompt(competitor, naics, usasp, org_name, org_naics):
         '  "bluf": ["3-5 bottom-line-up-front sentences: who they are, where they win, where they are beatable"],\n'
         '  "profile": {"summary": "2-3 sentences", "sizeStatus": "small|other-than-small|unverified",\n'
         '              "certifications": ["verified certs only"], "vehicles": ["GSA/IDIQ vehicles found"],\n'
-        '              "keyCustomers": ["agencies"], "estimatedLaborBenchmarks": "1-2 sentences from BLS OES for this NAICS"},\n'
+        '              "keyCustomers": ["agencies"], "estimatedLaborBenchmarks": "1-2 sentences from BLS OES for this NAICS",\n'
+        '              "hq": "city, state or unverified", "locations": ["other offices/facilities found"],\n'
+        '              "headcount": "estimate w/ source or unverified",\n'
+        '              "headcountByArea": [{"area": "engineering|BD|program mgmt|manufacturing|other", "share": "% or headcount estimate"}],\n'
+        '              "salariesByRole": [{"role": "...", "range": "$X–$Y (BLS OES / public postings)"}],\n'
+        '              "capitalRaised": "total raised + latest round from public sources, or unverified",\n'
+        '              "revenueEstimate": "public figure or informed estimate labeled as such",\n'
+        '              "dualUseCustomers": ["commercial customers/markets found"],\n'
+        '              "marketOutlook": "2-3 sentences: their market, tailwinds/headwinds, where they are exposed"},\n'
         '  "insights": [{"insight": "...", "evidence": "what supports it", "source": "url or source name"}],\n'
         '  "strategies": [{"play": "prime|sub|team|counter-position", "rationale": "...", "action": "specific next step"}],\n'
         '  "recompetes": [{"contract": "...", "agency": "...", "endsBy": "YYYY-MM-DD or FY", "angle": "how to position"}],\n'
@@ -148,3 +156,37 @@ async def run_analysis(anthropic_key, competitor, naics, org_name, org_naics,
     if analysis is None:
         raise ValueError("The AI returned an unparseable analysis. Try again.")
     return usasp, analysis, used_model
+
+
+async def fetch_market(naics_list):
+    """Keyless market default: top prime recipients and top sub-awardees for
+    the org's NAICS codes — 'who wins in my market' straight from USASpending."""
+    naics_list = [n for n in (naics_list or []) if n][:3]
+    out = {"naics": naics_list, "topPrimes": [], "topSubs": [], "queriedAt": _today()}
+    if not naics_list:
+        return out
+    filters = {
+        "naics_codes": naics_list,
+        "award_type_codes": CONTRACT_CODES,
+        "time_period": [{"start_date": "2023-10-01", "end_date": _today()}],
+    }
+    async with httpx.AsyncClient(timeout=60) as client:
+        r = await client.post(f"{USASPENDING}/search/spending_by_category/recipient", json={
+            "filters": filters, "limit": 10, "page": 1,
+        })
+        r.raise_for_status()
+        for row in (r.json().get("results") or []):
+            out["topPrimes"].append({
+                "name": row.get("name"),
+                "obligated": round(float(row.get("amount") or 0)),
+            })
+        r = await client.post(f"{USASPENDING}/search/spending_by_category/recipient", json={
+            "filters": filters, "limit": 10, "page": 1, "subawards": True,
+        })
+        if r.status_code == 200:
+            for row in (r.json().get("results") or []):
+                out["topSubs"].append({
+                    "name": row.get("name"),
+                    "obligated": round(float(row.get("amount") or 0)),
+                })
+    return out

@@ -114,3 +114,14 @@ async def delete_report(reportId: str, ctx: dict = Depends(require_role("editor"
     await db.execute("delete from competitive_reports where id = $1", r["id"])
     await write_audit(ctx["org_id"], ctx["user"], "competitive.delete", r["competitor"])
     return {"ok": True}
+
+
+@router.get("/{orgId}/competitive/market/naics")
+async def market_default(ctx: dict = Depends(require_role("viewer"))):
+    """Top primes and subs in the org's own NAICS codes (keyless, verified)."""
+    naics = ctx["org"].get("naics") or []
+    try:
+        return await competitive.fetch_market(naics)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=502,
+            detail=f"USASpending market lookup failed: {str(e)[:200]}")
