@@ -66,6 +66,18 @@ Repo is usually private; user makes it public briefly (or uses GitHub import) wh
 - Emergent universal key saved on QA org secrets (preview) for future tests; live proxy call verified.
 - REMINDER: workspace now DIVERGES from GitHub main — user must push (Save to Github) before next pull.
 
+## Fix 2026-07-11 (this session): Anthropic always "(no key)" in every AI dropdown — ROOT CAUSE FOUND
+- User report (3rd time): saved org Anthropic key in Settings, all AI buttons still list
+  "Anthropic (no key)" → buttons disabled → core feature dead. Previous fixes (frontend cache
+  invalidation) were treating a symptom; keys were ALWAYS saving fine (anthropicSet:true).
+- REAL bug: backend routers/ai.py ai_options built configured list by KEY NAME ("anthropic")
+  but flagged engines by ENGINE ID ("claude") → "claude" in ["anthropic"] always False.
+  Anthropic engine could NEVER show configured regardless of DB state. Other engines matched
+  by name coincidence. One-line fix: engine_key = {"claude": "anthropic"} mapping.
+- Verified: curl PUT fake key on QA org → /ai/options now returns claude:True; UI screenshot
+  shows "Anthropic" enabled + selected by default on Opportunities page.
+- STATUS: fixed in PREVIEW ONLY. User must Save-to-GitHub + Redeploy for captureagent.us.
+
 ## Known notes (reported, not fixed — user's codebase)
 - Settings API-keys banner "live, server-side" wraps oddly (cosmetic).
 - /verify-email page double-fires under React StrictMode in dev (prod builds unaffected).

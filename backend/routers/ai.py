@@ -22,9 +22,10 @@ async def ai_options(ctx: dict = Depends(require_role("viewer"))):
         for name, col in org_keys.KEY_COLUMNS.items():
             if name != "sam" and row.get(col):
                 configured.append(name)
+    engine_key = {"claude": "anthropic"}
     return {
         "engines": [{"id": e, "label": genai.ENGINE_LABELS[e],
-                     "configured": e in configured,
+                     "configured": engine_key.get(e, e) in configured,
                      "models": genai.MODEL_CATALOG.get(e, [])}
                     for e in ("claude", "openai", "emergent", "asksage")],
         "efforts": [{"id": "low", "label": "Low — fast & cheap"},
