@@ -51,6 +51,21 @@ Repo is usually private; user makes it public briefly (or uses GitHub import) wh
   Migrations 0004–0010 auto-applied. Preview smoke OK (new "TurboTax of GovCon" hero, Blog nav,
   cookie banner). AWAITING user Redeploy, then live verification.
 
+## Fix 2026-07-12: AI engine failures + dropdowns everywhere (iteration_8: 100% pass)
+- Root causes: (1) repo's genai.py emergent engine called NON-EXISTENT host llm.emergentagent.com
+  → "[Errno -2] Name or service not known"; (2) OpenAI 429 = user's OpenAI account rate/quota limit
+  (key valid); (3) /opportunities/verify was hardcoded to Anthropic with no engine choice.
+- Fixes (WORKSPACE ONLY — user must Save-to-GitHub + redeploy): emergent_generate rewritten to
+  emergentintegrations LlmChat (provider by model prefix; catalog claude-sonnet-4-6/gpt-5.4/gpt-4o/
+  gemini-3.1-pro-preview); friendly 429 message; verify accepts {engine,model,effort} (claude=live
+  web path unchanged, others=offline review, discovered=[]); capabilities/competitive/PEO-check
+  engine-agnostic (web_search only on claude); frontend: Opportunities verify uses AIButton with
+  dropdowns, lockEngine removed on Capability x2/Competitive/PEO; AIButton renders locked engines
+  as visible disabled select + note captions; requirements.txt += emergentintegrations (+extra index).
+- Deep Scan (intel) intentionally stays Anthropic-locked (needs live web search) — now visibly labeled.
+- Emergent universal key saved on QA org secrets (preview) for future tests; live proxy call verified.
+- REMINDER: workspace now DIVERGES from GitHub main — user must push (Save to Github) before next pull.
+
 ## Known notes (reported, not fixed — user's codebase)
 - Settings API-keys banner "live, server-side" wraps oddly (cosmetic).
 - /verify-email page double-fires under React StrictMode in dev (prod builds unaffected).
