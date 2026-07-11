@@ -18,7 +18,7 @@ export const RESEARCH_TOOLS = [
   { label: "InvestorLists.vc", href: "https://investorlists.vc", note: "Paid contact lists of active US VCs" },
 ];
 
-export const INVESTORS = [
+const RAW_INVESTORS = [
   { name: "Founders Fund", checkSize: "$1M–$100M+", stage: "Seed–Growth", sectors: "Defense, Space, Deep tech", techAreas: "Launch, autonomy, AI, manufacturing", checkType: "Priced equity", traction: "Contrarian conviction; exceptional founders over metrics", url: "https://foundersfund.com", notes: "Anduril/SpaceX/Palantir backer; comfortable with long defense sales cycles" },
   { name: "Andreessen Horowitz (American Dynamism)", checkSize: "$1M–$50M", stage: "Seed–Series C", sectors: "Defense, Aerospace, Industrial", techAreas: "Autonomy, AI, manufacturing, space", checkType: "Priced equity", traction: "Strong team + mission pull; gov traction accelerates", url: "https://a16z.com/american-dynamism/", notes: "Dedicated American Dynamism practice; also runs a16z speedrun accelerator" },
   { name: "Shield Capital", checkSize: "$1M–$10M", stage: "Seed–Series A", sectors: "National security, Dual-use", techAreas: "AI, autonomy, cyber, space", techType: "", checkType: "Priced equity", traction: "Dual-use thesis; early gov signal (SBIR/OTAs) valued", url: "https://shieldcap.com", notes: "Operator GPs with DoD backgrounds" },
@@ -64,7 +64,7 @@ export const INVESTORS = [
   { name: "Also Capital / angels via OpenVC", checkSize: "$10K–$250K", stage: "Angel", sectors: "Defense tech", techAreas: "Varies", checkType: "SAFE", traction: "Use the OpenVC defense list to filter angels by thesis", url: "https://www.openvc.app/investor-lists/defensetech-investors", notes: "Community-maintained list — filter by check size and stage" },
 ];
 
-export const ACCELERATORS = [
+const RAW_ACCELERATORS = [
   { name: "Catalyst Accelerator", focus: "Space & defense (USSF-aligned)", location: "Colorado Springs, CO", terms: "Non-dilutive; cohort-based", cohort: "~8 companies / 2x yr", url: "https://www.catalystaccelerator.space", tips: "Topics track Space Force mission gaps; strong on-ramp to SDA/SSC customers" },
   { name: "Hyperspace Challenge", focus: "Space startups + universities (AFRL)", location: "Albuquerque, NM", terms: "Non-dilutive; prize + gov matchmaking", cohort: "Annual", url: "https://hyperspacechallenge.com", tips: "Built around direct collaboration with AFRL/Space RCO problem owners" },
   { name: "Techstars Space (TVX/Boulder lineage)", focus: "Aerospace & defense", location: "Los Angeles / various", terms: "$120K for 6% (standard Techstars)", cohort: "~12 / yr", url: "https://www.techstars.com", tips: "Alumni network + Allied Space partners; apply with clear dual-use story" },
@@ -96,3 +96,61 @@ export const ACCELERATORS = [
   { name: "Mach33 / other space studios", focus: "Space venture studios", location: "Various", terms: "Studio equity models", cohort: "Rolling", url: "https://mach33.aero", tips: "Studio model = heavier equity but heavier help; compare terms carefully" },
   { name: "gBETA / gener8tor programs", focus: "Regional + DoD-partnered", location: "National", terms: "Equity-free (gBETA) or investment (gener8tor)", cohort: "Multiple", url: "https://gener8tor.com", tips: "gBETA is free/no-equity — a gentle first accelerator" },
 ];
+
+/* ── Enrichment maps (merged below) ─────────────────────────────────────
+   Program logistics move every cycle — these are honest, verify-on-site
+   values; "check site" means the program publishes dates per cohort. */
+const ACCEL_META = {
+  "Catalyst Accelerator": { dueDate: "Per-cohort (check site)", durationWeeks: 12, attendance: "Onsite (CO Springs)", phase: "Seed–Series A" },
+  "Hyperspace Challenge": { dueDate: "Annual (fall)", durationWeeks: 10, attendance: "Hybrid", phase: "Any" },
+  "Techstars Space (TVX/Boulder lineage)": { dueDate: "2x yr (check site)", durationWeeks: 13, attendance: "Onsite (LA)", phase: "Pre-seed–Seed" },
+  "Y Combinator": { dueDate: "2x yr (Apr/Oct)", durationWeeks: 12, attendance: "Onsite (SF)", phase: "Idea–Seed" },
+  "Starburst Aerospace": { dueDate: "Rolling", durationWeeks: 13, attendance: "Hybrid", phase: "Pre-seed–Series A" },
+  "AngelPad": { dueDate: "2x yr", durationWeeks: 12, attendance: "Onsite (SF/NYC)", phase: "Pre-seed–Seed" },
+  "500 Global": { dueDate: "Multiple cohorts", durationWeeks: 16, attendance: "Hybrid", phase: "Seed" },
+  "Alchemist Accelerator": { dueDate: "3x yr", durationWeeks: 24, attendance: "Hybrid", phase: "Pre-seed–Seed" },
+  "Antler": { dueDate: "Rolling", durationWeeks: 26, attendance: "Onsite (global sites)", phase: "Idea" },
+  "The Engine (MIT)": { dueDate: "Rolling", durationWeeks: null, attendance: "Onsite (Cambridge)", phase: "Pre-seed–Series A" },
+  "MIT $100K Competition": { dueDate: "Annual (spring finals)", durationWeeks: 12, attendance: "Onsite (MIT)", phase: "Idea" },
+  "NSIN (National Security Innovation Network)": { dueDate: "Program-dependent", durationWeeks: 8, attendance: "Hybrid", phase: "Any" },
+  "Army xTech": { dueDate: "Multiple competitions/yr", durationWeeks: 16, attendance: "Virtual + demo events", phase: "Any" },
+  "APEX Accelerators (ex-PTAC)": { dueDate: "Ongoing", durationWeeks: null, attendance: "Virtual/local office", phase: "Any" },
+  "SBDC / TechConnect programs": { dueDate: "Ongoing", durationWeeks: null, attendance: "Virtual/local", phase: "Any" },
+  "Plug and Play (Aerospace & Defense)": { dueDate: "2x yr", durationWeeks: 12, attendance: "Hybrid", phase: "Seed–Series B" },
+  "DARPA programs (EMBER/Bridges etc.)": { dueDate: "BAA-dependent", durationWeeks: null, attendance: "Virtual", phase: "Any" },
+  "AeroInnovate (UW Oshkosh)": { dueDate: "Annual", durationWeeks: 10, attendance: "Virtual", phase: "Idea–Seed" },
+  "a16z speedrun": { dueDate: "2x yr", durationWeeks: 12, attendance: "Onsite (LA)", phase: "Pre-seed–Seed" },
+  "Capital Factory (Center for Defense Innovation)": { dueDate: "Rolling", durationWeeks: null, attendance: "Onsite (TX)", phase: "Any" },
+  "AI2 Incubator": { dueDate: "Rolling", durationWeeks: null, attendance: "Onsite (Seattle)", phase: "Idea–Seed" },
+  "IARPA (engagement, not accelerator)": { dueDate: "BAA-dependent", durationWeeks: null, attendance: "Virtual", phase: "Any" },
+  "Army Applications Laboratory (AAL)": { dueDate: "Per problem set", durationWeeks: 12, attendance: "Hybrid (Austin)", phase: "Any" },
+  "NavalX / Tech Bridges": { dueDate: "Ongoing", durationWeeks: null, attendance: "Regional offices", phase: "Any" },
+  "NATO DIANA": { dueDate: "Annual challenges (summer)", durationWeeks: 26, attendance: "Hybrid (allied sites)", phase: "Seed" },
+  "IQT Emerge": { dueDate: "Per cohort", durationWeeks: 12, attendance: "Hybrid", phase: "Seed–Series A" },
+  "Boost VC": { dueDate: "2x yr", durationWeeks: 13, attendance: "Onsite (San Mateo)", phase: "Pre-seed" },
+  "Seraphim Space Camp": { dueDate: "2x yr", durationWeeks: 11, attendance: "Hybrid", phase: "Seed–Series A" },
+  "Mach33 / other space studios": { dueDate: "Rolling", durationWeeks: null, attendance: "Varies", phase: "Idea" },
+  "gBETA / gener8tor programs": { dueDate: "Multiple cohorts", durationWeeks: 7, attendance: "Hybrid (regional)", phase: "Idea–Seed" },
+};
+
+const INVESTOR_PORTFOLIO = {
+  "Founders Fund": "Anduril, SpaceX, Palantir, Scale AI",
+  "Andreessen Horowitz (American Dynamism)": "Anduril, Hadrian, Shield AI, Castelion",
+  "Shield Capital": "HawkEye 360, Rebellion Defense, Albedo",
+  "Lux Capital": "Anduril, Hadrian, Varda, Saildrone",
+  "Khosla Ventures": "Rocket Lab (early), DEUS robotics bets, fusion portfolio",
+  "General Catalyst": "Anduril, Helsing, Vannevar Labs",
+  "8VC": "Palantir lineage, Saronic, Resilience",
+  "In-Q-Tel (IQT)": "Palantir (early), Databricks, Rocket Lab",
+  "Space Capital": "Planet, Skydio, Muon Space",
+  "SpaceFund": "Axiom Space, Orbit Fab",
+  "RTX Ventures": "Hermeus, Ursa Major, EpiSci",
+  "Lockheed Martin Ventures": "Terran Orbital, ABL Space, Machina Labs",
+  "Harpoon Ventures": "Anduril (early), Shield AI, Corsha",
+  "Humba Ventures": "Castelion, Mach Industries",
+};
+
+const ACCEL_DEFAULTS = { dueDate: "Check site", durationWeeks: null, attendance: "Varies", phase: "Any" };
+
+export const ACCELERATORS = RAW_ACCELERATORS.map((r) => ({ ...ACCEL_DEFAULTS, ...(ACCEL_META[r.name] || {}), ...r }));
+export const INVESTORS = RAW_INVESTORS.map((r) => ({ portfolio: INVESTOR_PORTFOLIO[r.name] || "", ...r }));
