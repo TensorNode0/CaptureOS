@@ -205,3 +205,47 @@ async def download_doc(docId: str, ctx: dict = Depends(require_role("viewer"))):
     await write_audit(ctx["org_id"], ctx["user"], "venture.download", doc.get("title"))
     return Response(content=data, media_type=MEDIA_TYPES[fmt],
                     headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+class FromProgramIn(BaseModel):
+    name: str = Field(min_length=2, max_length=200)
+    url: str = Field(default="", max_length=500)
+    model: str = ""
+
+
+@router.post("/{orgId}/venture-docs/from-program")
+async def create_from_program(body: FromProgramIn,
+                              ctx: dict = Depends(require_role("editor"))):
+    """Start an accelerator application from a program's own page: fetch the
+    URL, AI-extract its real questions + tips, scaffold the answers."""
+    import httpx
+    page_text = ""
+    if body.url:
+        if not body.url.lower().startswith(("http://", "https://")):
+            raise HTTPException(status_code=400, detail="URL must start with http(s)://")
+        try:
+            async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+                r = await client.get(body.url, headers={"User-Agent": "CaptureAgent/1.0"})
+                if r.status_code < 400:
+                    import re as _re
+                    page_text = _re.sub(r"<[^>]+>", " ", r.text)
+                    page_text = _re.sub(r"\s+", " ", page_text)[:40000]
+        except Exception:  # noqa: BLE001 — page fetch is best-effort
+            page_text = ""
+    keys = await org_keys.get_keys(ctx["org_id"], ctx["user"], purpose="venture.from_program")
+    profile = await db.fetchrow(
+        "select * from org_profiles where organization_id = $1", ctx["org_id"])
+    md, model_used = await venture_ai.form_from_program(
+        keys.get("anthropic", ""), body.name.strip(), page_text,
+        serialize(ctx["org"]), serialize(profile), model=body.model)
+    row = await db.fetchrow(
+        """insert into venture_docs (organization_id, kind, target, title,
+                                     content_md, model, created_by)
+           values ($1, 'accelerator_application', $2, $3, $4, $5, $6) returning *""",
+        ctx["org_id"], body.name.strip(),
+        f"Accelerator application — {body.name.strip()}", md, model_used,
+        as_uuid(ctx["user"]["id"]))
+    await write_audit(ctx["org_id"], ctx["user"], "venture.from_program",
+                      body.name.strip(), {"hadPage": bool(page_text),
+                                          "tailored": bool(model_used)})
+    return serialize(row)

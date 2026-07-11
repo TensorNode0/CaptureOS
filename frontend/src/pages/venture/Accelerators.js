@@ -1,33 +1,83 @@
 import React, { useMemo, useState } from "react";
-import { Search, ExternalLink, Rocket } from "lucide-react";
-import { Card, SectionLabel, Pill, PageReveal, EmptyState } from "../../components/ui";
+import { useNavigate } from "react-router-dom";
+import { Search, ExternalLink, Rocket, Plus, FileText } from "lucide-react";
+import { toast } from "sonner";
+import { api, errMsg } from "../../lib/api";
+import { useAuth } from "../../context/AuthContext";
+import { Card, SectionLabel, Pill, PageReveal, EmptyState, Modal, Field, Spinner } from "../../components/ui";
+import ScanPanel from "../../components/ScanPanel";
 import { ACCELERATORS } from "../../lib/ventureData";
+import { canEdit } from "../../lib/helpers";
+
+const dur = (w) => (w ? (w >= 20 ? `${Math.round(w / 4.3)} months` : `${w} weeks`) : "Varies");
 
 export default function Accelerators() {
+  const { activeOrgId, activeOrg } = useAuth();
+  const editor = canEdit(activeOrg?.role);
+  const navigate = useNavigate();
   const [q, setQ] = useState("");
   const [fTerms, setFTerms] = useState("");
   const [fLocation, setFLocation] = useState("");
+  const [fAttend, setFAttend] = useState("");
+  const [fPhase, setFPhase] = useState("");
+  const [fDurMax, setFDurMax] = useState(0);
+  const [custom, setCustom] = useState([]);          // user-added programs (this session)
+  const [selected, setSelected] = useState(null);    // drawer row
+  const [showAdd, setShowAdd] = useState(false);
+  const [starting, setStarting] = useState(false);
 
-  const rows = useMemo(() => ACCELERATORS.filter((r) => {
-    const hay = `${r.name} ${r.focus} ${r.location} ${r.tips}`.toLowerCase();
+  const all = useMemo(() => [...custom, ...ACCELERATORS], [custom]);
+
+  const rows = useMemo(() => all.filter((r) => {
+    const hay = `${r.name} ${r.focus} ${r.location} ${r.tips} ${r.phase}`.toLowerCase();
     if (q && !hay.includes(q.toLowerCase())) return false;
     if (fTerms === "equity-free" && /equity/i.test(r.terms || "") && !/no equity|equity-free|non-dilutive/i.test(r.terms || "")) return false;
     if (fTerms === "equity" && !/equity/i.test(r.terms || "")) return false;
     if (fLocation && !`${r.location}`.toLowerCase().includes(fLocation.toLowerCase())) return false;
+    if (fAttend && !`${r.attendance}`.toLowerCase().includes(fAttend.toLowerCase())) return false;
+    if (fPhase && !`${r.phase}`.toLowerCase().includes(fPhase.toLowerCase())) return false;
+    if (fDurMax && (!r.durationWeeks || r.durationWeeks > fDurMax)) return false;
     return true;
-  }), [q, fTerms, fLocation]);
+  }), [all, q, fTerms, fLocation, fAttend, fPhase, fDurMax]);
+
+  /* Generate the application form from the program's own page. */
+  const startApplication = async (program) => {
+    setStarting(true);
+    try {
+      await api.post(`/orgs/${activeOrgId}/venture-docs/from-program`,
+        { name: program.name, url: program.url || "" });
+      toast.success("Application form created from the program page");
+      setSelected(null);
+      navigate("/accelerator-applications");
+    } catch (e) { toast.error(errMsg(e)); }
+    finally { setStarting(false); }
+  };
 
   return (
     <PageReveal className="space-y-5">
-      <div>
-        <SectionLabel>Accelerators</SectionLabel>
-        <h1 className="mt-1 text-2xl font-semibold text-ink">Aerospace & defense accelerators</h1>
-        <p className="mt-1 max-w-3xl text-xs text-faint">
-          Cohorts, challenges, and government innovation programs that move defense
-          startups fastest — with terms and application tips. Verify current terms on
-          each program's site, then draft your application in Accelerator Applications.
-        </p>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <SectionLabel>Accelerators</SectionLabel>
+          <h1 className="mt-1 text-2xl font-semibold text-ink">Aerospace & defense accelerators</h1>
+          <p className="mt-1 max-w-3xl text-xs text-faint">
+            Cohorts, challenges, and government innovation programs that move defense
+            startups fastest. Click a row for details and to start an application —
+            the form is generated from the program's own page. Logistics drift every cohort;
+            verify on the program site.
+          </p>
+        </div>
+        {editor && (
+          <button className="btn btn-ghost" onClick={() => setShowAdd(true)} data-testid="accel-add-program">
+            <Plus size={15} /> Add your own program
+          </button>
+        )}
       </div>
+
+      <ScanPanel orgId={activeOrgId} kind="accelerator_scan" editor={editor}
+        label="AI deep scan: programs that fit your company"
+        blurb="Searches the live web for currently open and upcoming cohorts matched to
+               your profile — with due dates, terms, and sources. Runs on Claude with web search."
+        testid="accel-scan" />
 
       <Card className="p-4">
         <div className="flex flex-wrap items-center gap-2">
@@ -41,8 +91,27 @@ export default function Accelerators() {
             <option value="equity-free">Equity-free / non-dilutive</option>
             <option value="equity">Takes equity</option>
           </select>
-          <input className="field !w-40" placeholder="Location…" value={fLocation}
+          <input className="field !w-36" placeholder="Location…" value={fLocation}
             onChange={(e) => setFLocation(e.target.value)} data-testid="accel-location" />
+          <select className="field !w-auto" value={fAttend} onChange={(e) => setFAttend(e.target.value)} data-testid="accel-attend">
+            <option value="">Any attendance</option>
+            <option value="virtual">Virtual</option>
+            <option value="onsite">Onsite</option>
+            <option value="hybrid">Hybrid</option>
+          </select>
+          <select className="field !w-auto" value={fPhase} onChange={(e) => setFPhase(e.target.value)} data-testid="accel-phase">
+            <option value="">Any phase</option>
+            <option value="idea">Idea</option>
+            <option value="pre-seed">Pre-seed</option>
+            <option value="seed">Seed</option>
+            <option value="series a">Series A+</option>
+          </select>
+          <select className="field !w-auto" value={fDurMax} onChange={(e) => setFDurMax(Number(e.target.value))} data-testid="accel-duration">
+            <option value={0}>Any duration</option>
+            <option value={8}>≤ 8 weeks</option>
+            <option value={13}>≤ 13 weeks</option>
+            <option value={26}>≤ 6 months</option>
+          </select>
           <Pill tone="neutral">{rows.length} programs</Pill>
         </div>
       </Card>
@@ -59,24 +128,32 @@ export default function Accelerators() {
                   <th className="px-3 py-2.5 text-left font-medium">Focus</th>
                   <th className="px-3 py-2.5 text-left font-medium">Location</th>
                   <th className="px-3 py-2.5 text-left font-medium">Terms</th>
-                  <th className="px-3 py-2.5 text-left font-medium">Cohort</th>
-                  <th className="px-3 py-2.5 text-left font-medium">Tips</th>
+                  <th className="px-3 py-2.5 text-left font-medium">Due</th>
+                  <th className="px-3 py-2.5 text-left font-medium">Duration</th>
+                  <th className="px-3 py-2.5 text-left font-medium">Attendance</th>
+                  <th className="px-3 py-2.5 text-left font-medium">Phase</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((r) => (
-                  <tr key={r.name} className="border-b border-line/60 align-top hover:bg-white/5">
+                  <tr key={r.name} onClick={() => setSelected(r)} data-testid={`accel-row-${r.name}`}
+                      className="cursor-pointer border-b border-line/60 align-top hover:bg-white/5">
                     <td className="px-3 py-3">
-                      <a href={r.url} target="_blank" rel="noreferrer"
-                         className="inline-flex items-center gap-1 font-medium text-ink hover:text-cyan">
-                        {r.name} <ExternalLink size={11} className="text-faint" />
-                      </a>
+                      <span className="font-medium text-ink">{r.name}</span>
+                      {r.url && (
+                        <a href={r.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}
+                           className="ml-1.5 inline-flex text-faint hover:text-cyan" aria-label="Program site">
+                          <ExternalLink size={11} />
+                        </a>
+                      )}
                     </td>
                     <td className="px-3 py-3 text-xs text-dim">{r.focus}</td>
                     <td className="px-3 py-3 text-xs text-dim">{r.location}</td>
                     <td className="px-3 py-3"><Pill tone="violet">{r.terms}</Pill></td>
-                    <td className="px-3 py-3 text-xs text-dim">{r.cohort}</td>
-                    <td className="px-3 py-3 max-w-[280px] text-xs leading-snug text-faint">{r.tips}</td>
+                    <td className="px-3 py-3 text-xs text-dim">{r.dueDate}</td>
+                    <td className="px-3 py-3 text-xs text-dim">{dur(r.durationWeeks)}</td>
+                    <td className="px-3 py-3 text-xs text-dim">{r.attendance}</td>
+                    <td className="px-3 py-3 text-xs text-dim">{r.phase}</td>
                   </tr>
                 ))}
               </tbody>
@@ -84,6 +161,85 @@ export default function Accelerators() {
           </div>
         )}
       </Card>
+
+      {/* Program drawer */}
+      <Modal open={!!selected} onClose={() => setSelected(null)} title={selected?.name || ""} maxW="max-w-2xl">
+        {selected && (
+          <div className="space-y-3 text-sm" data-testid="accel-drawer">
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs sm:grid-cols-3">
+              {[["Focus", selected.focus], ["Location", selected.location],
+                ["Terms", selected.terms], ["Cohort", selected.cohort],
+                ["Applications due", selected.dueDate], ["Duration", dur(selected.durationWeeks)],
+                ["Attendance", selected.attendance], ["Company phase", selected.phase]]
+                .filter(([, v]) => v)
+                .map(([label, v]) => (
+                  <div key={label}>
+                    <div className="text-[10px] uppercase tracking-widest text-faint">{label}</div>
+                    <div className="mt-0.5 text-dim">{v}</div>
+                  </div>
+                ))}
+            </div>
+            {selected.tips && (
+              <div className="rounded-lg border border-line bg-white/5 p-3 text-xs leading-relaxed text-dim">
+                <span className="font-medium text-ink">Application tips: </span>{selected.tips}
+              </div>
+            )}
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              {editor && (
+                <button className="btn btn-primary" onClick={() => startApplication(selected)}
+                        disabled={starting} data-testid="accel-start-application">
+                  {starting ? <Spinner size={14} /> : <FileText size={14} />} Start application
+                </button>
+              )}
+              {selected.url && (
+                <a href={selected.url} target="_blank" rel="noreferrer" className="btn btn-ghost">
+                  Program site <ExternalLink size={12} />
+                </a>
+              )}
+            </div>
+            <p className="text-[11px] text-faint">
+              Start application pulls the program's page and builds its actual questions
+              into a form (with tips) in Accelerator Applications — with an Anthropic key
+              set, tailored to this program; otherwise a solid generic template.
+            </p>
+          </div>
+        )}
+      </Modal>
+
+      <AddProgramModal open={showAdd} onClose={() => setShowAdd(false)}
+        onAdd={(p) => { setCustom((c) => [p, ...c]); setSelected(p); }} />
     </PageReveal>
+  );
+}
+
+function AddProgramModal({ open, onClose, onAdd }) {
+  const [name, setName] = useState("");
+  const [url, setUrl] = useState("");
+  const submit = (e) => {
+    e.preventDefault();
+    if (name.trim().length < 2) { toast.error("Give the program a name"); return; }
+    if (url && !/^https?:\/\//i.test(url.trim())) { toast.error("URL must start with http(s)://"); return; }
+    onAdd({ name: name.trim(), url: url.trim(), focus: "Added by you", location: "—",
+            terms: "See site", cohort: "", dueDate: "Check site", durationWeeks: null,
+            attendance: "Varies", phase: "Any", tips: "" });
+    setName(""); setUrl(""); onClose();
+  };
+  return (
+    <Modal open={open} onClose={onClose} title="Add your own program">
+      <form onSubmit={submit} className="space-y-3" data-testid="accel-add-form">
+        <Field label="Program name">
+          <input className="field" value={name} onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. State defense innovation cohort" />
+        </Field>
+        <Field label="Program URL" hint="Paste the program page — Start application reads it to build the form.">
+          <input className="field" value={url} onChange={(e) => setUrl(e.target.value)}
+            placeholder="https://…" />
+        </Field>
+        <div className="flex justify-end gap-2 pt-1">
+          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button type="submit" className="btn btn-primary">Add program</button>
+        </div>
+      </form>
+    </Modal>
   );
 }

@@ -200,7 +200,13 @@ function CreateModal({ open, onClose, orgId, kinds, onCreated, testid }) {
         </Field>
         <Field label={meta.targetLabel} hint="Used to tailor the draft.">
           <input className="field" value={target} onChange={(e) => setTarget(e.target.value)}
-            placeholder={meta.targetPlaceholder} />
+            placeholder={meta.targetPlaceholder}
+            list={meta.targetOptions ? `${testid}-target-options` : undefined} />
+          {meta.targetOptions && (
+            <datalist id={`${testid}-target-options`}>
+              {meta.targetOptions.map((o) => <option key={o} value={o} />)}
+            </datalist>
+          )}
         </Field>
         <Field label="Notes for the AI (optional)" hint="Your ask, stage, numbers you want used.">
           <textarea className="field min-h-[70px]" value={notes} onChange={(e) => setNotes(e.target.value)} />
