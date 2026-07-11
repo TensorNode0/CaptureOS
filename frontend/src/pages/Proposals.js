@@ -12,6 +12,20 @@ export default function Proposals() {
   const { activeOrgId } = useAuth();
   const navigate = useNavigate();
   const [rows, setRows] = useState(null);
+  const [q, setQ] = useState("");
+  const [fStatus, setFStatus] = useState("");
+  const [fDueWithin, setFDueWithin] = useState(0);
+
+  const visible = (rows || []).filter((p) => {
+    if (q && !(`${p.oppTitle} ${p.solNumber} ${p.agency}`.toLowerCase().includes(q.toLowerCase()))) return false;
+    if (fStatus && (p.status || "draft") !== fStatus) return false;
+    if (fDueWithin) {
+      if (!p.dueDate) return false;
+      const days = (new Date(p.dueDate).getTime() - Date.now()) / 86400000;
+      if (days < 0 || days > fDueWithin) return false;
+    }
+    return true;
+  });
 
   useEffect(() => {
     if (!activeOrgId) return;
@@ -29,10 +43,30 @@ export default function Proposals() {
         </p>
       </div>
 
+      <Card className="p-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <input className="field !w-56" placeholder="Search title, sol#, agency…" value={q}
+            onChange={(e) => setQ(e.target.value)} data-testid="proposals-search" />
+          <select className="field !w-auto" value={fStatus} onChange={(e) => setFStatus(e.target.value)}
+            data-testid="proposals-status">
+            <option value="">All statuses</option>
+            <option value="draft">Draft</option>
+            <option value="submitted">Submitted</option>
+          </select>
+          <select className="field !w-auto" value={fDueWithin} onChange={(e) => setFDueWithin(Number(e.target.value))}
+            data-testid="proposals-due">
+            <option value={0}>Any due date</option>
+            <option value={7}>Due ≤ 7 days</option>
+            <option value={30}>Due ≤ 30 days</option>
+            <option value={90}>Due ≤ 90 days</option>
+          </select>
+        </div>
+      </Card>
+
       <Card className="overflow-hidden">
         {rows === null ? (
           <div className="space-y-2 p-4">{[...Array(5)].map((_, i) => <Skeleton key={i} className="h-12" />)}</div>
-        ) : rows.length === 0 ? (
+        ) : visible.length === 0 ? (
           <EmptyState icon={Package} title="No proposals yet"
             subtitle="Open an opportunity in Federal Opportunities and create its proposal package — it will appear here." />
         ) : (
@@ -50,7 +84,7 @@ export default function Proposals() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((p) => {
+                {visible.map((p) => {
                   const due = dueColor(p.dueDate);
                   return (
                     <tr key={p.id}

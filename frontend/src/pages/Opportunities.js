@@ -92,6 +92,8 @@ export default function Opportunities() {
   const [fStage, setFStage] = useState("");
   const [fStatus, setFStatus] = useState("active"); // expired hidden by default
   const [fAgency, setFAgency] = useState("");
+  const [fAwardMin, setFAwardMin] = useState(0);
+  const [fDueWithin, setFDueWithin] = useState(0); // days; 0 = any
   const [hideClosed, setHideClosed] = useState(false);
   const [sort, setSort] = useState({ key: "dueDate", dir: "asc" });
   const [showCreate, setShowCreate] = useState(false);
@@ -203,6 +205,12 @@ export default function Opportunities() {
       if (fStatus === "active" && ns === "closed") return false;
       if (["open", "pre-release", "closed"].includes(fStatus) && ns !== fStatus) return false;
       if (hideClosed && ["Won", "Lost", "No-Bid"].includes(o.stage)) return false;
+      if (fAwardMin && (Number(o.ceiling) || 0) < fAwardMin) return false;
+      if (fDueWithin) {
+        if (!o.dueDate) return false;
+        const days = (new Date(o.dueDate).getTime() - Date.now()) / 86400000;
+        if (days < 0 || days > fDueWithin) return false;
+      }
       return true;
     });
     const { key, dir } = sort;
@@ -217,7 +225,7 @@ export default function Opportunities() {
       return 0;
     });
     return list;
-  }, [opps, q, fVehicle, fSetAside, fStage, fStatus, fAgency, hideClosed, sort]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [opps, q, fVehicle, fSetAside, fStage, fStatus, fAgency, fAwardMin, fDueWithin, hideClosed, sort]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleSort = (key) =>
     setSort((s) => ({ key, dir: s.key === key && s.dir === "asc" ? "desc" : "asc" }));
@@ -278,6 +286,19 @@ export default function Opportunities() {
           </select>
           <select className="field !w-auto" value={fStage} onChange={(e) => setFStage(e.target.value)} data-testid="filter-stage">
             <option value="">All stages</option>{STAGES.map((v) => <option key={v}>{v}</option>)}
+          </select>
+          <select className="field !w-auto" value={fAwardMin} onChange={(e) => setFAwardMin(Number(e.target.value))} data-testid="filter-award">
+            <option value={0}>Any award $</option>
+            <option value={100000}>≥ $100K</option>
+            <option value={1000000}>≥ $1M</option>
+            <option value={5000000}>≥ $5M</option>
+            <option value={10000000}>≥ $10M</option>
+          </select>
+          <select className="field !w-auto" value={fDueWithin} onChange={(e) => setFDueWithin(Number(e.target.value))} data-testid="filter-due">
+            <option value={0}>Any due date</option>
+            <option value={7}>Due ≤ 7 days</option>
+            <option value={30}>Due ≤ 30 days</option>
+            <option value={90}>Due ≤ 90 days</option>
           </select>
           <label className="flex items-center gap-2 text-xs text-dim">
             <input type="checkbox" checked={hideClosed} onChange={(e) => setHideClosed(e.target.checked)} data-testid="hide-closed" />
