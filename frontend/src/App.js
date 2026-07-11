@@ -14,6 +14,8 @@ import About from "./pages/marketing/About";
 import Article from "./pages/marketing/resources/Article";
 import { BlogIndex, BlogPost } from "./pages/marketing/Blog";
 import Privacy from "./pages/marketing/Privacy";
+import Reviews from "./pages/marketing/Reviews";
+import Contact from "./pages/marketing/Contact";
 import CookieConsent from "./components/CookieConsent";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
@@ -108,6 +110,8 @@ export default function App() {
           <Route path="/blog" element={<BlogIndex />} />
           <Route path="/blog/:slug" element={<BlogPost />} />
           <Route path="/privacy" element={<Privacy />} />
+          <Route path="/reviews" element={<Reviews />} />
+          <Route path="/contact" element={<Contact />} />
           <Route path="/about" element={<About />} />
           <Route path="/login" element={<PublicOnly><Login /></PublicOnly>} />
           <Route path="/register" element={<PublicOnly><Register /></PublicOnly>} />

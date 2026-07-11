@@ -10,6 +10,8 @@ const NAV = [
   { to: "/features", label: "Features" },
   { to: "/resources", label: "Resources" },
   { to: "/blog", label: "Blog" },
+  { to: "/reviews", label: "Reviews" },
+  { to: "/contact", label: "Contact" },
 ];
 
 export function Wordmark({ size = 34 }) {

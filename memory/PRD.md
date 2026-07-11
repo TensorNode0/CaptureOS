@@ -117,6 +117,23 @@ Repo is usually private; user makes it public briefly (or uses GitHub import) wh
   revoke/rotate it after redeploy. 8 "QA Test Opp" rows remain on QA Verification Org.
 - STATUS: fixed/built in PREVIEW. User must Save-to-GitHub + Redeploy for captureagent.us.
 
+## Marketing site additions 2026-07-11 (same session, pre-deploy)
+- Home: /marketing/opportunities.png replaced with fresh 1440x900 screenshot of the NEW capture
+  qualification table (seeded realistic demo data on QA org; org temporarily renamed for the shot,
+  restored after).
+- NEW public pages + top-nav links: /reviews and /contact (marketing/Reviews.js, Contact.js,
+  formData.js shared lists; routes in App.js; NAV in MarketingLayout.js).
+- NEW backend routers/public.py (no auth): GET/POST /api/public/reviews, POST /api/public/contact.
+  Honeypot anti-spam, size limits, email regex. Reviews support show-initials ("T. S.") and
+  anonymous-company display; email never exposed. Optional headshot (JPEG/PNG/WEBP ≤2MB) moderated
+  via EMERGENT_LLM_KEY + gpt-4o-mini vision (emergentintegrations LlmChat/ImageContent) — APPROVE
+  and REJECT paths both live-tested. Contact submissions stored in marketing_contacts and forwarded
+  via Resend to info@orbitalservicescorporation.com (verified forwarded=true). HubSpot CRM NOT wired
+  (needs user's HubSpot private-app token — offered as follow-up).
+- Migrations: supabase/migrations/0014_capture_workspace.sql (idempotent, mirrors earlier manual
+  migration) + 0015_marketing_pages.sql (marketing_reviews, marketing_contacts) — auto-applied.
+- backend/.env += EMERGENT_LLM_KEY. Test reviews/contacts deleted from shared DB before deploy.
+
 ## Known notes (reported, not fixed — user's codebase)
 - Settings API-keys banner "live, server-side" wraps oddly (cosmetic).
 - /verify-email page double-fires under React StrictMode in dev (prod builds unaffected).
