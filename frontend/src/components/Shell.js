@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { canAdmin, canSeeDashboard } from "../lib/helpers";
+import IdleTimeout from "./IdleTimeout";
 import { LogoMark } from "./Logo";
 import { api, errMsg } from "../lib/api";
 import { toast } from "sonner";
@@ -227,6 +228,7 @@ export default function Shell({ children }) {
 
   return (
     <div className="flex min-h-screen">
+      <IdleTimeout />
       {/* Desktop sidebar */}
       <aside className="hidden w-60 shrink-0 flex-col border-r border-line bg-panel/40 px-3 py-5 lg:flex">
         <div className="mb-8"><Brand /></div>
