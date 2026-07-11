@@ -32,8 +32,8 @@ async def ai_options(ctx: dict = Depends(require_role("viewer"))):
                     {"id": "high", "label": "High — deepest"}],
         "monthSpendUsd": await ai_jobs.month_spend(ctx["org_id"]),
         "spendNote": ("Metered from real token usage at provider list prices. "
-                      "Providers don't expose account balances via API; AskSage "
-                      "bills subscription tokens (shown as $0)."),
+                      "Providers don't expose account balances via API; AskSage and "
+                      "the Emergent proxy don't report per-call usage (shown as $0)."),
     }
 
 

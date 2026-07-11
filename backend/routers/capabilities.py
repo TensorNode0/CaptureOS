@@ -48,11 +48,11 @@ def _cap_payload(cap):
     return out
 
 
-async def _run_generation(cap_id, api_key, org, profile, opp, user,
+async def _run_generation(cap_id, engine, keys, org, profile, opp, user,
                           model="", effort="", job_id=None):
     try:
         content, used_model = await capability_ai.generate_capability(
-            api_key, org, profile, opp, model=model, effort=effort, job_id=job_id)
+            engine, keys, org, profile, opp, model=model, effort=effort, job_id=job_id)
         if job_id:
             await ai_jobs.stage(job_id, "Saving the capability…", 95)
         await db.execute(
@@ -73,7 +73,7 @@ async def _run_generation(cap_id, api_key, org, profile, opp, user,
     except Exception as e:  # noqa: BLE001
         msg = str(e)
         if "authentication" in msg.lower() or "401" in msg or "invalid x-api-key" in msg.lower():
-            msg = "Anthropic rejected the API key. Update it in Settings → API Keys."
+            msg = "The AI provider rejected the API key. Update it in Settings → API Keys."
         if job_id:
             await ai_jobs.fail(job_id, msg)
         await db.execute(
@@ -93,8 +93,13 @@ async def get_capability(oppId: str, ctx: dict = Depends(require_role("viewer"))
 
 
 class GenerateIn(BaseModel):
+    engine: str = "claude"
     model: str = ""
     effort: str = "standard"
+
+
+AI_ENGINES = {"claude": "anthropic", "openai": "openai",
+              "emergent": "emergent", "asksage": "asksage"}
 
 
 @router.post("/{orgId}/opportunities/{oppId}/capability/generate")
@@ -105,10 +110,10 @@ async def generate_capability(oppId: str, body: GenerateIn = None,
     if not opp:
         raise HTTPException(status_code=404, detail="Opportunity not found")
     keys = await org_keys.get_keys(ctx["org_id"], ctx["user"], purpose="capability.generate")
-    api_key = keys["anthropic"]
-    if not api_key:
+    engine = body.engine if body.engine in AI_ENGINES else "claude"
+    if not keys.get(AI_ENGINES[engine]):
         raise HTTPException(status_code=400,
-            detail="No Anthropic API key set. Add it in Settings → API Keys.")
+            detail=f"No {genai.ENGINE_LABELS[engine]} API key set. Add it in Settings → API Keys.")
     cap = await _get_cap(ctx["org_id"], oppId)
     if cap and cap.get("generation_status") == "generating":
         raise HTTPException(status_code=409, detail="Generation already in progress")
@@ -130,10 +135,10 @@ async def generate_capability(oppId: str, body: GenerateIn = None,
     profile = await db.fetchrow(
         "select * from org_profiles where organization_id = $1", ctx["org_id"])
     job_id = await ai_jobs.create(ctx["org_id"], ctx["user"], "capability.generate",
-                                  ref_id=str(opp["id"]), engine="claude",
+                                  ref_id=str(opp["id"]), engine=engine,
                                   model=body.model, effort=body.effort)
     asyncio.create_task(_run_generation(
-        cap["id"], api_key, serialize(ctx["org"]), serialize(profile),
+        cap["id"], engine, keys, serialize(ctx["org"]), serialize(profile),
         serialize(opp), ctx["user"], model=body.model, effort=body.effort,
         job_id=job_id))
     return {"ok": True, "status": "generating", "capabilityId": str(cap["id"]),

@@ -1,0 +1,38 @@
+{
+  "summary": "Iteration 8: full regression of the AI-engine multi-provider + Emergent-proxy live fix on the preview build. Backend: 7/7 pytest cases PASS in /app/backend/tests/test_ai_engines.py — health, QA login (httpOnly cookies), /ai/options returns exactly the 4 engines (claude/openai/emergent/asksage) with the correct emergent model catalog (claude-sonnet-4-6, gpt-5.4, gpt-4o, gemini-3.1-pro-preview and NOT claude-sonnet-5), PUT /api/orgs/{orgId}/secrets with {emergentKey:...} flips emergent.configured=true, and CRITICAL: POST /opportunities/verify {engine:'emergent', model:'claude-sonnet-4-6', effort:'low'} returns HTTP 200 with a proper 'N verified, ...' summary — no '[Errno -2] Name or service not known' — proving genai.emergent_generate now correctly calls the emergentintegrations LlmChat proxy. Engine-key gating for openai returns HTTP 400 with an OpenAI-only error (no Anthropic leak). Frontend: on /opportunities the shared AIButton renders verify-refresh-button + verify-refresh-button-{engine,model,effort} with all 4 engines listed and '(no key)'-disabled markers for unconfigured ones, plus the note caption about Anthropic live web verification. /competitive-analysis renders run-analysis-engine unlocked with the same 4-engine list. Capability page (opportunities/{id}/capability) renders generate-capability-engine unlocked with 4 engines. Accelerators ScanPanel renders a visibly DISABLED engine select value='claude' text='Anthropic' (confirming AIButton lockEngine now renders a locked-but-visible select). One paid live Emergent call was executed (effort=low, one call only) and returned successfully.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_ai_engines.py",
+    "/app/test_reports/pytest/iter8_ai_engines.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "genai.EMERGENT_MODELS (line 19) and MODEL_CATALOG.emergent (lines 35-40) are in sync — good. Consider deriving MODEL_CATALOG['emergent'] ids from EMERGENT_MODELS to avoid future drift.",
+    "genai.emergent_generate correctly maps model prefix → provider (anthropic/gemini/openai) and normalises 401 to a friendly PermissionError; behaviour verified against the live proxy.",
+    "openai_generate returns a clear 429 message distinguishing rate/quota from key auth — matches the review-request UX intent.",
+    "opportunities.verify_refresh handles engine!='claude' via _verify_via_genai (discovered=[] enforced) and preserves the Anthropic web-search discovery path. Live smoke run returned 'verified' summary with model 'emergent/claude-sonnet-4-6'.",
+    "AIButton.js correctly renders a disabled engine <select> when lockEngine is set (line 111-117), so ScanPanel still visually communicates the Anthropic requirement. verify-refresh-button-{engine,model,effort} testids are wired for QA automation.",
+    "Nit: AIButton uses window.confirm-free flow; no blockers. Optional — add data-testid on the note caption so tests can assert its content without brittle text matching."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_ai_engines.py (new — 7 pytest cases covering the entire review-request scope)"
+  ],
+  "success_rate": {
+    "backend": "100% (7/7)",
+    "frontend": "100% of review-request testids verified (Opportunities, Capability, Competitive, ScanPanel)"
+  },
+  "test_credentials": "qa.captureagent@testmail.dev / CaptureQA#2026 (org 'QA Verification Org', id 499e35c6-ca12-4589-aa1a-ae22bdb72c07). Emergent key was saved to this org's secrets during the test — it remains configured after the run.",
+  "seed_data_creation": "During the run, 2 test opportunities were created and DELETED (TEST_iter8_verify_target, TEST_iter8_cap) — no lingering rows. Emergent API key remains stored in org_secrets.emergent_key (encrypted) for the QA org so that future preview AI tests do not need to re-save it. Nothing else was created.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "The Emergent universal key is now persisted on QA Verification Org (org 499e35c6-ca12-4589-aa1a-ae22bdb72c07) so /ai/options returns emergent.configured=true out of the box. Only the emergent engine is configured on this org — Anthropic, OpenAI, AskSage keys are NOT saved (so the '(no key)' disabled markers are the expected UX). If you need to test claude web-search flows, save an Anthropic key in Settings first. Test file: /app/backend/tests/test_ai_engines.py (pytest, 7 cases, ~47s wall time — includes ONE paid Emergent call with effort=low). Frontend testids to reuse: verify-refresh-button{,-engine,-model,-effort}, run-analysis-engine, generate-capability-engine, accel-scan-engine (locked=Anthropic).",
+  "rca_of_the_issue": "PRE-FIX RCA (already fixed by main agent, confirmed by this run): the previous genai.emergent_generate called https://llm.emergentagent.com — a non-existent host — which is why every emergent-engine call surfaced '[Errno -2] Name or service not known' from httpx's DNS layer. The rewrite now uses the official emergentintegrations Python library (LlmChat.send_message + provider mapping via model prefix) which internally hits the Emergent LLM proxy. A live low-effort call against QA org succeeded (HTTP 200, summary '0 verified, 0 field suggestions, 0 links flagged, 0 discovered' when no opps existed, and '1 verified, ...' after a test opp was created earlier in the pytest run) — confirming both the host fix and the response-shape contract (JSON with verifications[] discovered:[]) are honored by the Emergent proxy."
+}

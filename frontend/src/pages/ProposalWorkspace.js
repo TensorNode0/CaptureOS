@@ -435,10 +435,10 @@ function CustomerCard({ proposal, setProposal, orgId, oppId, editor }) {
     finally { setSaving(false); }
   };
 
-  const check = async ({ model, effort }) => {
+  const check = async ({ engine, model, effort }) => {
     const { data } = await api.post(
       `/orgs/${orgId}/opportunities/${oppId}/proposal/customer/check`,
-      { engine: "claude", model: model || "", effort: effort || "standard" });
+      { engine: engine || "claude", model: model || "", effort: effort || "standard" });
     return data; // jobId → telemetry panel
   };
 
@@ -551,8 +551,9 @@ function CustomerCard({ proposal, setProposal, orgId, oppId, editor }) {
             {saving ? <Spinner /> : <Save size={14} />} Save customer
           </button>
           {(saved.peo || saved.agency) && (
-            <AIButton orgId={orgId} compact lockEngine="claude" icon={Crosshair}
+            <AIButton orgId={orgId} compact icon={Crosshair}
               label="Check directory currency"
+              note="Anthropic checks the live PEO directory; other engines answer from model knowledge."
               onStart={check} onDone={reload} testid="peo-check" />
           )}
         </div>

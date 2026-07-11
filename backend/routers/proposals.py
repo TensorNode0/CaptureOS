@@ -469,12 +469,15 @@ async def check_customer(oppId: str, body: DraftIn,
         raise HTTPException(status_code=400,
             detail="Pick the government customer (PEO or agency) first.")
     keys = await org_keys.get_keys(ctx["org_id"], ctx["user"], purpose="proposal.peo_check")
-    if not keys.get("anthropic"):
+    ENGINES = {"claude": "anthropic", "openai": "openai",
+               "emergent": "emergent", "asksage": "asksage"}
+    engine = body.engine if body.engine in ENGINES else "claude"
+    if not keys.get(ENGINES[engine]):
         raise HTTPException(status_code=400,
-            detail="No Anthropic API key set. Add it in Settings → API Keys "
-                   "(the directory check uses Claude web search).")
+            detail=f"No {genai.ENGINE_LABELS[engine]} API key set. "
+                   "Add it in Settings → API Keys.")
     job_id = await ai_jobs.create(ctx["org_id"], ctx["user"], "peo.check",
-                                  ref_id=str(proposal["id"]), engine="claude",
+                                  ref_id=str(proposal["id"]), engine=engine,
                                   model=body.model, effort=body.effort)
     prompt = (
         f"ORGANIZATION TO VERIFY: {target}\n"
@@ -491,8 +494,8 @@ async def check_customer(oppId: str, body: DraftIn,
     async def _run_check():
         try:
             await ai_jobs.stage(job_id, "Checking the PEO directory and service pages…", 30)
-            text, used_model, usage = await genai.claude_generate(
-                keys["anthropic"], PEO_CHECK_SYSTEM, prompt,
+            text, used_model, usage = await genai.generate(
+                engine, keys, PEO_CHECK_SYSTEM, prompt,
                 max_tokens=1500, web_search=True, model=body.model)
             await ai_jobs.add_usage(job_id, used_model, usage)
             data = genai.extract_json(text)

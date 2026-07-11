@@ -44,7 +44,8 @@ export default function CompetitiveAnalysis() {
       throw new Error("Enter the competitor's registered legal name first");
     }
     const { data } = await api.post(`/orgs/${activeOrgId}/competitive`,
-      { competitor, naics, model: model || "", effort: effort || "standard" });
+      { engine: engine || "claude", competitor, naics,
+        model: model || "", effort: effort || "standard" });
     setPendingReportId(data.reportId);
     return data; // jobId → AIButton streams stage/tokens/cost
   };
@@ -104,7 +105,8 @@ export default function CompetitiveAnalysis() {
               </Field>
             </div>
             <AIButton orgId={activeOrgId} label="Run analysis" icon={Crosshair}
-              lockEngine="claude" onStart={run} onDone={onRunDone}
+              note="Anthropic runs live web OSINT; other engines analyze USASpending data only."
+              onStart={run} onDone={onRunDone}
               testid="run-analysis" />
           </form>
         </Card>

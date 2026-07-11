@@ -103,7 +103,7 @@ export default function Capability() {
   const generate = async ({ engine, model, effort } = {}) => {
     const { data } = await api.post(
       `/orgs/${activeOrgId}/opportunities/${id}/capability/generate`,
-      { model: model || "", effort: effort || "standard" });
+      { engine: engine || "claude", model: model || "", effort: effort || "standard" });
     await load();
     return data; // contains jobId for the AIButton telemetry panel
   };
@@ -195,7 +195,7 @@ export default function Capability() {
             <>
               {cm && (
                 <AIButton orgId={activeOrgId} label="Regenerate" icon={RefreshCw}
-                  lockEngine="claude" compact onStart={generate} onDone={load}
+                  compact onStart={generate} onDone={load}
                   disabled={!!busy || generating} testid="regenerate-capability" />
               )}
               <button className="btn btn-primary" onClick={save}
@@ -219,7 +219,8 @@ export default function Capability() {
           <EmptyState icon={Sparkles} title="No proposed capability yet"
             subtitle="The AI capture manager will design a capability for this solicitation from your company profile: title, abstract, executive summary, concept rendering, SoW, WBS schedule, and budget."
             action={cm ? (
-              <AIButton orgId={activeOrgId} label="Generate with AI" lockEngine="claude"
+              <AIButton orgId={activeOrgId} label="Generate with AI"
+                note="Anthropic reads the solicitation page via live web search; other engines draft from your saved profile."
                 onStart={generate} onDone={load} testid="generate-capability" />
             ) : (
               <span className="text-xs text-faint">Your capture manager creates the proposed capability.</span>

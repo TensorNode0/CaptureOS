@@ -16,7 +16,7 @@ import httpx
 # Newest first; we fall back until one is accepted by the caller's key.
 CLAUDE_MODELS = ["claude-sonnet-5", "claude-sonnet-4-5", "claude-3-5-sonnet-latest"]
 OPENAI_MODELS = ["gpt-5", "gpt-4.1", "gpt-4o"]
-EMERGENT_MODELS = ["claude-sonnet-5", "gpt-5", "gpt-4o"]
+EMERGENT_MODELS = ["claude-sonnet-4-6", "gpt-5.4", "gpt-4o"]
 
 # User-selectable catalogs per engine (shown in the model dropdown).
 MODEL_CATALOG = {
@@ -33,9 +33,10 @@ MODEL_CATALOG = {
         {"id": "gpt-4o-mini", "label": "GPT-4o mini (cheapest)"},
     ],
     "emergent": [
-        {"id": "claude-sonnet-5", "label": "Claude Sonnet 5 via Emergent"},
-        {"id": "gpt-5", "label": "GPT-5 via Emergent"},
+        {"id": "claude-sonnet-4-6", "label": "Claude Sonnet 4.6 via Emergent (recommended)"},
+        {"id": "gpt-5.4", "label": "GPT-5.4 via Emergent"},
         {"id": "gpt-4o", "label": "GPT-4o via Emergent"},
+        {"id": "gemini-3.1-pro-preview", "label": "Gemini 3.1 Pro via Emergent"},
     ],
     "asksage": [
         {"id": "aws-bedrock-claude-45-sonnet", "label": "Claude Sonnet (GovCloud/Bedrock)"},
@@ -150,6 +151,11 @@ async def openai_generate(api_key, system, user, max_tokens=8000, model=""):
             )
             if r.status_code == 401:
                 raise PermissionError("OpenAI rejected the API key (401)")
+            if r.status_code == 429:
+                raise RuntimeError(
+                    "OpenAI returned 429 (rate/quota limit) — the key is valid but the "
+                    "OpenAI account is rate-limited or out of quota. Check "
+                    "platform.openai.com → Billing / Usage limits.")
             if r.status_code in (400, 404):
                 last_err = RuntimeError(f"OpenAI {m}: {r.text[:300]}")
                 continue
@@ -183,29 +189,31 @@ async def asksage_generate(api_key, system, user, max_tokens=8000, model=""):
 
 
 async def emergent_generate(api_key, system, user, max_tokens=8000, model=""):
-    """Emergent universal LLM key (OpenAI-compatible endpoint)."""
+    """Emergent universal LLM key via the emergentintegrations proxy library."""
+    import uuid
+    from emergentintegrations.llm.chat import LlmChat, UserMessage
     models = [model] + [m for m in EMERGENT_MODELS if m != model] if model else EMERGENT_MODELS
     last_err = None
-    async with httpx.AsyncClient(timeout=180) as client:
-        for m in models:
-            r = await client.post(
-                "https://llm.emergentagent.com/v1/chat/completions",
-                headers={"Authorization": f"Bearer {api_key}"},
-                json={"model": m, "max_tokens": max_tokens,
-                      "messages": [{"role": "system", "content": system},
-                                   {"role": "user", "content": user}]},
-            )
-            if r.status_code == 401:
-                raise PermissionError("Emergent rejected the API key (401)")
-            if r.status_code in (400, 404, 422):
-                last_err = RuntimeError(f"Emergent {m}: {r.text[:300]}")
-                continue
-            r.raise_for_status()
-            data = r.json()
-            text = (data.get("choices") or [{}])[0].get("message", {}).get("content", "")
-            u = data.get("usage") or {}
-            return text, f"emergent/{m}", _usage(u.get("prompt_tokens"),
-                                                 u.get("completion_tokens"))
+    for m in models:
+        provider = ("anthropic" if m.startswith("claude")
+                    else "gemini" if m.startswith("gemini") else "openai")
+        try:
+            chat = LlmChat(api_key=api_key, session_id=f"captureagent-{uuid.uuid4()}",
+                           system_message=system).with_model(provider, m)
+            resp = await chat.send_message(UserMessage(text=user))
+            text = str(resp or "")
+            if not text.strip():
+                raise RuntimeError("empty response")
+            return text, f"emergent/{m}", _usage(0, 0)
+        except Exception as e:  # noqa: BLE001
+            msg = str(e)
+            low = msg.lower()
+            if "401" in msg or "unauthorized" in low or "authentication" in low \
+                    or "invalid api key" in low:
+                raise PermissionError(
+                    "Emergent rejected the API key (401). Check the key in "
+                    "Settings → API Keys and its remaining balance.")
+            last_err = RuntimeError(f"Emergent {m}: {msg[:300]}")
     raise last_err if last_err else RuntimeError("Emergent call failed")
 
 

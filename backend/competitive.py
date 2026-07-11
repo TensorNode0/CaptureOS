@@ -130,14 +130,16 @@ def _osint_prompt(competitor, naics, usasp, org_name, org_naics):
     )
 
 
-async def run_analysis(anthropic_key, competitor, naics, org_name, org_naics,
+async def run_analysis(engine, keys, competitor, naics, org_name, org_naics,
                        model="", effort="", job_id=None):
     """USASpending pull + AI OSINT synthesis. Returns (usaspending, analysis, model)."""
     import ai_jobs
     if job_id:
         await ai_jobs.stage(job_id, "Pulling verified award data from USASpending…", 15)
     usasp = await fetch_usaspending(competitor, naics)
-    if not anthropic_key:
+    key_name = {"claude": "anthropic", "openai": "openai",
+                "emergent": "emergent", "asksage": "asksage"}.get(engine, "anthropic")
+    if not keys.get(key_name):
         if job_id:
             await ai_jobs.stage(job_id, "USASpending data ready (add an AI key for the BLUF)", 90)
         return usasp, {}, ""
@@ -145,8 +147,8 @@ async def run_analysis(anthropic_key, competitor, naics, org_name, org_naics,
         await ai_jobs.stage(
             job_id, "Running OSINT across SAM.gov, DSBS, eLibrary, and the web…", 45)
     max_toks = genai.scaled_tokens(8000, effort) if effort else 8000
-    text, used_model, usage = await genai.claude_generate(
-        anthropic_key, OSINT_SYSTEM,
+    text, used_model, usage = await genai.generate(
+        engine, keys, OSINT_SYSTEM,
         _osint_prompt(competitor, naics, usasp, org_name, org_naics),
         max_tokens=max_toks, web_search=True, model=model)
     if job_id:

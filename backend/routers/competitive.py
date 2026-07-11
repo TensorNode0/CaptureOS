@@ -8,6 +8,7 @@ import database as db
 from utils import now_utc, serialize, as_uuid
 from rbac import require_role
 from domain import write_audit
+import genai
 import competitive
 import ai_jobs
 import org_keys
@@ -16,20 +17,25 @@ router = APIRouter(prefix="/api/orgs", tags=["competitive"])
 
 
 class AnalyzeIn(BaseModel):
+    engine: str = "claude"
     competitor: str = Field(min_length=2, max_length=200)
     naics: str = Field(default="", max_length=10)
     model: str = ""
     effort: str = "standard"
 
 
-async def _run(report_id, anthropic_key, competitor, naics, org_name, org_naics,
+AI_ENGINES = {"claude": "anthropic", "openai": "openai",
+              "emergent": "emergent", "asksage": "asksage"}
+
+
+async def _run(report_id, engine, keys, competitor, naics, org_name, org_naics,
                user, org_id, model="", effort="", job_id=None):
     try:
         usasp, analysis, used_model = await competitive.run_analysis(
-            anthropic_key, competitor, naics, org_name, org_naics,
+            engine, keys, competitor, naics, org_name, org_naics,
             model=model, effort=effort, job_id=job_id)
-        note = "" if anthropic_key else \
-            "USASpending data only — add an Anthropic API key in Settings for the AI BLUF."
+        note = "" if keys.get(AI_ENGINES[engine]) else \
+            "USASpending data only — add an AI key in Settings for the AI BLUF."
         await db.execute(
             """update competitive_reports
                set status = 'done', usaspending = $2, analysis = $3, model = $4,
@@ -69,10 +75,12 @@ async def start_analysis(body: AnalyzeIn, ctx: dict = Depends(require_role("edit
            values ($1, $2, $3, 'running', $4) returning *""",
         ctx["org_id"], competitor, naics, as_uuid(ctx["user"]["id"]))
     job_id = await ai_jobs.create(ctx["org_id"], ctx["user"], "competitive.analyze",
-                                  ref_id=str(report["id"]), engine="claude",
+                                  ref_id=str(report["id"]),
+                                  engine=body.engine if body.engine in AI_ENGINES else "claude",
                                   model=body.model, effort=body.effort)
     asyncio.create_task(_run(
-        report["id"], keys.get("anthropic", ""), competitor, naics,
+        report["id"], body.engine if body.engine in AI_ENGINES else "claude",
+        keys, competitor, naics,
         ctx["org"]["name"], ctx["org"].get("naics") or [],
         ctx["user"], ctx["org_id"], model=body.model, effort=body.effort,
         job_id=job_id))

@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { api, errMsg } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { Card, SectionLabel, Pill, Skeleton, EmptyState, PageReveal, Modal, Field, Spinner } from "../components/ui";
+import AIButton from "../components/AIButton";
 import { fmtMoney, fmtDate, fmtDateTime, dueColor, ELIGIBILITY, STAGE_COLORS, canEdit } from "../lib/helpers";
 
 const VEHICLES = ["RFP", "SBIR", "STTR", "BAA", "CSO", "Grant"];
@@ -97,7 +98,6 @@ export default function Opportunities() {
   const [hideClosed, setHideClosed] = useState(false);
   const [sort, setSort] = useState({ key: "dueDate", dir: "asc" });
   const [showCreate, setShowCreate] = useState(false);
-  const [verifying, setVerifying] = useState(false);
   const [pulling, setPulling] = useState(false);
   const [scanning, setScanning] = useState(false);
 
@@ -141,18 +141,12 @@ export default function Opportunities() {
     }
   };
 
-  const runVerify = async () => {
-    setVerifying(true);
-    const tid = toast.loading("Running AI Verify & Refresh…");
-    try {
-      const { data } = await api.post(`/orgs/${activeOrgId}/opportunities/verify`);
-      toast.success("AI Verify complete", { id: tid, description: data.summary });
-      load();
-    } catch (err) {
-      toast.error(errMsg(err), { id: tid });
-    } finally {
-      setVerifying(false);
-    }
+  const runVerify = async ({ engine, model, effort }) => {
+    const { data } = await api.post(`/orgs/${activeOrgId}/opportunities/verify`,
+      { engine, model: model || "", effort: effort || "standard" });
+    toast.success("AI Verify complete", { description: data.summary });
+    load();
+    return data;
   };
 
   const runPull = async () => {
@@ -248,9 +242,10 @@ export default function Opportunities() {
               title="AI market scan across SAM, SBIR/DSIP, AFWERX, DIU, DARPA, NASA and the open web — fit-scored against your company profile">
               {scanning ? <Spinner /> : <Sparkles size={16} />} AI Deep Scan
             </button>
-            <button className="btn btn-ghost" onClick={runVerify} disabled={verifying} data-testid="verify-refresh-button">
-              {verifying ? <Spinner /> : <CheckCircle2 size={16} />} Verify &amp; Refresh with AI
-            </button>
+            <AIButton orgId={activeOrgId} compact icon={CheckCircle2}
+              label="Verify & Refresh with AI" testid="verify-refresh-button"
+              note="Anthropic verifies against the live web and discovers new matches; other engines review saved data only."
+              onStart={runVerify} onDone={load} />
             <button className="btn btn-ghost" onClick={runPull} disabled={pulling} data-testid="pull-sam-button">
               {pulling ? <Spinner /> : <DownloadCloud size={16} />} Pull from SAM / Grants
             </button>

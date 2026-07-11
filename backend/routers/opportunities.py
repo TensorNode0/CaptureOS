@@ -9,6 +9,7 @@ from domain import (write_audit, compute_eligibility, default_fit, default_compl
                     default_budget, default_criteria)
 import integrations
 import org_keys
+import genai
 
 router = APIRouter(prefix="/api/orgs", tags=["opportunities"])
 
@@ -185,16 +186,67 @@ async def delete_opportunity(oppId: str, ctx: dict = Depends(require_role("edito
     return {"ok": True}
 
 
-# ---------------- AI Verify & Refresh (LIVE — Anthropic) ----------------
+# ---------------- AI Verify & Refresh (LIVE) ----------------
+AI_ENGINES = {"claude": "anthropic", "openai": "openai",
+              "emergent": "emergent", "asksage": "asksage"}
+
+
+class VerifyIn(BaseModel):
+    engine: str = "claude"  # claude runs live web search; others review saved data
+    model: str = ""
+    effort: str = "standard"
+
+
+VERIFY_SYSTEM = (
+    "You are a U.S. federal contracting (GovCon) pipeline reviewer WITHOUT live "
+    "web access. Review ONLY the saved opportunity data provided: flag due dates "
+    "already in the past (set opportunityStatus='archived' when clearly closed), "
+    "obviously malformed URLs, and internal inconsistencies. NEVER invent new "
+    "opportunities or claim live verification. Respond with a SINGLE JSON object ONLY."
+)
+
+
+def _verify_prompt(today, listing):
+    import json as _json
+    return (
+        f"TODAY: {today}\n\nSAVED OPPORTUNITIES:\n{_json.dumps(listing, default=str)[:14000]}\n\n"
+        "Return JSON exactly in this shape:\n"
+        '{ "verifications": [ { "id": "<id>", "linkStatus": "unknown", '
+        '"dueDateChanged": false, "currentDueDate": null, '
+        '"opportunityStatus": "active|archived|unknown", '
+        '"confidence": "low|medium|high", "notes": "1 sentence", "sourceUrls": [] } ], '
+        '"discovered": [] }\n'
+        'One verifications entry per opportunity id. linkStatus must be "unknown" '
+        "(no live check was possible)."
+    )
+
+
+async def _verify_via_genai(engine, keys, model, effort, listing):
+    from datetime import datetime, timezone
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    text, used_model, _ = await genai.generate(
+        engine, keys, VERIFY_SYSTEM, _verify_prompt(today, listing),
+        max_tokens=6000, model=model, effort=effort)
+    data = genai.extract_json(text)
+    if data is None or "verifications" not in data:
+        raise ValueError("The AI returned an unparseable verification. Try again.")
+    data["_model"] = used_model
+    data["discovered"] = []
+    return data
+
+
 @router.post("/{orgId}/opportunities/verify")
-async def verify_refresh(ctx: dict = Depends(require_role("editor"))):
-    """LIVE Anthropic verification: confirms each stored opportunity against live
-    web sources and discovers up to 3 new matches for the org's NAICS/keywords."""
+async def verify_refresh(body: VerifyIn = None,
+                         ctx: dict = Depends(require_role("editor"))):
+    """Verify stored opportunities. Anthropic verifies against live web sources
+    and discovers new matches; other engines review the saved data offline."""
+    body = body or VerifyIn()
+    engine = body.engine if body.engine in AI_ENGINES else "claude"
     keys = await org_keys.get_keys(ctx["org_id"], ctx["user"], purpose="ai.verify_refresh")
-    anthropic_key = keys["anthropic"]
-    if not anthropic_key:
+    if not keys.get(AI_ENGINES[engine]):
         raise HTTPException(status_code=400,
-            detail="No Anthropic API key set. Add it in Settings → API Keys.")
+            detail=f"No {genai.ENGINE_LABELS[engine]} API key set. "
+                   "Add it in Settings → API Keys.")
     org = ctx["org"]
     naics = org.get("naics") or []
     keywords = org.get("keywords") or []
@@ -211,17 +263,21 @@ async def verify_refresh(ctx: dict = Depends(require_role("editor"))):
         ctx["org_id"], as_uuid(ctx["user"]["id"]))
     payload = [serialize(o) for o in opps]
     try:
-        data = await integrations.anthropic_verify(anthropic_key, naics, keywords,
-                                                   payload, capabilities)
+        if engine == "claude":
+            data = await integrations.anthropic_verify(keys["anthropic"], naics,
+                                                       keywords, payload, capabilities)
+        else:
+            data = await _verify_via_genai(engine, keys, body.model, body.effort, payload)
     except Exception as e:
         await db.execute(
             "update refresh_jobs set status = 'error', finished_at = $2, summary = $3 where id = $1",
             job["id"], now_utc(), str(e))
         msg = str(e)
+        label = genai.ENGINE_LABELS[engine]
         if "authentication" in msg.lower() or "401" in msg or "invalid x-api-key" in msg.lower():
             raise HTTPException(status_code=400,
-                detail="Anthropic rejected the API key. Update it in Settings → API Keys.")
-        raise HTTPException(status_code=502, detail=f"Anthropic verification failed: {msg}")
+                detail=f"{label} rejected the API key. Update it in Settings → API Keys.")
+        raise HTTPException(status_code=502, detail=f"{label} verification failed: {msg}")
 
     model = data.get("_model", "claude-haiku")
     vmap = {str(v.get("id")): v for v in (data.get("verifications") or [])}
@@ -254,7 +310,9 @@ async def verify_refresh(ctx: dict = Depends(require_role("editor"))):
             flagged += 1
         report = {
             "generatedAt": iso(now_utc()), "model": model,
-            "summary": v.get("notes") or "Verified against live web sources via Anthropic.",
+            "summary": v.get("notes") or (
+                "Verified against live web sources via Anthropic." if engine == "claude"
+                else f"Reviewed by {genai.ENGINE_LABELS[engine]} without live web search."),
             "diffs": diffs, "linkStatuses": link_statuses,
             "confidence": v.get("confidence", "medium"), "sourceUrls": sources,
         }

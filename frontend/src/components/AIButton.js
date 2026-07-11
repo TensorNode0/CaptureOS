@@ -24,6 +24,7 @@ const optionsCache = {};
 
 export default function AIButton({ orgId, label, icon: Icon = Sparkles, onStart, onDone,
                                    lockEngine = "", disabled = false, disabledReason = "",
+                                   note = "",
                                    compact = false, className = "", testid = "ai-button" }) {
   const [opts, setOpts] = useState(optionsCache[orgId] || null);
   const [engine, setEngine] = useState(lockEngine || "");
@@ -107,7 +108,14 @@ export default function AIButton({ orgId, label, icon: Icon = Sparkles, onStart,
   return (
     <div className={`inline-flex flex-col gap-1.5 ${className}`}>
       <div className="flex flex-wrap items-center gap-1.5">
-        {!lockEngine && (
+        {lockEngine ? (
+          <select className={sel} value={lockEngine} disabled data-testid={`${testid}-engine`}
+                  title="This action needs live web search, available on the Anthropic engine">
+            <option value={lockEngine}>
+              {(opts?.engines || []).find((e) => e.id === lockEngine)?.label || "Anthropic"}
+            </option>
+          </select>
+        ) : (
           <select className={sel} value={activeEngine} data-testid={`${testid}-engine`}
                   onChange={(e) => { setEngine(e.target.value); setModel(""); }}>
             {!activeEngine && <option value="">Select API</option>}
@@ -144,6 +152,9 @@ export default function AIButton({ orgId, label, icon: Icon = Sparkles, onStart,
         )}
       </div>
 
+      {note && !running && (
+        <div className="text-[11px] text-faint">{note}</div>
+      )}
       {noKeys && (
         <div className="text-[11px] text-warn">
           No AI keys configured — <Link to="/settings" className="underline">add them in Settings</Link>.
