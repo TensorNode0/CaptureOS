@@ -10,6 +10,7 @@ from utils import now_utc, serialize, as_uuid
 from rbac import require_role
 from domain import write_audit
 import venture_ai
+import ai_jobs
 import genai
 import exports
 import org_keys
@@ -76,25 +77,38 @@ async def create_doc(body: DocIn, ctx: dict = Depends(require_role("editor"))):
 class DraftIn(BaseModel):
     engine: str = "claude"
     notes: str = Field(default="", max_length=2000)
+    model: str = ""
+    effort: str = "standard"
 
 
 async def _run_draft(doc_id, engine, keys, org, profile, kind, target, notes,
-                     user, org_id):
+                     user, org_id, model="", effort="", job_id=None):
     try:
-        md, data, model = await venture_ai.draft(
-            engine, keys, kind, org, profile, target, notes)
+        md, data, used_model = await venture_ai.draft(
+            engine, keys, kind, org, profile, target, notes,
+            model=model, effort=effort, job_id=job_id)
+        if job_id:
+            await ai_jobs.stage(job_id, "Saving the draft…", 95)
         await db.execute(
             """update venture_docs
                set content_md = $2, content_json = $3, draft_status = 'idle',
                    draft_error = '', model = $4, updated_at = $5
                where id = $1""",
-            doc_id, md, data, model, now_utc())
+            doc_id, md, data, used_model, now_utc())
+        if job_id:
+            await ai_jobs.finish(job_id, "Draft ready")
         await write_audit(org_id, user, "venture.draft", kind,
-                          {"engine": engine, "model": model})
+                          {"engine": engine, "model": used_model})
+    except ai_jobs.JobCancelled:
+        await db.execute(
+            """update venture_docs set draft_status = 'idle', draft_error = '',
+               updated_at = $2 where id = $1""", doc_id, now_utc())
     except Exception as e:  # noqa: BLE001
         msg = str(e)
         if "authentication" in msg.lower() or "401" in msg.lower():
             msg = "The AI provider rejected the API key. Update it in Settings → API Keys."
+        if job_id:
+            await ai_jobs.fail(job_id, msg)
         await db.execute(
             """update venture_docs
                set draft_status = 'error', draft_error = $2, updated_at = $3
@@ -122,11 +136,15 @@ async def draft_doc(docId: str, body: DraftIn,
         doc["id"], now_utc())
     profile = await db.fetchrow(
         "select * from org_profiles where organization_id = $1", ctx["org_id"])
+    job_id = await ai_jobs.create(ctx["org_id"], ctx["user"], "venture.draft",
+                                  ref_id=str(doc["id"]), engine=engine,
+                                  model=body.model, effort=body.effort)
     asyncio.create_task(_run_draft(
         doc["id"], engine, keys, serialize(ctx["org"]), serialize(profile),
         doc["kind"], doc.get("target", ""), body.notes,
-        ctx["user"], ctx["org_id"]))
-    return {"ok": True, "status": "drafting"}
+        ctx["user"], ctx["org_id"], model=body.model, effort=body.effort,
+        job_id=job_id))
+    return {"ok": True, "status": "drafting", "jobId": str(job_id)}
 
 
 class DocUpdate(BaseModel):
@@ -187,3 +205,47 @@ async def download_doc(docId: str, ctx: dict = Depends(require_role("viewer"))):
     await write_audit(ctx["org_id"], ctx["user"], "venture.download", doc.get("title"))
     return Response(content=data, media_type=MEDIA_TYPES[fmt],
                     headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+class FromProgramIn(BaseModel):
+    name: str = Field(min_length=2, max_length=200)
+    url: str = Field(default="", max_length=500)
+    model: str = ""
+
+
+@router.post("/{orgId}/venture-docs/from-program")
+async def create_from_program(body: FromProgramIn,
+                              ctx: dict = Depends(require_role("editor"))):
+    """Start an accelerator application from a program's own page: fetch the
+    URL, AI-extract its real questions + tips, scaffold the answers."""
+    import httpx
+    page_text = ""
+    if body.url:
+        if not body.url.lower().startswith(("http://", "https://")):
+            raise HTTPException(status_code=400, detail="URL must start with http(s)://")
+        try:
+            async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+                r = await client.get(body.url, headers={"User-Agent": "CaptureAgent/1.0"})
+                if r.status_code < 400:
+                    import re as _re
+                    page_text = _re.sub(r"<[^>]+>", " ", r.text)
+                    page_text = _re.sub(r"\s+", " ", page_text)[:40000]
+        except Exception:  # noqa: BLE001 — page fetch is best-effort
+            page_text = ""
+    keys = await org_keys.get_keys(ctx["org_id"], ctx["user"], purpose="venture.from_program")
+    profile = await db.fetchrow(
+        "select * from org_profiles where organization_id = $1", ctx["org_id"])
+    md, model_used = await venture_ai.form_from_program(
+        keys.get("anthropic", ""), body.name.strip(), page_text,
+        serialize(ctx["org"]), serialize(profile), model=body.model)
+    row = await db.fetchrow(
+        """insert into venture_docs (organization_id, kind, target, title,
+                                     content_md, model, created_by)
+           values ($1, 'accelerator_application', $2, $3, $4, $5, $6) returning *""",
+        ctx["org_id"], body.name.strip(),
+        f"Accelerator application — {body.name.strip()}", md, model_used,
+        as_uuid(ctx["user"]["id"]))
+    await write_audit(ctx["org_id"], ctx["user"], "venture.from_program",
+                      body.name.strip(), {"hadPage": bool(page_text),
+                                          "tailored": bool(model_used)})
+    return serialize(row)

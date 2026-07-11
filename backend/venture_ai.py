@@ -12,7 +12,12 @@ KINDS = {
     "business_plan":           {"title": "Business plan",           "fmt": "docx"},
     "financials":              {"title": "Financial model",         "fmt": "xlsx"},
     "accelerator_application": {"title": "Accelerator application", "fmt": "docx"},
+    "investor_scan":           {"title": "Tailored investor scan",  "fmt": "docx"},
+    "accelerator_scan":        {"title": "Tailored accelerator scan", "fmt": "docx"},
 }
+
+# Scan kinds research the live web, so they run Claude with web search.
+WEB_SEARCH_KINDS = {"investor_scan", "accelerator_scan"}
 
 SYSTEM = (
     "You are a defense-tech founder coach who has raised from top venture firms "
@@ -94,6 +99,30 @@ def _prompt(kind, ctx_text, target, notes):
             "category (the sheet computes margins). Use [FILL] basis notes rather than "
             "inventing customer counts."
         )
+    if kind == "investor_scan":
+        return (
+            f"{ctx_text}\n{extra}\n"
+            "Use web_search to find CURRENT defense/space/deep-tech investors that "
+            "genuinely fit this company's stage, sector, and traction — beyond the "
+            "obvious mega-funds. Verify each is actively investing (recent checks). "
+            "Output a markdown report: ## Best-fit investors (table: investor | why "
+            "this fit | check size | stage | recent relevant investment | source), "
+            "## Warm-path ideas (who in their portfolio/network overlaps), "
+            "## Outreach order (prioritized 5 with one-line rationale). NEVER invent "
+            "an investor or a check size — cite a source URL per row or mark "
+            "unverified. Markdown ONLY."
+        )
+    if kind == "accelerator_scan":
+        return (
+            f"{ctx_text}\n{extra}\n"
+            "Use web_search to find CURRENTLY OPEN or upcoming accelerator/incubator "
+            "cohorts that fit this company (defense/space/dual-use aware). Verify "
+            "application windows on the program sites. Output a markdown report: "
+            "## Open now (table: program | due date | duration | terms | attendance | "
+            "why this fit | source), ## Opening soon, ## Skip and why (programs that "
+            "look relevant but aren't for this stage). NEVER invent dates or terms — "
+            "cite a source URL per row or mark unverified. Markdown ONLY."
+        )
     # accelerator_application
     return (
         f"{ctx_text}\n{tgt}{extra}\n"
@@ -108,22 +137,99 @@ def _prompt(kind, ctx_text, target, notes):
     )
 
 
-async def draft(engine, keys, kind, org, profile, target="", notes=""):
+async def draft(engine, keys, kind, org, profile, target="", notes="",
+                model="", effort="", job_id=None):
     """Returns (content_md, content_json, model)."""
+    import ai_jobs
     if kind not in KINDS:
         raise ValueError(f"Unknown document kind: {kind}")
     ctx_text = _org_context(org, profile)
     fmt = KINDS[kind]["fmt"]
     prompt = _prompt(kind, ctx_text, target, notes)
-    text, model = await genai.generate(engine, keys, SYSTEM, prompt, max_tokens=8000)
+    if job_id:
+        await ai_jobs.stage(job_id, f"Writing the {KINDS[kind]['title'].lower()}…", 15)
+    text, used_model, usage = await genai.generate(
+        engine, keys, SYSTEM, prompt, max_tokens=8000, model=model, effort=effort,
+        web_search=(kind in WEB_SEARCH_KINDS))
+    if job_id:
+        await ai_jobs.add_usage(job_id, used_model, usage)
+        await ai_jobs.stage(job_id, "Draft received — validating…", 85)
     if fmt in ("pptx", "xlsx"):
         data = genai.extract_json(text)
         if data is None:
             raise ValueError("The AI returned an unparseable draft. Try again.")
-        return "", data, model
+        return "", data, used_model
     md = (text or "").strip()
     if md.startswith("```"):
         md = md.strip("`").lstrip("markdown").strip()
     if not md:
         raise ValueError("The AI returned an empty draft. Try again.")
-    return md, {}, model
+    return md, {}, used_model
+
+
+GENERIC_APPLICATION_TEMPLATE = """# {name} — Application draft
+
+*Tip: add your Anthropic API key in Settings and re-run "Generate form from
+program page" to get this program's ACTUAL questions with tailored guidance.*
+
+## What does your company do? (one-liner + expanded)
+[FILL]
+*Tip: lead with the customer problem, not the technology.*
+
+## What problem are you solving, and for whom?
+[FILL]
+
+## Describe your solution and current status (demo/prototype/fielded)
+[FILL]
+
+## Traction (contracts, pilots, LOIs, revenue)
+[FILL]
+*Tip: SBIR awards and signed pilot agreements count — cite numbers.*
+
+## Team — who are you and why you?
+[FILL]
+
+## What do you want from this program?
+[FILL]
+*Tip: name specific mentors, customers, or facilities the program offers.*
+
+## Milestones for the cohort period
+[FILL]
+
+## Funding status and runway
+[FILL]
+"""
+
+
+async def form_from_program(anthropic_key, name, page_text, org, profile,
+                            model="", job_id=None):
+    """Extract a program's actual application questions from its page text and
+    scaffold answers with tips. Falls back to a generic template without a key."""
+    import ai_jobs
+    if not anthropic_key or not page_text:
+        return GENERIC_APPLICATION_TEMPLATE.format(name=name), ""
+    if job_id:
+        await ai_jobs.stage(job_id, "Reading the program page and extracting questions…", 30)
+    ctx_text = _org_context(org, profile)
+    prompt = (
+        f"{ctx_text}\n"
+        f"PROGRAM: {name}\n"
+        f"PROGRAM PAGE TEXT (truncated):\n{page_text[:40000]}\n\n"
+        "Build this program's application as markdown: a ## heading per question "
+        "you can identify from the page (application questions, eligibility asks, "
+        "selection criteria reworded as questions). Under each: a drafted answer "
+        "grounded in the company context ([FILL] where founder input is needed) "
+        "and a one-line *Tip:* on what strong applications do for that question, "
+        "informed by the program's stated criteria. If the page shows deadlines/"
+        "eligibility, open with a '## Key facts' section quoting them. If you "
+        "cannot find real questions on the page, produce the standard accelerator "
+        "question set instead and say so. Markdown ONLY."
+    )
+    text, used_model, usage = await genai.claude_generate(
+        anthropic_key, SYSTEM, prompt, max_tokens=8000, model=model)
+    if job_id:
+        await ai_jobs.add_usage(job_id, used_model, usage)
+    md = (text or "").strip()
+    if md.startswith("```"):
+        md = md.strip("`").lstrip("markdown").strip()
+    return md or GENERIC_APPLICATION_TEMPLATE.format(name=name), used_model

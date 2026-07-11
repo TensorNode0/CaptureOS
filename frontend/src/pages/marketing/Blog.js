@@ -4,6 +4,19 @@ import { ArrowLeft, ArrowRight } from "lucide-react";
 import MarketingLayout from "./MarketingLayout";
 
 const POSTS = {
+  "dow-customer-discovery-2026-peo-directory": {
+    date: "2026-07-11",
+    tag: "FIELD GUIDE",
+    title: "Selling to the DoW: customer discovery and the 2026 PEO directory",
+    summary: "The Department of War is not one customer — it's dozens of Program Executive Offices, each with its own budget and priorities. Here's how to find yours, and the directory that maps them all.",
+    body: [
+      "Ask a first-time defense founder who their customer is and you'll hear \"the DoD\" — now the Department of War. That answer has cost startups years. The department doesn't buy as one entity: acquisition authority and budget live in Program Executive Offices, portfolio organizations that each own a family of programs — Army aviation, Navy submarines, Air Force battle management, Space Force sensing. Each PEO is, for practical purposes, a different customer with its own priorities, budget lines, and people.",
+      "That's why Stanford's Gordian Knot Center publishes the Program Executive Offices Directory — the 2026 edition is out now at gordianknot.fsi.stanford.edu, with a downloadable PDF and a newsletter subscription for future editions. Steve Blank, who helped create it, frames it exactly right: you can't do customer discovery if you can't find the customer. The Silicon Valley Defense Group's DoW Directory rounds out the map with the innovation organizations — AFWERX, DIU, NavalX, the Tech Bridges — that serve as front doors into those PEOs.",
+      "The discovery motion looks like commercial customer discovery with different nouns. Map your product to the two or three PEOs whose portfolios actually cover it. Find the program offices under them — that's where requirements are written and SBIR topics originate. Trace recent awards out of those offices to see what they really buy. Then find the named humans: the program manager, the technical point of contact on the SBIR topic, the contracting officer on the solicitation. Warm paths beat cold email: a Phase I award, an accelerator cohort, a Hacking-for-Defense connection.",
+      "We built this motion into CaptureAgent. The proposal workspace now has a customer card: pick your commercial market (dual-use matters — to investors and to the department), then the government customer — sector, branch, and the PEO straight from the directory structure, plus your TPOC and contracting officer. An AI check verifies the directory entry is still current, because PEOs get reorganized more often than directories get reprinted.",
+      "Read the full field guide in our Resources section (DoW customer discovery: find your PEO before you write a line), then go find your PEO. The customer exists — the directory is how you find their address.",
+    ],
+  },
   "introducing-captureagent": {
     date: "2026-07-06",
     tag: "ANNOUNCEMENT",
@@ -19,7 +32,7 @@ const POSTS = {
   },
 };
 
-const ORDER = ["introducing-captureagent"];
+const ORDER = ["dow-customer-discovery-2026-peo-directory", "introducing-captureagent"];
 
 export function BlogIndex() {
   return (

@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from "react";
-import { Plus, Sparkles, Download, PencilLine, Trash2, CheckCircle2, AlertTriangle, Bot, Inbox } from "lucide-react";
+import { Plus, Download, PencilLine, Trash2, CheckCircle2, AlertTriangle, Inbox } from "lucide-react";
 import { toast } from "sonner";
 import { api, errMsg } from "../../lib/api";
 import { useAuth } from "../../context/AuthContext";
 import { Card, SectionLabel, Pill, Skeleton, EmptyState, PageReveal, Modal, Field, Spinner } from "../../components/ui";
+import AIButton from "../../components/AIButton";
 import { fmtDateTime, canEdit } from "../../lib/helpers";
 
 function downloadBlob(data, filename) {
@@ -21,8 +22,8 @@ export default function VentureWorkspace({ title, sectionLabel, blurb, kinds, te
   const { activeOrgId, activeOrg } = useAuth();
   const editor = canEdit(activeOrg?.role);
   const [docs, setDocs] = useState(null);
-  const [engine, setEngine] = useState("claude");
-  const [secrets, setSecrets] = useState(null);
+
+
   const [showCreate, setShowCreate] = useState(false);
   const [editDoc, setEditDoc] = useState(null);
   const [busy, setBusy] = useState("");
@@ -35,7 +36,7 @@ export default function VentureWorkspace({ title, sectionLabel, blurb, kinds, te
   useEffect(() => {
     if (!activeOrgId) return;
     load().catch(() => setDocs([]));
-    api.get(`/orgs/${activeOrgId}/secrets/status`).then((r) => setSecrets(r.data)).catch(() => {});
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeOrgId]);
 
@@ -47,12 +48,11 @@ export default function VentureWorkspace({ title, sectionLabel, blurb, kinds, te
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docs]);
 
-  const draft = async (doc, notes = "") => {
-    try {
-      await api.post(`/orgs/${activeOrgId}/venture-docs/${doc.id}/draft`, { engine, notes });
-      toast.success("Drafting started", { description: "The AI is writing — this usually takes under two minutes." });
-      await load();
-    } catch (e) { toast.error(errMsg(e)); }
+  const draft = (doc) => async ({ engine: eng, model, effort }) => {
+    const { data } = await api.post(`/orgs/${activeOrgId}/venture-docs/${doc.id}/draft`,
+      { engine: eng, model: model || "", effort: effort || "standard" });
+    await load();
+    return data; // jobId powers the telemetry panel
   };
 
   const del = async (doc) => {
@@ -86,18 +86,6 @@ export default function VentureWorkspace({ title, sectionLabel, blurb, kinds, te
           <p className="mt-1 max-w-2xl text-xs text-faint">{blurb}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {editor && (
-            <label className="flex items-center gap-2 text-xs text-dim">
-              <Bot size={14} className="text-faint" />
-              <select className="field w-auto py-1.5 text-xs" value={engine}
-                onChange={(e) => setEngine(e.target.value)} data-testid={`${testid}-engine`}>
-                <option value="claude">Claude</option>
-                <option value="openai" disabled={!secrets?.openaiSet}>ChatGPT{secrets?.openaiSet ? "" : " (no key)"}</option>
-                <option value="emergent" disabled={!secrets?.emergentSet}>Emergent{secrets?.emergentSet ? "" : " (no key)"}</option>
-                <option value="asksage" disabled={!secrets?.asksageSet}>AskSage{secrets?.asksageSet ? "" : " (no key)"}</option>
-              </select>
-            </label>
-          )}
           {editor && (
             <button className="btn btn-primary" onClick={() => setShowCreate(true)} data-testid={`${testid}-new`}>
               <Plus size={16} /> New document
@@ -146,11 +134,10 @@ export default function VentureWorkspace({ title, sectionLabel, blurb, kinds, te
                 </div>
                 <div className="mt-auto flex flex-wrap gap-1.5 pt-3">
                   {editor && (
-                    <button className="btn btn-primary px-3 py-1.5 text-xs" disabled={drafting}
-                      onClick={() => draft(doc)} data-testid={`vdraft-${doc.id}`}>
-                      {drafting ? <Spinner size={13} /> : <Sparkles size={13} />}
-                      {drafting ? "Drafting…" : hasContent ? "Redraft" : "Draft with AI"}
-                    </button>
+                    <AIButton orgId={activeOrgId} compact
+                      label={drafting ? "Drafting…" : hasContent ? "Redraft" : "Draft with AI"}
+                      onStart={draft(doc)} onDone={load}
+                      disabled={drafting} testid={`vdraft-${doc.id}`} />
                   )}
                   {editor && hasContent && !drafting && doc.contentMd !== undefined && (
                     <button className="btn btn-ghost px-3 py-1.5 text-xs" onClick={() => setEditDoc(doc)}>
@@ -213,7 +200,13 @@ function CreateModal({ open, onClose, orgId, kinds, onCreated, testid }) {
         </Field>
         <Field label={meta.targetLabel} hint="Used to tailor the draft.">
           <input className="field" value={target} onChange={(e) => setTarget(e.target.value)}
-            placeholder={meta.targetPlaceholder} />
+            placeholder={meta.targetPlaceholder}
+            list={meta.targetOptions ? `${testid}-target-options` : undefined} />
+          {meta.targetOptions && (
+            <datalist id={`${testid}-target-options`}>
+              {meta.targetOptions.map((o) => <option key={o} value={o} />)}
+            </datalist>
+          )}
         </Field>
         <Field label="Notes for the AI (optional)" hint="Your ask, stage, numbers you want used.">
           <textarea className="field min-h-[70px]" value={notes} onChange={(e) => setNotes(e.target.value)} />

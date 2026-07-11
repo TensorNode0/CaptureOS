@@ -2,13 +2,19 @@ import React, { useCallback, useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   ArrowLeft, Sparkles, Save, Download, FileText, FileSpreadsheet,
-  Presentation, Package, CheckCircle2, AlertTriangle, PencilLine, Bot, Gauge,
+  Presentation, Package, CheckCircle2, AlertTriangle, PencilLine, Gauge,
+  Crosshair, ExternalLink,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api, errMsg } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { Card, SectionLabel, Pill, Spinner, PageReveal, EmptyState, Modal, Field } from "../components/ui";
 import { canEdit, canCreateProposal, canSubmitProposal } from "../lib/helpers";
+import AIButton from "../components/AIButton";
+import {
+  PEO_SOURCES, GOV_SECTORS, CIVIL_AGENCIES, DEFENSE_BRANCHES, IC_AGENCIES,
+  COMMERCIAL_MARKETS,
+} from "../lib/peoDirectory";
 
 const FMT_META = {
   docx: { icon: FileText, label: "Word", tone: "cyan" },
@@ -43,8 +49,6 @@ export default function ProposalWorkspace() {
   const admin = canSubmitProposal(activeOrg?.role);
   const [opp, setOpp] = useState(null);
   const [proposal, setProposal] = useState(undefined);
-  const [secrets, setSecrets] = useState(null);
-  const [engine, setEngine] = useState("claude");
   const [busy, setBusy] = useState("");
   const [editDoc, setEditDoc] = useState(null);
 
@@ -59,7 +63,6 @@ export default function ProposalWorkspace() {
     api.get(`/orgs/${activeOrgId}/opportunities/${id}`).then((r) => setOpp(r.data))
       .catch((e) => { toast.error(errMsg(e)); navigate("/opportunities"); });
     load().catch((e) => toast.error(errMsg(e)));
-    api.get(`/orgs/${activeOrgId}/secrets/status`).then((r) => setSecrets(r.data)).catch(() => {});
   }, [activeOrgId, id, load, navigate]);
 
   const anyDrafting = (proposal?.documents || []).some((d) => d.draftStatus === "drafting");
@@ -90,16 +93,12 @@ export default function ProposalWorkspace() {
     finally { setBusy(""); }
   };
 
-  const draft = async (doc) => {
-    setBusy(`draft-${doc.id}`);
-    try {
-      await api.post(
-        `/orgs/${activeOrgId}/opportunities/${id}/proposal/documents/${doc.id}/draft`,
-        { engine });
-      toast.info(`Drafting ${doc.title} with ${engine === "openai" ? "ChatGPT" : "Claude"}…`);
-      await load();
-    } catch (e) { toast.error(errMsg(e)); }
-    finally { setBusy(""); }
+  const draft = (doc) => async ({ engine: eng, model, effort }) => {
+    const { data } = await api.post(
+      `/orgs/${activeOrgId}/opportunities/${id}/proposal/documents/${doc.id}/draft`,
+      { engine: eng, model: model || "", effort: effort || "standard" });
+    await load();
+    return data; // jobId powers the telemetry panel
   };
 
   const finalize = async (doc) => {
@@ -141,17 +140,16 @@ export default function ProposalWorkspace() {
     finally { setBusy(""); }
   };
 
-  const evaluate = async () => {
-    setBusy("eval");
-    const tid = toast.loading("Running the AI color-team evaluation…");
-    try {
-      const { data } = await api.post(
-        `/orgs/${activeOrgId}/opportunities/${id}/proposal/evaluate`,
-        { engine }, { timeout: 180000 });
-      setProposal((p) => ({ ...p, evaluation: data, evaluatedAt: new Date().toISOString() }));
-      toast.success(`Evaluation complete — ${data.overallScore}/100 (${data.colorReview} team)`, { id: tid });
-    } catch (e) { toast.error(errMsg(e), { id: tid }); }
-    finally { setBusy(""); }
+  const evaluate = async ({ engine: eng, model, effort }) => {
+    const { data } = await api.post(
+      `/orgs/${activeOrgId}/opportunities/${id}/proposal/evaluate`,
+      { engine: eng, model: model || "", effort: effort || "standard" });
+    return data; // jobId — panel streams progress; onDone reloads the report
+  };
+
+  const reloadProposal = async () => {
+    const { data } = await api.get(`/orgs/${activeOrgId}/opportunities/${id}/proposal`);
+    setProposal(data);
   };
 
   const markSubmitted = async () => {
@@ -197,24 +195,7 @@ export default function ProposalWorkspace() {
             data-testid="goto-capability">
             <Sparkles size={15} /> Capability
           </button>
-          {editor && proposal && (
-            <label className="flex items-center gap-2 text-xs text-dim">
-              <Bot size={14} className="text-faint" />
-              <select className="field w-auto py-1.5 text-xs" value={engine}
-                onChange={(e) => setEngine(e.target.value)} data-testid="engine-select">
-                <option value="claude">Claude</option>
-                <option value="openai" disabled={!secrets?.openaiSet}>
-                  ChatGPT{secrets?.openaiSet ? "" : " (no key)"}
-                </option>
-                <option value="emergent" disabled={!secrets?.emergentSet}>
-                  Emergent{secrets?.emergentSet ? "" : " (no key)"}
-                </option>
-                <option value="asksage" disabled={!secrets?.asksageSet}>
-                  AskSage{secrets?.asksageSet ? "" : " (no key)"}
-                </option>
-              </select>
-            </label>
-          )}
+          {/* engine/model/effort now live on each Draft button (AIButton) */}
           {proposal && drafted > 0 && (
             <button className="btn btn-primary" onClick={downloadZip} disabled={busy === "zip"}
               data-testid="download-zip">
@@ -243,6 +224,11 @@ export default function ProposalWorkspace() {
               <span className="text-xs text-faint">Your capture manager creates the proposal package.</span>
             )} />
         </Card>
+      )}
+
+      {proposal && (
+        <CustomerCard proposal={proposal} setProposal={setProposal}
+          orgId={activeOrgId} oppId={id} editor={editor} />
       )}
 
       {proposal && (
@@ -280,11 +266,10 @@ export default function ProposalWorkspace() {
 
                 <div className="mt-auto flex flex-wrap gap-1.5 pt-2">
                   {editor && (
-                    <button className="btn btn-primary px-3 py-1.5 text-xs" onClick={() => draft(doc)}
-                      disabled={drafting || !!busy} data-testid={`draft-${doc.docType}`}>
-                      {drafting ? <Spinner size={13} /> : <Sparkles size={13} />}
-                      {drafting ? "Drafting…" : doc.status === "empty" ? "Draft with AI" : "Redraft"}
-                    </button>
+                    <AIButton orgId={activeOrgId} compact
+                      label={drafting ? "Drafting…" : doc.status === "empty" ? "Draft with AI" : "Redraft"}
+                      onStart={draft(doc)} onDone={load}
+                      disabled={drafting} testid={`draft-${doc.docType}`} />
                   )}
                   {editor && doc.status !== "empty" && !drafting && (
                     <button className="btn btn-ghost px-3 py-1.5 text-xs" onClick={() => setEditDoc(doc)}
@@ -322,11 +307,14 @@ export default function ProposalWorkspace() {
               </p>
             </div>
             {editor && (
-              <button className="btn btn-violet" onClick={evaluate} disabled={busy === "eval"}
-                data-testid="evaluate-proposal">
-                {busy === "eval" ? <Spinner /> : <Gauge size={15} />}
-                {proposal.evaluation ? "Re-evaluate with AI" : "Evaluate with AI"}
-              </button>
+              <AIButton orgId={activeOrgId} icon={Gauge}
+                label={proposal.evaluation ? "Re-evaluate with AI" : "Evaluate with AI"}
+                onStart={evaluate} onDone={reloadProposal}
+                disabled={drafted < docs.length}
+                disabledReason={drafted < docs.length
+                  ? `Finish every volume first — ${docs.length - drafted} still empty. The AI evaluates the complete package.`
+                  : ""}
+                testid="evaluate-proposal" />
             )}
           </div>
 
@@ -409,6 +397,167 @@ export default function ProposalWorkspace() {
       <DocEditor doc={editDoc} onClose={() => setEditDoc(null)} orgId={activeOrgId} oppId={id}
         onSaved={async () => { setEditDoc(null); await load(); }} />
     </PageReveal>
+  );
+}
+
+/* Who the proposal serves: commercial market + government customer down to
+   the PEO, TPOC, and contracting officer — with an AI directory-currency
+   check against the Stanford Gordian Knot 2026 PEO directory. */
+function CustomerCard({ proposal, setProposal, orgId, oppId, editor }) {
+  const saved = proposal.customer || {};
+  const [form, setForm] = useState(saved);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => { setForm(proposal.customer || {}); }, [proposal.customer]);
+
+  const set = (k) => (e) => {
+    const v = e.target.value;
+    setForm((f) => {
+      const next = { ...f, [k]: v };
+      if (k === "sector") { next.branch = ""; next.agency = ""; next.peo = ""; }
+      if (k === "branch") next.peo = "";
+      return next;
+    });
+  };
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const { data } = await api.put(
+        `/orgs/${orgId}/opportunities/${oppId}/proposal/customer`, {
+          commercialMarket: form.commercialMarket || "",
+          sector: form.sector || "", branch: form.branch || "",
+          agency: form.agency || "", peo: form.peo || "",
+          tpoc: form.tpoc || "", contractingOfficer: form.contractingOfficer || "",
+        });
+      setProposal(data);
+      toast.success("Customer saved");
+    } catch (e) { toast.error(errMsg(e)); }
+    finally { setSaving(false); }
+  };
+
+  const check = async ({ model, effort }) => {
+    const { data } = await api.post(
+      `/orgs/${orgId}/opportunities/${oppId}/proposal/customer/check`,
+      { engine: "claude", model: model || "", effort: effort || "standard" });
+    return data; // jobId → telemetry panel
+  };
+
+  const reload = async () => {
+    const { data } = await api.get(`/orgs/${orgId}/opportunities/${oppId}/proposal`);
+    setProposal(data);
+  };
+
+  const check_ = saved.aiCheck;
+  const isDefense = form.sector === "Defense";
+  const isIC = form.sector === "Intelligence Community";
+  const isCivil = form.sector === "Civil";
+  const dirty = JSON.stringify(form) !== JSON.stringify(saved);
+
+  return (
+    <Card className="p-5" data-testid="customer-card">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <SectionLabel>Customer</SectionLabel>
+          <p className="mt-1 max-w-2xl text-xs text-faint">
+            Who this proposal serves — the commercial market and the government
+            customer down to the program executive office, TPOC, and contracting
+            officer. Defense/IC structure follows the{" "}
+            {PEO_SOURCES.map((s, i) => (
+              <span key={s.href}>{i > 0 ? " · " : ""}
+                <a href={s.href} target="_blank" rel="noreferrer" className="text-cyan hover:underline">
+                  {i === 0 ? "Stanford 2026 PEO Directory" : i === 1 ? "SVDG DoW Directory" : "Steve Blank's guide"}
+                </a>
+              </span>
+            ))}.
+          </p>
+        </div>
+        {check_ && (
+          <div className="text-right">
+            <Pill tone={check_.upToDate ? "ok" : "warn"} data-testid="peo-check-pill">
+              <Crosshair size={11} /> {check_.upToDate ? "Up to date" : "Outdated"}
+            </Pill>
+            <div className="mt-1 max-w-[280px] text-[11px] leading-snug text-faint">
+              {check_.note}{" "}
+              {check_.source && (
+                <a href={check_.source} target="_blank" rel="noreferrer"
+                   className="text-cyan hover:underline">source <ExternalLink size={9} className="inline" /></a>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <Field label="Commercial market / user" hint="Dual-use matters — pick or type your own.">
+          <input className="field" value={form.commercialMarket || ""} onChange={set("commercialMarket")}
+            list="commercial-markets" placeholder="e.g. Critical infrastructure security"
+            disabled={!editor} data-testid="customer-market" />
+          <datalist id="commercial-markets">
+            {COMMERCIAL_MARKETS.map((m) => <option key={m} value={m} />)}
+          </datalist>
+        </Field>
+        <Field label="Government sector">
+          <select className="field" value={form.sector || ""} onChange={set("sector")}
+            disabled={!editor} data-testid="customer-sector">
+            <option value="">Select sector…</option>
+            {GOV_SECTORS.map((s) => <option key={s}>{s}</option>)}
+          </select>
+        </Field>
+        {isDefense && (
+          <Field label="Branch">
+            <select className="field" value={form.branch || ""} onChange={set("branch")}
+              disabled={!editor} data-testid="customer-branch">
+              <option value="">Select branch…</option>
+              {Object.keys(DEFENSE_BRANCHES).map((b) => <option key={b}>{b}</option>)}
+            </select>
+          </Field>
+        )}
+        {isDefense && form.branch && (
+          <Field label="Program Executive Office">
+            <select className="field" value={form.peo || ""} onChange={set("peo")}
+              disabled={!editor} data-testid="customer-peo">
+              <option value="">Select PEO…</option>
+              {(DEFENSE_BRANCHES[form.branch] || []).map((p) => <option key={p}>{p}</option>)}
+            </select>
+          </Field>
+        )}
+        {(isIC || isCivil) && (
+          <Field label="Agency">
+            <select className="field" value={form.agency || ""} onChange={set("agency")}
+              disabled={!editor} data-testid="customer-agency">
+              <option value="">Select agency…</option>
+              {(isIC ? IC_AGENCIES : CIVIL_AGENCIES).map((a) => <option key={a}>{a}</option>)}
+            </select>
+          </Field>
+        )}
+        {(form.sector || "") !== "" && (
+          <>
+            <Field label="TPOC (technical point of contact)">
+              <input className="field" value={form.tpoc || ""} onChange={set("tpoc")}
+                placeholder="Name · office · email" disabled={!editor} data-testid="customer-tpoc" />
+            </Field>
+            <Field label="Contracting officer">
+              <input className="field" value={form.contractingOfficer || ""} onChange={set("contractingOfficer")}
+                placeholder="Name · office · email" disabled={!editor} data-testid="customer-co" />
+            </Field>
+          </>
+        )}
+      </div>
+
+      {editor && (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button className="btn btn-primary" onClick={save} disabled={saving || !dirty}
+            data-testid="customer-save">
+            {saving ? <Spinner /> : <Save size={14} />} Save customer
+          </button>
+          {(saved.peo || saved.agency) && (
+            <AIButton orgId={orgId} compact lockEngine="claude" icon={Crosshair}
+              label="Check directory currency"
+              onStart={check} onDone={reload} testid="peo-check" />
+          )}
+        </div>
+      )}
+    </Card>
   );
 }
 

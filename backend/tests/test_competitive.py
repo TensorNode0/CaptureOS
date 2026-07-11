@@ -51,3 +51,13 @@ class TestCompetitive:
         s, _ = viewer_session
         r = s.get(f"{BASE_URL}/api/orgs/{org_id}/competitive", timeout=15)
         assert r.status_code == 200
+
+    def test_market_default_shape(self, admin_session, org_id):
+        s, _ = admin_session
+        r = s.get(f"{BASE_URL}/api/orgs/{org_id}/competitive/market/naics", timeout=60)
+        # network-dependent: tolerate 502 from USASpending hiccups, but the
+        # shape must be right when it succeeds
+        assert r.status_code in (200, 502)
+        if r.status_code == 200:
+            body = r.json()
+            assert "topPrimes" in body and "topSubs" in body and "naics" in body

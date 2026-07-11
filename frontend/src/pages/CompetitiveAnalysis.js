@@ -4,7 +4,8 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGri
 import { toast } from "sonner";
 import { api, errMsg } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
-import { Card, SectionLabel, Pill, Skeleton, EmptyState, PageReveal, Field, Spinner } from "../components/ui";
+import { Card, SectionLabel, Pill, Skeleton, EmptyState, PageReveal, Field } from "../components/ui";
+import AIButton from "../components/AIButton";
 import { fmtMoney, fmtDateTime, canEdit } from "../lib/helpers";
 
 export default function CompetitiveAnalysis() {
@@ -14,7 +15,9 @@ export default function CompetitiveAnalysis() {
   const [report, setReport] = useState(null);
   const [competitor, setCompetitor] = useState("");
   const [naics, setNaics] = useState("");
-  const [running, setRunning] = useState(false);
+  const [pendingReportId, setPendingReportId] = useState(null);
+  const [reportQ, setReportQ] = useState("");
+  const [market, setMarket] = useState(undefined); // undefined=loading, null=failed
 
   const load = async () => {
     const { data } = await api.get(`/orgs/${activeOrgId}/competitive`);
@@ -24,6 +27,8 @@ export default function CompetitiveAnalysis() {
   useEffect(() => {
     if (!activeOrgId) return;
     load().catch(() => setReports([]));
+    api.get(`/orgs/${activeOrgId}/competitive/market/naics`)
+      .then((r) => setMarket(r.data)).catch(() => setMarket(null));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeOrgId]);
 
@@ -34,30 +39,26 @@ export default function CompetitiveAnalysis() {
     } catch (e) { toast.error(errMsg(e)); }
   };
 
-  const run = async (e) => {
-    e.preventDefault();
-    setRunning(true);
-    const tid = toast.loading(`Analyzing ${competitor} — pulling USASpending award data and running OSINT…`);
-    try {
-      const { data } = await api.post(`/orgs/${activeOrgId}/competitive`,
-        { competitor, naics });
-      for (let i = 0; i < 60; i++) {
-        await new Promise((res) => setTimeout(res, 5000));
-        const { data: rep } = await api.get(`/orgs/${activeOrgId}/competitive/${data.reportId}`);
-        if (rep.status === "done") {
-          toast.success("Analysis complete", { id: tid });
-          setReport(rep); await load(); setRunning(false); setCompetitor(""); setNaics("");
-          return;
-        }
-        if (rep.status === "error") {
-          toast.error(rep.error || "Analysis failed", { id: tid });
-          await load(); setRunning(false);
-          return;
-        }
-      }
-      toast.info("Still running — it will appear in the list when done", { id: tid });
-    } catch (err) { toast.error(errMsg(err), { id: tid }); }
-    finally { setRunning(false); }
+  const run = async ({ engine, model, effort }) => {
+    if (!competitor || competitor.trim().length < 2) {
+      throw new Error("Enter the competitor's registered legal name first");
+    }
+    const { data } = await api.post(`/orgs/${activeOrgId}/competitive`,
+      { competitor, naics, model: model || "", effort: effort || "standard" });
+    setPendingReportId(data.reportId);
+    return data; // jobId → AIButton streams stage/tokens/cost
+  };
+
+  const onRunDone = async () => {
+    await load();
+    if (pendingReportId) {
+      try {
+        const { data: rep } = await api.get(`/orgs/${activeOrgId}/competitive/${pendingReportId}`);
+        if (rep.status === "done") { setReport(rep); setCompetitor(""); setNaics(""); }
+        else if (rep.error) toast.error(rep.error);
+      } catch { /* row list already refreshed */ }
+      setPendingReportId(null);
+    }
   };
 
   const del = async (e, r) => {
@@ -88,7 +89,7 @@ export default function CompetitiveAnalysis() {
 
       {editor && (
         <Card className="p-4">
-          <form onSubmit={run} className="flex flex-wrap items-end gap-3" data-testid="competitive-form">
+          <form onSubmit={(e) => e.preventDefault()} className="flex flex-wrap items-end gap-3" data-testid="competitive-form">
             <div className="min-w-[240px] flex-1">
               <Field label="Competitor (legal name as registered)">
                 <input className="field" required minLength={2} value={competitor}
@@ -102,10 +103,40 @@ export default function CompetitiveAnalysis() {
                   placeholder="541715" data-testid="competitor-naics" />
               </Field>
             </div>
-            <button type="submit" className="btn btn-primary" disabled={running} data-testid="run-analysis">
-              {running ? <Spinner /> : <Crosshair size={16} />} Run analysis
-            </button>
+            <AIButton orgId={activeOrgId} label="Run analysis" icon={Crosshair}
+              lockEngine="claude" onStart={run} onDone={onRunDone}
+              testid="run-analysis" />
           </form>
+        </Card>
+      )}
+
+      {!report && market !== null && (
+        <Card className="p-5" data-testid="market-panel">
+          <SectionLabel>Your market — top primes & subs (NAICS {(market?.naics || []).join(", ") || "…"})</SectionLabel>
+          <p className="mt-1 text-xs text-faint">
+            Defaults from the NAICS codes in your Company Profile — verified USASpending
+            obligations since FY2024. Click any name into the analysis box above to profile them.
+          </p>
+          {market === undefined ? (
+            <div className="mt-3 space-y-2">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-8" />)}</div>
+          ) : (
+            <div className="mt-3 grid gap-4 lg:grid-cols-2">
+              {[["Top primes", market.topPrimes], ["Top sub-awardees", market.topSubs]].map(([label, rows2]) => (
+                <div key={label}>
+                  <div className="label-mono mb-1.5">{label}</div>
+                  {(rows2 || []).length === 0 ? (
+                    <div className="text-xs text-faint">None found — add NAICS codes in your Company Profile.</div>
+                  ) : (rows2 || []).map((r) => (
+                    <button key={r.name} onClick={() => setCompetitor(r.name)}
+                      className="flex w-full items-center justify-between border-b border-line/60 py-1.5 text-left hover:bg-white/5">
+                      <span className="text-sm text-dim">{r.name}</span>
+                      <span className="mono text-xs text-ink">{fmtMoney(r.obligated)}</span>
+                    </button>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
         </Card>
       )}
 
@@ -180,6 +211,50 @@ export default function CompetitiveAnalysis() {
               </table>
             </Card>
           </div>
+
+          {a.profile && (a.profile.hq || a.profile.headcount || a.profile.capitalRaised) && (
+            <Card className="p-5" data-testid="company-profile-panel">
+              <SectionLabel>Company profile (OSINT)</SectionLabel>
+              <div className="mt-3 grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2 lg:grid-cols-3">
+                {a.profile.hq && <div><div className="label-mono">HQ</div><div className="text-dim">{a.profile.hq}</div></div>}
+                {(a.profile.locations || []).length > 0 && <div><div className="label-mono">Locations</div><div className="text-dim">{a.profile.locations.join("; ")}</div></div>}
+                {a.profile.headcount && <div><div className="label-mono">Headcount</div><div className="text-dim">{a.profile.headcount}</div></div>}
+                {a.profile.capitalRaised && <div><div className="label-mono">Capital raised</div><div className="text-dim">{a.profile.capitalRaised}</div></div>}
+                {a.profile.revenueEstimate && <div><div className="label-mono">Revenue</div><div className="text-dim">{a.profile.revenueEstimate}</div></div>}
+                {(a.profile.dualUseCustomers || []).length > 0 && <div><div className="label-mono">Dual-use customers</div><div className="text-dim">{a.profile.dualUseCustomers.join(", ")}</div></div>}
+              </div>
+              {(a.profile.headcountByArea || []).length > 0 && (
+                <div className="mt-4">
+                  <div className="label-mono mb-1.5">Headcount by area</div>
+                  <div className="flex flex-wrap gap-2">
+                    {a.profile.headcountByArea.map((h, i) => (
+                      <Pill key={i} tone="violet">{h.area}: {h.share}</Pill>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {(a.profile.salariesByRole || []).length > 0 && (
+                <div className="mt-4">
+                  <div className="label-mono mb-1.5">Salary benchmarks by role</div>
+                  <table className="w-full max-w-md text-sm">
+                    <tbody>
+                      {a.profile.salariesByRole.map((s, i) => (
+                        <tr key={i} className="border-b border-line/60">
+                          <td className="py-1.5 pr-2 text-dim">{s.role}</td>
+                          <td className="mono py-1.5 text-right text-ink">{s.range}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {a.profile.marketOutlook && (
+                <p className="mt-4 border-t border-line pt-3 text-xs leading-relaxed text-dim">
+                  <span className="label-mono">Market outlook · </span>{a.profile.marketOutlook}
+                </p>
+              )}
+            </Card>
+          )}
 
           {(a.insights || []).length > 0 && (
             <Card className="p-5">
@@ -276,7 +351,11 @@ export default function CompetitiveAnalysis() {
       )}
 
       <Card className="overflow-hidden">
-        <div className="p-4 pb-0"><SectionLabel>Past reports</SectionLabel></div>
+        <div className="flex flex-wrap items-center justify-between gap-2 p-4 pb-0">
+          <SectionLabel>Past reports</SectionLabel>
+          <input className="field !w-52 !py-1 text-xs" placeholder="Search competitor…"
+            value={reportQ} onChange={(e) => setReportQ(e.target.value)} data-testid="reports-search" />
+        </div>
         {reports === null ? (
           <div className="space-y-2 p-4">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-10" />)}</div>
         ) : reports.length === 0 ? (
@@ -285,7 +364,7 @@ export default function CompetitiveAnalysis() {
         ) : (
           <table className="w-full text-sm">
             <tbody>
-              {reports.map((r) => (
+              {reports.filter((r) => !reportQ || r.competitor.toLowerCase().includes(reportQ.toLowerCase())).map((r) => (
                 <tr key={r.id} onClick={() => r.status === "done" && open(r.id)}
                     className={`border-t border-line/60 ${r.status === "done" ? "cursor-pointer hover:bg-white/5" : ""}`}
                     data-testid={`report-row-${r.id}`}>

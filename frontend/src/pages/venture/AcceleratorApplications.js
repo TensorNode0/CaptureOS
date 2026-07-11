@@ -1,9 +1,11 @@
 import React from "react";
 import VentureWorkspace from "./VentureWorkspace";
+import { ACCELERATORS } from "../../lib/ventureData";
 
 const KINDS = [
   { kind: "accelerator_application", label: "Accelerator application", targetLabel: "Program",
-    targetPlaceholder: "Catalyst Accelerator — Spring cohort" },
+    targetPlaceholder: "Catalyst Accelerator — Spring cohort",
+    targetOptions: ACCELERATORS.map((a) => a.name) },
 ];
 
 export default function AcceleratorApplications() {

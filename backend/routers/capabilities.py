@@ -11,6 +11,7 @@ from utils import now_utc, serialize, as_uuid
 from rbac import require_role, require_perm
 from domain import write_audit
 import capability_ai
+import ai_jobs
 import exports
 import org_keys
 
@@ -47,22 +48,34 @@ def _cap_payload(cap):
     return out
 
 
-async def _run_generation(cap_id, api_key, org, profile, opp, user):
+async def _run_generation(cap_id, api_key, org, profile, opp, user,
+                          model="", effort="", job_id=None):
     try:
-        content, model = await capability_ai.generate_capability(
-            api_key, org, profile, opp)
+        content, used_model = await capability_ai.generate_capability(
+            api_key, org, profile, opp, model=model, effort=effort, job_id=job_id)
+        if job_id:
+            await ai_jobs.stage(job_id, "Saving the capability…", 95)
         await db.execute(
             """update capabilities
                set content = $2, model = $3, generation_status = 'ready',
                    generation_error = '', status = 'draft', updated_at = $4
                where id = $1""",
-            cap_id, content, model, now_utc())
+            cap_id, content, used_model, now_utc())
+        if job_id:
+            await ai_jobs.finish(job_id, "Capability ready")
         await write_audit(org["id"], user, "capability.generate",
-                          opp.get("title"), {"model": model})
+                          opp.get("title"), {"model": used_model})
+    except ai_jobs.JobCancelled:
+        await db.execute(
+            """update capabilities
+               set generation_status = 'idle', generation_error = '', updated_at = $2
+               where id = $1""", cap_id, now_utc())
     except Exception as e:  # noqa: BLE001
         msg = str(e)
         if "authentication" in msg.lower() or "401" in msg or "invalid x-api-key" in msg.lower():
             msg = "Anthropic rejected the API key. Update it in Settings → API Keys."
+        if job_id:
+            await ai_jobs.fail(job_id, msg)
         await db.execute(
             """update capabilities
                set generation_status = 'error', generation_error = $2, updated_at = $3
@@ -79,8 +92,15 @@ async def get_capability(oppId: str, ctx: dict = Depends(require_role("viewer"))
     return _cap_payload(cap)
 
 
+class GenerateIn(BaseModel):
+    model: str = ""
+    effort: str = "standard"
+
+
 @router.post("/{orgId}/opportunities/{oppId}/capability/generate")
-async def generate_capability(oppId: str, ctx: dict = Depends(require_perm("proposal.create"))):
+async def generate_capability(oppId: str, body: GenerateIn = None,
+                              ctx: dict = Depends(require_perm("proposal.create"))):
+    body = body or GenerateIn()
     opp = await _get_opp(ctx["org_id"], oppId)
     if not opp:
         raise HTTPException(status_code=404, detail="Opportunity not found")
@@ -109,10 +129,15 @@ async def generate_capability(oppId: str, ctx: dict = Depends(require_perm("prop
 
     profile = await db.fetchrow(
         "select * from org_profiles where organization_id = $1", ctx["org_id"])
+    job_id = await ai_jobs.create(ctx["org_id"], ctx["user"], "capability.generate",
+                                  ref_id=str(opp["id"]), engine="claude",
+                                  model=body.model, effort=body.effort)
     asyncio.create_task(_run_generation(
         cap["id"], api_key, serialize(ctx["org"]), serialize(profile),
-        serialize(opp), ctx["user"]))
-    return {"ok": True, "status": "generating", "capabilityId": str(cap["id"])}
+        serialize(opp), ctx["user"], model=body.model, effort=body.effort,
+        job_id=job_id))
+    return {"ok": True, "status": "generating", "capabilityId": str(cap["id"]),
+            "jobId": str(job_id)}
 
 
 class CapabilityUpdate(BaseModel):

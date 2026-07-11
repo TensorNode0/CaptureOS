@@ -42,6 +42,10 @@ Repo is usually private; user makes it public briefly (or uses GitHub import) wh
 - 2026-07-06/07: main @20e2266 (PR #6 marketing site, Resend real email, AOR, RBAC v2,
   admin permissions). Migration 0003 pre-applied by user's external dev. Pre-redeploy gate
   iteration_7: 100% pass (real Resend sends accepted, no token-link leaks, AOR gate enforced).
+- 2026-07-11: main @b936c85 (PR #25 home screenshots; #24 session idle timeout + proposal customer
+  card/PEO directory; #23 venture upgrades). Migrations 0011–0013 auto-applied. 0 app-file diffs
+  vs main. Secrets untouched (SECRETS_ENC_KEY immutable per user). AWAITING user Redeploy.
+  Note: backend/.env also carries REACT_APP_BACKEND_URL=https://captureagent.us (user-added; harmless).
 - 2026-07-10: main @6911b63 (PR #19 hero copy, PRs #7–#19: BYOK engines, notice status,
   proposal evaluation, venture docs, competitive reports, profile enrichment, subcontractor).
   Migrations 0004–0010 auto-applied. Preview smoke OK (new "TurboTax of GovCon" hero, Blog nav,
