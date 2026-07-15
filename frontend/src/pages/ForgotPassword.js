@@ -2,13 +2,12 @@ import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import AuthLayout from "./AuthLayout";
 import { Field, Spinner } from "../components/ui";
-import { api, errMsg } from "../lib/api";
+import { supabase } from "../lib/supabase";
 
 export default function ForgotPassword() {
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
-  const [resetUrl, setResetUrl] = useState("");
   const [error, setError] = useState("");
 
   const submit = async (e) => {
@@ -16,11 +15,15 @@ export default function ForgotPassword() {
     setError("");
     setLoading(true);
     try {
-      const { data } = await api.post("/auth/forgot-password", { email });
+      // Supabase emails the recovery link, which returns to /reset-password
+      // with a recovery session that supabase-js picks up automatically.
+      const { error: err } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      if (err) throw err;
       setDone(true);
-      if (data.resetUrl) setResetUrl(data.resetUrl);
     } catch (err) {
-      setError(errMsg(err));
+      setError(err?.message || "Could not send the reset link. Try again.");
     } finally {
       setLoading(false);
     }
@@ -37,14 +40,6 @@ export default function ForgotPassword() {
           <div className="rounded-lg border border-ok/30 bg-ok/10 p-3 text-sm text-ok">
             If that account exists, a reset link is on its way to your inbox.
           </div>
-          {resetUrl && (
-            <div className="rounded-lg border border-line bg-white/5 p-3 text-xs text-faint">
-              <div className="label-mono mb-1">Local development link</div>
-              <a href={resetUrl} className="break-all text-cyan hover:underline" data-testid="reset-link">
-                {resetUrl}
-              </a>
-            </div>
-          )}
         </div>
       ) : (
         <form onSubmit={submit} className="space-y-4" data-testid="forgot-form">

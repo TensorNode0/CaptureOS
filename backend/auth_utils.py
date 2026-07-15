@@ -27,6 +27,10 @@ JWT_ALGORITHM = "HS256"
 # Supabase signs user JWTs with the project JWT secret. In tests this is any
 # local value shared between the test-token minter and this validator.
 SUPABASE_JWT_SECRET = os.environ.get("SUPABASE_JWT_SECRET", "")
+# Project URL is used to reach the JWKS endpoint when the project signs tokens
+# with asymmetric keys (RS256/ES256) instead of the shared HS256 secret.
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
+_jwks_client = None
 # Test/demo convenience: when on, /auth/test-login can mint tokens and
 # auto-provision profiles without a live Supabase project. Never set in prod.
 AUTH_TEST_MODE = os.environ.get("AUTH_TEST_MODE", "0") == "1"
@@ -52,11 +56,35 @@ def _secret() -> str:
     return SUPABASE_JWT_SECRET
 
 
+def _get_jwks_client():
+    """Lazy JWKS client for the project's asymmetric signing keys."""
+    global _jwks_client
+    if _jwks_client is None and SUPABASE_URL:
+        from jwt import PyJWKClient
+        _jwks_client = PyJWKClient(
+            f"{SUPABASE_URL.rstrip('/')}/auth/v1/.well-known/jwks.json")
+    return _jwks_client
+
+
 def decode_supabase_token(token: str) -> dict:
-    """Validate a Supabase access token and return its claims. Audience is not
-    enforced (Supabase uses aud='authenticated'), signature + expiry are."""
-    return jwt.decode(token, _secret(), algorithms=[JWT_ALGORITHM],
-                      options={"verify_aud": False})
+    """Validate a Supabase access token, supporting BOTH signing schemes:
+    the legacy shared HS256 secret and asymmetric (RS256/ES256) signing keys
+    via the project's JWKS endpoint — so it works whichever the project uses,
+    now or after a future migration. Audience is not enforced (Supabase uses
+    aud='authenticated'); signature + expiry are."""
+    opts = {"verify_aud": False}
+    alg = jwt.get_unverified_header(token).get("alg", "HS256")
+    if alg == "HS256" and SUPABASE_JWT_SECRET:
+        try:
+            return jwt.decode(token, SUPABASE_JWT_SECRET, algorithms=["HS256"],
+                              options=opts)
+        except jwt.InvalidTokenError:
+            pass  # project may have switched to asymmetric signers — try JWKS
+    client = _get_jwks_client()
+    if client is not None:
+        key = client.get_signing_key_from_jwt(token).key
+        return jwt.decode(token, key, algorithms=["RS256", "ES256"], options=opts)
+    return jwt.decode(token, _secret(), algorithms=["HS256"], options=opts)
 
 
 def mint_supabase_token(auth_uid: str, email: str) -> str:
@@ -114,7 +142,7 @@ async def get_current_user(request: Request) -> dict:
         claims = decode_supabase_token(token)
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Session expired")
-    except jwt.InvalidTokenError:
+    except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
     auth_uid = claims.get("sub")
     if not as_uuid(auth_uid):
