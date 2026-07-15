@@ -76,8 +76,8 @@ export default function Home() {
                     transition={{ duration: 0.5 }}>
           <div className="label-mono mb-4 !text-cyan">Streamlining government capture</div>
           <h1 className="mx-auto max-w-3xl text-4xl font-bold leading-tight text-ink md:text-5xl">
-            The TurboTax of GovCon — an AI capture manager on your team that
-            wins federal work… and so much more!
+            The TurboTax Of GovCon — An AI Capture Manager On Your Team That
+            Wins Federal Work… And All Your Fundraising Needs!
           </h1>
           <p className="mx-auto mt-5 max-w-2xl text-lg text-dim">
             End-to-end GovCon lifecycle in <span className="text-ink">minutes, not months</span>.
