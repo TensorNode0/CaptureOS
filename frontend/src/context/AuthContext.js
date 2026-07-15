@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
 import { api, errMsg } from "../lib/api";
+import { supabase } from "../lib/supabase";
 
 const AuthContext = createContext(null);
 
@@ -38,41 +39,55 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     let active = true;
-    api.get("/auth/me")
-      .then(({ data }) => {
-        if (active && !authedRef.current) {
-          authedRef.current = true;
-          setUser(data);
-          syncActiveOrg(data);
-        }
-      })
-      .catch(() => { if (active && !authedRef.current) setUser(false); });
-    return () => { active = false; };
-  }, [syncActiveOrg]);
+    // Bootstrap: if supabase-js restored a session, hydrate the profile.
+    supabase.auth.getSession().then(({ data }) => {
+      if (!active) return;
+      if (data?.session) {
+        refreshUser();
+      } else {
+        setUser(false);
+      }
+    });
+    // React to sign-in / sign-out / token-refresh / email-confirmation links.
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!active) return;
+      if (session) {
+        refreshUser();
+      } else if (event === "SIGNED_OUT") {
+        authedRef.current = false;
+        setUser(false);
+        setActiveOrgId(null);
+        localStorage.removeItem("activeOrgId");
+      }
+    });
+    return () => { active = false; sub?.subscription?.unsubscribe(); };
+  }, [refreshUser]);
 
   const switchOrg = (id) => {
     setActiveOrgId(id);
     localStorage.setItem("activeOrgId", id);
   };
 
+  // Auth is owned by Supabase (GoTrue). We sign in/up with supabase-js, then
+  // hydrate the app profile (orgs + roles) from our backend via /auth/me.
   const login = async (email, password) => {
-    const { data } = await api.post("/auth/login", { email, password });
-    authedRef.current = true;
-    setUser(data);
-    syncActiveOrg(data);
-    return data;
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw new Error(error.message);
+    return refreshUser();
   };
 
   const register = async (name, email, password) => {
-    const { data } = await api.post("/auth/register", { name, email, password });
-    authedRef.current = true;
-    setUser(data);
-    syncActiveOrg(data);
-    return data;
+    const { error } = await supabase.auth.signUp({
+      email, password, options: { data: { full_name: name } },
+    });
+    if (error) throw new Error(error.message);
+    // If the project requires email confirmation, there is no session yet;
+    // /auth/me will 401 until the user confirms. Surface the profile if present.
+    return refreshUser();
   };
 
   const logout = async () => {
-    try { await api.post("/auth/logout"); } catch (e) { /* ignore */ }
+    try { await supabase.auth.signOut(); } catch (e) { /* ignore */ }
     authedRef.current = false;
     setUser(false);
     setActiveOrgId(null);

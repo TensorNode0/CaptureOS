@@ -1,4 +1,5 @@
 import axios from "axios";
+import { accessToken } from "./supabase";
 
 // Empty REACT_APP_BACKEND_URL → same-origin "/api" (CRA dev proxy / reverse proxy)
 const BASE = process.env.REACT_APP_BACKEND_URL || "";
@@ -7,6 +8,14 @@ export const api = axios.create({
   baseURL: `${BASE}/api`,
   withCredentials: true,
   timeout: 20000,
+});
+
+// Attach the Supabase access token as a Bearer on every request; supabase-js
+// keeps it fresh (auto-refresh), so the backend always sees a valid session.
+api.interceptors.request.use(async (config) => {
+  const token = await accessToken();
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
 });
 
 export function formatApiError(detail) {
