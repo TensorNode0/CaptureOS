@@ -18,75 +18,48 @@ class TestHealth:
         assert r.json().get("status") == "ok"
 
 
-# ---------------- Auth ----------------
+# ---------------- Auth (Supabase Auth) ----------------
 class TestAuth:
-    def test_login_admin(self, admin_session):
+    def test_session_admin(self, admin_session):
         s, me = admin_session
         assert me["email"] == "admin@govcon.io"
         assert any(o["role"] in ("owner", "admin") for o in me["organizations"])
-        # cookies set
-        assert s.cookies.get("access_token") is not None
-
-    def test_login_bad_password(self):
-        # use a fresh email to avoid lockout on real users
-        r = requests.post(f"{BASE_URL}/api/auth/login",
-                          json={"email": "nope_xx@govcon.io", "password": "wrong"}, timeout=15)
-        assert r.status_code == 401
+        # bearer token drives the session (no server-set auth cookie)
+        assert s.headers.get("Authorization", "").startswith("Bearer ")
 
     def test_me_unauthenticated(self):
         r = requests.get(f"{BASE_URL}/api/auth/me", timeout=15)
+        assert r.status_code == 401
+
+    def test_me_invalid_token(self):
+        r = requests.get(f"{BASE_URL}/api/auth/me", timeout=15,
+                         headers={"Authorization": "Bearer not-a-real-jwt"})
         assert r.status_code == 401
 
     def test_me_authenticated(self, admin_session):
         s, _ = admin_session
         r = s.get(f"{BASE_URL}/api/auth/me", timeout=15)
         assert r.status_code == 200
-        assert "password_hash" not in r.json()
+        body = r.json()
+        assert "password_hash" not in body and "passwordHash" not in body
 
-    def test_register_returns_verify_url(self):
+    def test_test_login_provisions_new_user(self):
+        # a never-seen email is auto-provisioned as a profile + gets a token
         email = f"test_{uuid.uuid4().hex[:8]}@example.com"
-        r = requests.post(f"{BASE_URL}/api/auth/register",
-                          json={"email": email, "name": "Test User", "password": "StrongP@ss1"},
-                          timeout=15)
+        r = requests.post(f"{BASE_URL}/api/auth/test-login",
+                          json={"email": email, "name": "Test User"}, timeout=15)
         assert r.status_code == 200, r.text
         data = r.json()
-        assert "verifyUrl" in data and "/verify-email?token=" in data["verifyUrl"]
-        assert data["email"] == email
+        assert data["email"] == email and data["accessToken"]
+        # the minted token authenticates against /me
+        r2 = requests.get(f"{BASE_URL}/api/auth/me", timeout=15,
+                          headers={"Authorization": f"Bearer {data['accessToken']}"})
+        assert r2.status_code == 200 and r2.json()["email"] == email
 
-    def test_forgot_then_reset_password(self):
-        # create a throwaway user
-        email = f"reset_{uuid.uuid4().hex[:8]}@example.com"
-        pwd = "OrigP@ss1!"
-        reg = requests.post(f"{BASE_URL}/api/auth/register",
-                            json={"email": email, "name": "Reset User", "password": pwd},
-                            timeout=15)
-        assert reg.status_code == 200
-        # forgot
-        r = requests.post(f"{BASE_URL}/api/auth/forgot-password",
-                          json={"email": email}, timeout=15)
-        assert r.status_code == 200
-        body = r.json()
-        assert "resetUrl" in body, f"expected resetUrl, got {body}"
-        token = body["resetUrl"].split("token=")[-1]
-        # reset
-        new_pwd = "NewP@ssword9!"
-        r2 = requests.post(f"{BASE_URL}/api/auth/reset-password",
-                           json={"token": token, "password": new_pwd}, timeout=15)
-        assert r2.status_code == 200
-        # try login with new
-        r3 = requests.post(f"{BASE_URL}/api/auth/login",
-                           json={"email": email, "password": new_pwd}, timeout=15)
-        assert r3.status_code == 200
-
-    def test_verify_email(self):
-        email = f"vfy_{uuid.uuid4().hex[:8]}@example.com"
-        reg = requests.post(f"{BASE_URL}/api/auth/register",
-                            json={"email": email, "name": "VfyUser", "password": "StrongP@ss1"},
-                            timeout=15)
-        token = reg.json()["verifyUrl"].split("token=")[-1]
-        r = requests.post(f"{BASE_URL}/api/auth/verify-email",
-                          json={"token": token}, timeout=15)
-        assert r.status_code == 200
+    def test_retired_endpoints_are_gone(self):
+        for path in ("register", "login", "forgot-password", "verify-email"):
+            r = requests.post(f"{BASE_URL}/api/auth/{path}", json={}, timeout=15)
+            assert r.status_code in (404, 405), f"{path} should be retired, got {r.status_code}"
 
 
 # ---------------- Org listing / scoping ----------------

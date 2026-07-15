@@ -10,16 +10,17 @@ BASE_URL = (os.environ.get("TEST_BASE_URL")
             or "http://localhost:8000").rstrip("/")
 
 
-def _register(email, name="Sub C. Ontractor", password="Passw0rd!xx"):
+def _register(email, name="Sub C. Ontractor", password=None):
+    """Auth is owned by Supabase; test-login mints a token and auto-provisions
+    the profile (replaces the old register flow)."""
     s = requests.Session()
     s.headers.update({"Content-Type": "application/json"})
-    r = s.post(f"{BASE_URL}/api/auth/register",
-               json={"email": email, "name": name, "password": password}, timeout=15)
+    r = s.post(f"{BASE_URL}/api/auth/test-login",
+               json={"email": email, "name": name}, timeout=15)
     assert r.status_code == 200, r.text
-    token = s.cookies.get("access_token")
-    if token:
-        s.headers["Authorization"] = f"Bearer {token}"
-    return s, r.json()
+    me = r.json()
+    s.headers["Authorization"] = f"Bearer {me['accessToken']}"
+    return s, me
 
 
 @pytest.fixture(scope="module")

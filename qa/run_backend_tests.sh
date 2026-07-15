@@ -26,7 +26,8 @@ MSYS_NO_PATHCONV=1 docker run --rm --network "$NET" \
   -v "$REPO:/repo" \
   -e QA_PG_HOST="$PG" \
   -e DATABASE_URL="postgresql://postgres:postgres@$PG:5432/postgres" \
-  -e JWT_SECRET=qa-test-secret \
+  -e SUPABASE_JWT_SECRET=qa-test-secret \
+  -e AUTH_TEST_MODE=1 \
   -e SECRETS_ENC_KEY="MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=" \
   -e SEED_DEMO=1 \
   -e FRONTEND_URL=http://localhost:3000 \

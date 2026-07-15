@@ -101,20 +101,14 @@ class TestOrgJoin:
     def test_join_full_flow(self, admin_session, org_id):
         sa, _ = admin_session
         code = sa.get(f"{BASE_URL}/api/orgs/{org_id}/join-code", timeout=15).json()["joinCode"]
-        # register a new user
+        # provision a new user via the test-login endpoint (Supabase Auth)
         email = f"join_{uuid.uuid4().hex[:8]}@example.com"
-        pwd = "JoinP@ss1!"
         s = requests.Session()
         s.headers.update({"Content-Type": "application/json"})
-        reg = s.post(f"{BASE_URL}/api/auth/register",
-                     json={"email": email, "name": "Joiner", "password": pwd}, timeout=15)
+        reg = s.post(f"{BASE_URL}/api/auth/test-login",
+                     json={"email": email, "name": "Joiner"}, timeout=15)
         assert reg.status_code == 200, reg.text
-        # login
-        r = s.post(f"{BASE_URL}/api/auth/login",
-                   json={"email": email, "password": pwd}, timeout=15)
-        assert r.status_code == 200
-        # Secure cookies aren't sent over plain http by requests — use Bearer
-        s.headers["Authorization"] = f"Bearer {s.cookies.get('access_token')}"
+        s.headers["Authorization"] = f"Bearer {reg.json()['accessToken']}"
         # invalid code
         bad = s.post(f"{BASE_URL}/api/orgs/join", json={"code": "ZZZZZZZZ"}, timeout=15)
         assert bad.status_code == 404
