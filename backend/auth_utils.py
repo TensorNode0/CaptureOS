@@ -29,7 +29,10 @@ JWT_ALGORITHM = "HS256"
 SUPABASE_JWT_SECRET = os.environ.get("SUPABASE_JWT_SECRET", "")
 # Project URL is used to reach the JWKS endpoint when the project signs tokens
 # with asymmetric keys (RS256/ES256) instead of the shared HS256 secret.
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
+# A stray REST/Auth path or trailing slash (e.g. ".../rest/v1/") would build a
+# 404 JWKS URL and make every token unverifiable, so normalize to the origin.
+SUPABASE_URL = (os.environ.get("SUPABASE_URL", "")
+                .split("/rest/")[0].split("/auth/")[0].rstrip("/"))
 _jwks_client = None
 # Test/demo convenience: when on, /auth/test-login can mint tokens and
 # auto-provision profiles without a live Supabase project. Never set in prod.
