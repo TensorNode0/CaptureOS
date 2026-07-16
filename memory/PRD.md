@@ -1,5 +1,29 @@
 # CaptureAgent (captureagent.us) — PRD & Deployment Log
 
+## AUTH MIGRATION RESCUE 2026-07-16 (latest session)
+- User's dev team migrated auth to SUPABASE AUTH (GoTrue) via GitHub sync ("Reconcile: Supabase
+  auth onto Emergent's live code"). Old custom-JWT endpoints removed; frontend now uses
+  supabase-js (signInWithPassword/signUp/resetPasswordForEmail); backend validates Supabase
+  ES256 tokens via JWKS (auth_utils.py), auto-provisions/links public.users by auth_uid/email.
+- USERS COULDN'T SIGN IN OR RESET. Three root causes found & fixed:
+  1. auth.users.encrypted_password held WRONG bcrypt hashes ($2a$10 placeholders) — migration
+     script never copied real hashes. FIX: copied public.users.password_hash ($2b$12, all intact)
+     → auth.users.encrypted_password for all 15 users (joined on auth_uid). Original passwords
+     work again. NO DATA LOST.
+  2. frontend/.env was missing REACT_APP_SUPABASE_URL + REACT_APP_SUPABASE_ANON_KEY → supabase-js
+     hit http://localhost → the users' "Failed to fetch". FIX: added both to frontend/.env.
+  3. PRODUCTION BUILD FAILURE: package.json had ^2.47.10 for @supabase/supabase-js → resolved to
+     2.110.6 requiring Node>=22 (env has Node 20) AND yarn.lock was missing. FIX: pinned exact
+     2.47.10, regenerated yarn.lock; `yarn build` passes; deployment_agent scan = deployable.
+- VERIFIED E2E in preview: GoTrue password login (original pw) → backend /auth/me (ES256/JWKS) →
+  UI login lands on dashboard; forgot-password submits (GoTrue /recover 200, recovery_sent_at set).
+- USER MUST CONFIGURE (Supabase dashboard, agent has no access): Auth → URL Configuration →
+  Site URL https://captureagent.us + Redirect URLs must include https://captureagent.us/reset-password;
+  built-in mailer is rate-limited (~2-4/hr) — recommend custom SMTP (Resend) for reliable reset emails.
+- frontend/.env REACT_APP_BACKEND_URL restored to https://captureagent.us for deploy (flip to
+  https://govcon-workspace.preview.emergentagent.com for preview UI testing).
+
+
 ## Source of Truth
 GitHub TensorNode0/CaptureOS `main`. Standing user rule: deploy EXACTLY what's on main — never
 rebuild/redesign/regenerate features; if a check fails, show the error instead of rewriting app code.

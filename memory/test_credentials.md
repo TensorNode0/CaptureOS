@@ -23,3 +23,11 @@
 - QA Verification Org (499e35c6-ca12-4589-aa1a-ae22bdb72c07) has a USER-PROVIDED temp Anthropic
   API key saved in org secrets (used to live-test verify/deep-scan/enrich). User should revoke it
   when done. 8 seed rows titled "QA Test Opp N - Space Robotics IDIQ" remain for UI testing.
+
+## AUTH ARCHITECTURE CHANGE (2026-07-16)
+- App now uses SUPABASE AUTH (GoTrue). Login via supabase-js on frontend; backend validates
+  Supabase ES256 JWTs. QA account unchanged: qa.captureagent@testmail.dev / CaptureQA#2026
+  (works via UI login and via POST {SUPABASE_URL}/auth/v1/token?grant_type=password with anon key).
+- SUPABASE_URL/keys are in backend/.env; REACT_APP_SUPABASE_URL/ANON_KEY in frontend/.env.
+- frontend/.env REACT_APP_BACKEND_URL is set to https://captureagent.us (deploy convention);
+  flip to https://govcon-workspace.preview.emergentagent.com before preview UI testing.
