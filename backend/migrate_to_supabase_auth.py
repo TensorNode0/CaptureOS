@@ -41,7 +41,8 @@ def _require(name: str) -> str:
 
 async def main():
     database_url = _require("DATABASE_URL")
-    supabase_url = _require("SUPABASE_URL")
+    # Tolerate a stray REST/Auth path or trailing slash on the project URL.
+    supabase_url = _require("SUPABASE_URL").split("/rest/")[0].split("/auth/")[0].rstrip("/")
     service_role = _require("SUPABASE_SERVICE_ROLE_KEY")
 
     conn = await asyncpg.connect(database_url)
