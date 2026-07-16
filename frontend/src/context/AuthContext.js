@@ -73,7 +73,13 @@ export function AuthProvider({ children }) {
   const login = async (email, password) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw new Error(error.message);
-    return refreshUser();
+    const profile = await refreshUser();
+    if (!profile) {
+      throw new Error(
+        "Signed in, but your account profile could not be loaded (server configuration issue). " +
+        "Please try again in a moment — if this persists, contact support.");
+    }
+    return profile;
   };
 
   const register = async (name, email, password) => {
