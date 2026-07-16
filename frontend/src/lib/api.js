@@ -19,7 +19,7 @@ api.interceptors.request.use(async (config) => {
 });
 
 export function formatApiError(detail) {
-  if (detail == null) return "Something went wrong. Please try again.";
+  if (detail == null) return "";
   if (typeof detail === "string") return detail;
   if (Array.isArray(detail))
     return detail
@@ -31,5 +31,11 @@ export function formatApiError(detail) {
 }
 
 export function errMsg(e) {
-  return formatApiError(e?.response?.data?.detail) || e?.message || "Request failed";
+  // Prefer server-provided detail (axios errors), then the underlying Error
+  // message (supabase-js and other thrown Errors), then a generic fallback.
+  return (
+    formatApiError(e?.response?.data?.detail) ||
+    e?.message ||
+    "Something went wrong. Please try again."
+  );
 }
