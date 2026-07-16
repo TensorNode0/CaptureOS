@@ -80,6 +80,12 @@ def decode_supabase_token(token: str) -> dict:
                               options=opts)
         except jwt.InvalidTokenError:
             pass  # project may have switched to asymmetric signers — try JWKS
+    # Token is asymmetrically signed (RS256/ES256): must use JWKS.
+    if alg in ("RS256", "ES256") and not SUPABASE_URL:
+        raise HTTPException(status_code=500,
+                            detail=(f"Auth is not configured: token uses {alg} "
+                                    f"but SUPABASE_URL is not set in the backend "
+                                    f"environment (needed to fetch JWKS)."))
     client = _get_jwks_client()
     if client is not None:
         key = client.get_signing_key_from_jwt(token).key
@@ -142,8 +148,21 @@ async def get_current_user(request: Request) -> dict:
         claims = decode_supabase_token(token)
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Session expired")
-    except jwt.PyJWTError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+    except HTTPException:
+        raise
+    except jwt.PyJWTError as e:
+        # Surface enough context to diagnose prod misconfig without dumping the
+        # full token. Includes the JWT alg (so we know which verification path
+        # should apply) and whether SUPABASE_URL/SUPABASE_JWT_SECRET are set.
+        try:
+            alg = jwt.get_unverified_header(token).get("alg", "?")
+        except Exception:
+            alg = "?"
+        raise HTTPException(status_code=401, detail=(
+            f"Invalid token (alg={alg}, jwt_err={type(e).__name__}: {e}; "
+            f"supabase_url_set={bool(SUPABASE_URL)}, "
+            f"jwt_secret_set={bool(SUPABASE_JWT_SECRET)})"
+        ))
     auth_uid = claims.get("sub")
     if not as_uuid(auth_uid):
         raise HTTPException(status_code=401, detail="Invalid token subject")
