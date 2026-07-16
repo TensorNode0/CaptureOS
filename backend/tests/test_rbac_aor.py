@@ -12,17 +12,17 @@ BASE_URL = (os.environ.get("TEST_BASE_URL")
 DOMAIN = f"d{uuid.uuid4().hex[:10]}.example"
 
 
-def _register(email, name="Test User", password="Passw0rd!xx"):
+def _register(email, name="Test User", password=None):
+    """Auth is owned by Supabase; the AUTH_TEST_MODE test-login endpoint mints a
+    token and auto-provisions the profile (replacing the old register flow)."""
     s = requests.Session()
     s.headers.update({"Content-Type": "application/json"})
-    r = s.post(f"{BASE_URL}/api/auth/register",
-               json={"email": email, "name": name, "password": password}, timeout=15)
+    r = s.post(f"{BASE_URL}/api/auth/test-login",
+               json={"email": email, "name": name}, timeout=15)
     assert r.status_code == 200, r.text
-    # requests won't send Secure cookies over plain http — use Bearer instead
-    token = s.cookies.get("access_token")
-    if token:
-        s.headers["Authorization"] = f"Bearer {token}"
-    return s, r.json()
+    me = r.json()
+    s.headers["Authorization"] = f"Bearer {me['accessToken']}"
+    return s, me
 
 
 @pytest.fixture(scope="module")

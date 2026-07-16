@@ -1,31 +1,36 @@
 import React, { useEffect, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link } from "react-router-dom";
 import AuthLayout from "./AuthLayout";
 import { Spinner } from "../components/ui";
-import { api, errMsg } from "../lib/api";
+import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
 import { CheckCircle2, XCircle } from "lucide-react";
 
 export default function VerifyEmail() {
-  const [params] = useSearchParams();
-  const token = params.get("token") || "";
   const { refreshUser } = useAuth();
   const [status, setStatus] = useState("verifying"); // verifying|ok|fail
   const [error, setError] = useState("");
 
   useEffect(() => {
-    (async () => {
-      if (!token) { setStatus("fail"); setError("Missing token"); return; }
-      try {
-        await api.post("/auth/verify-email", { token });
-        setStatus("ok");
-        refreshUser();
-      } catch (err) {
-        setStatus("fail");
-        setError(errMsg(err));
-      }
-    })();
-  }, [token, refreshUser]);
+    // Supabase confirmation links return here with a session in the URL, which
+    // supabase-js parses automatically (detectSessionInUrl). A session means
+    // the email is confirmed.
+    let done = false;
+    const finish = (session) => {
+      if (done) return;
+      done = true;
+      if (session) { setStatus("ok"); refreshUser(); }
+      else { setStatus("fail"); setError("This confirmation link is invalid or expired."); }
+    };
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
+      if (session) finish(session);
+    });
+    supabase.auth.getSession().then(({ data }) => {
+      if (data?.session) finish(data.session);
+      else setTimeout(() => finish(null), 4000); // give the URL parse a moment
+    });
+    return () => sub?.subscription?.unsubscribe();
+  }, [refreshUser]);
 
   return (
     <AuthLayout title="Email verification">

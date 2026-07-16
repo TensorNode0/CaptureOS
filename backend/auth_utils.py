@@ -1,94 +1,155 @@
+"""Authentication against Supabase Auth (GoTrue).
+
+Identity, passwords, email confirmation, and password reset are owned by
+Supabase Auth. The frontend authenticates with supabase-js and sends the
+Supabase access token as `Authorization: Bearer <jwt>`. This module validates
+that JWT (HS256, signed with the project's SUPABASE_JWT_SECRET) and resolves it
+to the app's `public.users` profile row via `auth_uid`.
+
+`public.users` is a profile mirror: the app's canonical id for every foreign
+key stays in `public.users(id)`, while `auth_uid` links to `auth.users(id)`.
+On first sight of a new `auth_uid`, the profile row is provisioned and any
+pending org invites addressed to that email are activated.
+
+bcrypt helpers remain for the one-off migration window only.
+"""
 import os
+import uuid
 import jwt
 import bcrypt
-from datetime import datetime, timezone, timedelta
 from fastapi import Request, HTTPException
 
 import database as db
-from utils import serialize, as_uuid
+from utils import serialize, as_uuid, now_utc
 
 JWT_ALGORITHM = "HS256"
-ACCESS_MIN = 60 * 12  # 12h access for smooth UX in preview
-REFRESH_DAYS = 7
 
-# Cookie flags follow the deployment scheme: https gets Secure + SameSite=None
-# (required for cross-site cookies); plain-http local dev gets Lax without
-# Secure so non-localhost dev clients can hold a session.
-COOKIE_SECURE = os.environ.get("FRONTEND_URL", "").startswith("https")
-COOKIE_SAMESITE = "none" if COOKIE_SECURE else "lax"
+# Supabase signs user JWTs with the project JWT secret. In tests this is any
+# local value shared between the test-token minter and this validator.
+SUPABASE_JWT_SECRET = os.environ.get("SUPABASE_JWT_SECRET", "")
+# Project URL is used to reach the JWKS endpoint when the project signs tokens
+# with asymmetric keys (RS256/ES256) instead of the shared HS256 secret.
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
+_jwks_client = None
+# Test/demo convenience: when on, /auth/test-login can mint tokens and
+# auto-provision profiles without a live Supabase project. Never set in prod.
+AUTH_TEST_MODE = os.environ.get("AUTH_TEST_MODE", "0") == "1"
 
 
+# ── bcrypt (migration window only) ────────────────────────────────────────────
 def hash_password(password: str) -> str:
-    salt = bcrypt.gensalt()
-    return bcrypt.hashpw(password.encode("utf-8"), salt).decode("utf-8")
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
 def verify_password(plain: str, hashed: str) -> bool:
     try:
-        return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
+        return bcrypt.checkpw(plain.encode("utf-8"), (hashed or "").encode("utf-8"))
     except Exception:
         return False
 
 
+# ── Supabase JWT handling ─────────────────────────────────────────────────────
 def _secret() -> str:
-    return os.environ["JWT_SECRET"]
+    if not SUPABASE_JWT_SECRET:
+        raise HTTPException(status_code=500,
+                            detail="Auth is not configured (SUPABASE_JWT_SECRET missing).")
+    return SUPABASE_JWT_SECRET
 
 
-def create_access_token(user_id: str, email: str) -> str:
+def _get_jwks_client():
+    """Lazy JWKS client for the project's asymmetric signing keys."""
+    global _jwks_client
+    if _jwks_client is None and SUPABASE_URL:
+        from jwt import PyJWKClient
+        _jwks_client = PyJWKClient(
+            f"{SUPABASE_URL.rstrip('/')}/auth/v1/.well-known/jwks.json")
+    return _jwks_client
+
+
+def decode_supabase_token(token: str) -> dict:
+    """Validate a Supabase access token, supporting BOTH signing schemes:
+    the legacy shared HS256 secret and asymmetric (RS256/ES256) signing keys
+    via the project's JWKS endpoint — so it works whichever the project uses,
+    now or after a future migration. Audience is not enforced (Supabase uses
+    aud='authenticated'); signature + expiry are."""
+    opts = {"verify_aud": False}
+    alg = jwt.get_unverified_header(token).get("alg", "HS256")
+    if alg == "HS256" and SUPABASE_JWT_SECRET:
+        try:
+            return jwt.decode(token, SUPABASE_JWT_SECRET, algorithms=["HS256"],
+                              options=opts)
+        except jwt.InvalidTokenError:
+            pass  # project may have switched to asymmetric signers — try JWKS
+    client = _get_jwks_client()
+    if client is not None:
+        key = client.get_signing_key_from_jwt(token).key
+        return jwt.decode(token, key, algorithms=["RS256", "ES256"], options=opts)
+    return jwt.decode(token, _secret(), algorithms=["HS256"], options=opts)
+
+
+def mint_supabase_token(auth_uid: str, email: str) -> str:
+    """Mint a Supabase-shaped access token. Test/demo only — real tokens come
+    from GoTrue. Signed with the same secret this module validates against."""
+    from datetime import datetime, timezone, timedelta
     payload = {
-        "sub": user_id,
+        "sub": str(auth_uid),
         "email": email,
-        "exp": datetime.now(timezone.utc) + timedelta(minutes=ACCESS_MIN),
-        "type": "access",
+        "aud": "authenticated",
+        "role": "authenticated",
+        "exp": datetime.now(timezone.utc) + timedelta(hours=12),
     }
     return jwt.encode(payload, _secret(), algorithm=JWT_ALGORITHM)
 
 
-def create_refresh_token(user_id: str) -> str:
-    payload = {
-        "sub": user_id,
-        "exp": datetime.now(timezone.utc) + timedelta(days=REFRESH_DAYS),
-        "type": "refresh",
-    }
-    return jwt.encode(payload, _secret(), algorithm=JWT_ALGORITHM)
+def _bearer(request: Request) -> str:
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        return auth[7:]
+    # transitional: also accept a token placed in the access_token cookie
+    return request.cookies.get("access_token", "")
 
 
-def set_auth_cookies(response, user_id: str, email: str):
-    access = create_access_token(user_id, email)
-    refresh = create_refresh_token(user_id)
-    response.set_cookie("access_token", access, httponly=True, secure=COOKIE_SECURE,
-                        samesite=COOKIE_SAMESITE, max_age=ACCESS_MIN * 60, path="/")
-    response.set_cookie("refresh_token", refresh, httponly=True, secure=COOKIE_SECURE,
-                        samesite=COOKIE_SAMESITE, max_age=REFRESH_DAYS * 86400, path="/")
-
-
-def clear_auth_cookies(response):
-    response.delete_cookie("access_token", path="/")
-    response.delete_cookie("refresh_token", path="/")
+async def provision_profile(auth_uid: str, email: str, name: str = "") -> dict:
+    """Get-or-create the profile row for a Supabase user, activating any org
+    invites addressed to this email on first creation."""
+    email = (email or "").lower().strip()
+    row = await db.fetchrow("select * from users where auth_uid = $1", as_uuid(auth_uid))
+    if row:
+        return row
+    # An older row may exist by email (e.g. migrated) without auth_uid linked yet.
+    row = await db.fetchrow("select * from users where email = $1", email)
+    if row:
+        row = await db.fetchrow(
+            "update users set auth_uid = $2, email_verified = true where id = $1 returning *",
+            row["id"], as_uuid(auth_uid))
+        return row
+    row = await db.fetchrow(
+        """insert into users (email, name, auth_uid, email_verified)
+           values ($1, $2, $3, true) returning *""",
+        email, (name or email.split("@")[0]).strip(), as_uuid(auth_uid))
+    await db.execute(
+        """update memberships set user_id = $1, status = 'active'
+           where invited_email = $2 and status = 'invited'""",
+        row["id"], email)
+    return row
 
 
 async def get_current_user(request: Request) -> dict:
-    token = request.cookies.get("access_token")
-    if not token:
-        auth = request.headers.get("Authorization", "")
-        if auth.startswith("Bearer "):
-            token = auth[7:]
+    token = _bearer(request)
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
     try:
-        payload = jwt.decode(token, _secret(), algorithms=[JWT_ALGORITHM])
-        if payload.get("type") != "access":
-            raise HTTPException(status_code=401, detail="Invalid token type")
-        uid = as_uuid(payload.get("sub"))
-        if uid is None:
-            raise HTTPException(status_code=401, detail="Invalid token")
-        user = await db.fetchrow("select * from users where id = $1", uid)
-        if not user:
-            raise HTTPException(status_code=401, detail="User not found")
-        out = serialize(user)
-        out.pop("passwordHash", None)
-        return out
+        claims = decode_supabase_token(token)
     except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token expired")
-    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Session expired")
+    except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
+    auth_uid = claims.get("sub")
+    if not as_uuid(auth_uid):
+        raise HTTPException(status_code=401, detail="Invalid token subject")
+    name = ((claims.get("user_metadata") or {}).get("full_name")
+            or (claims.get("user_metadata") or {}).get("name") or "")
+    user = await provision_profile(auth_uid, claims.get("email", ""), name)
+    out = serialize(user)
+    out.pop("passwordHash", None)
+    return out

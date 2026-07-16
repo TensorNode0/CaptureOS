@@ -4,6 +4,7 @@
   "private": true,
   "proxy": "http://backend:8000",
   "dependencies": {
+    "@supabase/supabase-js": "^2.47.10",
     "axios": "^1.7.9",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",

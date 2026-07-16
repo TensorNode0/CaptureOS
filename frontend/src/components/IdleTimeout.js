@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { TimerReset } from "lucide-react";
-import { api } from "../lib/api";
+import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
 import { Modal } from "./ui";
 
@@ -71,7 +71,7 @@ export default function IdleTimeout() {
     clearInterval(tick.current);
     warningRef.current = false;
     setWarning(false);
-    try { await api.post("/auth/refresh"); } catch { /* next API call re-auths */ }
+    try { await supabase.auth.refreshSession(); } catch { /* supabase auto-refreshes anyway */ }
     armIdleTimer();
   };
 

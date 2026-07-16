@@ -10,6 +10,7 @@ import { canAdmin, canSeeDashboard } from "../lib/helpers";
 import IdleTimeout from "./IdleTimeout";
 import { LogoMark } from "./Logo";
 import { api, errMsg } from "../lib/api";
+import { supabase } from "../lib/supabase";
 import { toast } from "sonner";
 import { Modal, Field, Spinner } from "./ui";
 
@@ -181,14 +182,9 @@ function VerifyBanner() {
   if (!user || user.emailVerified || dismissed) return null;
   const resend = async () => {
     try {
-      const { data } = await api.post("/auth/resend-verification");
-      if (data.verifyUrl) {
-        toast.success("Verification link ready", {
-          action: { label: "Verify now", onClick: () => (window.location.href = data.verifyUrl) },
-        });
-      } else {
-        toast.success("Verification email sent", { description: "Check your inbox." });
-      }
+      const { error } = await supabase.auth.resend({ type: "signup", email: user.email });
+      if (error) throw error;
+      toast.success("Verification email sent", { description: "Check your inbox." });
     } catch { toast.error("Could not send the email. Try again.") ; }
   };
   return (

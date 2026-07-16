@@ -1,12 +1,22 @@
-"""Demo-data seeder. Runs at startup only when SEED_DEMO=1 (safe for prod)."""
+"""Demo-data seeder. Runs at startup only when SEED_DEMO=1 (safe for prod).
+
+Demo users are provisioned as profile rows with a deterministic synthetic
+auth_uid (uuid5 of the email), matching what /auth/test-login mints — so the
+demo/test path needs no live Supabase project. Real production users are
+created in Supabase Auth by migrate_to_supabase_auth.py, not here.
+"""
 import os
+import uuid
 import random
 from datetime import timedelta
 
 import database as db
 from utils import now_utc, iso
-from auth_utils import hash_password, verify_password
 from domain import default_fit, default_compliance, default_budget, default_criteria
+
+
+def _demo_auth_uid(email):
+    return uuid.uuid5(uuid.NAMESPACE_DNS, email.lower().strip())
 
 SETASIDES = ["Total Small Business", "8(a)", "HUBZone", "SDVOSB", "WOSB", "None"]
 VEHICLES = ["RFP", "SBIR", "STTR", "BAA", "CSO", "Grant"]
@@ -67,13 +77,18 @@ async def _make_opp(org_id, owner_id, i):
         default_compliance(), budget, crit, owner_id)
 
 
-async def _ensure_user(email, name, password):
+async def _ensure_user(email, name):
+    email = email.lower().strip()
     u = await db.fetchrow("select * from users where email = $1", email)
     if not u:
         u = await db.fetchrow(
-            """insert into users (email, name, password_hash, email_verified)
+            """insert into users (email, name, auth_uid, email_verified)
                values ($1, $2, $3, true) returning *""",
-            email, name, hash_password(password))
+            email, name, _demo_auth_uid(email))
+    elif not u.get("auth_uid"):
+        u = await db.fetchrow(
+            "update users set auth_uid = $2 where id = $1 returning *",
+            u["id"], _demo_auth_uid(email))
     return u
 
 
@@ -82,17 +97,9 @@ async def seed():
         return
 
     admin_email = os.environ.get("ADMIN_EMAIL", "admin@govcon.io").lower()
-    admin_password = os.environ.get("ADMIN_PASSWORD", "Admin#2026")
-
-    admin = await db.fetchrow("select * from users where email = $1", admin_email)
-    if not admin:
-        admin = await _ensure_user(admin_email, "Mission Commander", admin_password)
-    elif not verify_password(admin_password, admin["password_hash"]):
-        await db.execute("update users set password_hash = $2 where id = $1",
-                         admin["id"], hash_password(admin_password))
-
-    editor = await _ensure_user("editor@govcon.io", "Capture Lead", "Editor#2026")
-    viewer = await _ensure_user("viewer@govcon.io", "Proposal Analyst", "Editor#2026")
+    admin = await _ensure_user(admin_email, "Mission Commander")
+    editor = await _ensure_user("editor@govcon.io", "Capture Lead")
+    viewer = await _ensure_user("viewer@govcon.io", "Proposal Analyst")
 
     org = await db.fetchrow("select * from organizations where name = $1",
                             "Orbital Defense Systems")
