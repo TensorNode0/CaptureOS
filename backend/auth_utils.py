@@ -29,12 +29,11 @@ JWT_ALGORITHM = "HS256"
 SUPABASE_JWT_SECRET = os.environ.get("SUPABASE_JWT_SECRET", "")
 # Project URL is used to reach the JWKS endpoint when the project signs tokens
 # with asymmetric keys (RS256/ES256) instead of the shared HS256 secret.
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
-# Supabase anon key is sent as `apikey` on JWKS fetches. The JWKS endpoint is
-# public, but Supabase's Cloudflare edge may 401 requests from certain egress
-# IPs without this header — presenting the anon key marks the caller as a
-# legitimate Supabase project client and bypasses that edge policy.
-SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
+# A stray REST/Auth path or trailing slash (e.g. ".../rest/v1/") would build a
+# 404 JWKS URL and make every token unverifiable, so normalize to the origin.
+SUPABASE_URL = (os.environ.get("SUPABASE_URL", "")
+                .split("/rest/")[0].split("/auth/")[0].rstrip("/"))
+_jwks_client = None
 # Test/demo convenience: when on, /auth/test-login can mint tokens and
 # auto-provision profiles without a live Supabase project. Never set in prod.
 AUTH_TEST_MODE = os.environ.get("AUTH_TEST_MODE", "0") == "1"
@@ -60,52 +59,14 @@ def _secret() -> str:
     return SUPABASE_JWT_SECRET
 
 
-_jwks_cache = None      # cached JWK set (dict from Supabase JWKS endpoint)
-_jwks_fetched_at = 0.0  # unix ts of last successful fetch
-
-
-def _fetch_jwks() -> dict | None:
-    """Fetch (and cache) the Supabase project JWK set.
-
-    We fetch with httpx directly instead of PyJWKClient's built-in urllib
-    because Supabase's Cloudflare edge is picky: it 401s bare requests from
-    some cloud egress IPs and 404s certain header combinations. Sending only
-    the `apikey` header + a normal User-Agent is what actually works in prod.
-    Cached for 1 hour — signing keys rotate rarely, and this keeps auth fast."""
-    import time, httpx
-    global _jwks_cache, _jwks_fetched_at
-    if _jwks_cache and (time.time() - _jwks_fetched_at) < 3600:
-        return _jwks_cache
-    if not SUPABASE_URL:
-        return None
-    url = f"{SUPABASE_URL.rstrip('/')}/auth/v1/.well-known/jwks.json"
-    headers = {"User-Agent": "captureagent-backend/1.0",
-               "Accept": "application/json"}
-    if SUPABASE_ANON_KEY:
-        headers["apikey"] = SUPABASE_ANON_KEY
-    resp = httpx.get(url, headers=headers, timeout=10.0)
-    resp.raise_for_status()
-    _jwks_cache = resp.json()
-    _jwks_fetched_at = time.time()
-    return _jwks_cache
-
-
-def _jwk_for_kid(kid: str):
-    """Resolve a signing key from the cached JWK set by `kid`."""
-    from jwt import PyJWK
-    jwks = _fetch_jwks() or {}
-    for entry in jwks.get("keys", []):
-        if entry.get("kid") == kid:
-            return PyJWK.from_dict(entry).key
-    # kid not found → force a cache refresh once
-    global _jwks_cache, _jwks_fetched_at
-    _jwks_cache = None
-    _jwks_fetched_at = 0.0
-    jwks = _fetch_jwks() or {}
-    for entry in jwks.get("keys", []):
-        if entry.get("kid") == kid:
-            return PyJWK.from_dict(entry).key
-    return None
+def _get_jwks_client():
+    """Lazy JWKS client for the project's asymmetric signing keys."""
+    global _jwks_client
+    if _jwks_client is None and SUPABASE_URL:
+        from jwt import PyJWKClient
+        _jwks_client = PyJWKClient(
+            f"{SUPABASE_URL.rstrip('/')}/auth/v1/.well-known/jwks.json")
+    return _jwks_client
 
 
 def decode_supabase_token(token: str) -> dict:
@@ -115,25 +76,16 @@ def decode_supabase_token(token: str) -> dict:
     now or after a future migration. Audience is not enforced (Supabase uses
     aud='authenticated'); signature + expiry are."""
     opts = {"verify_aud": False}
-    header = jwt.get_unverified_header(token)
-    alg = header.get("alg", "HS256")
+    alg = jwt.get_unverified_header(token).get("alg", "HS256")
     if alg == "HS256" and SUPABASE_JWT_SECRET:
         try:
             return jwt.decode(token, SUPABASE_JWT_SECRET, algorithms=["HS256"],
                               options=opts)
         except jwt.InvalidTokenError:
             pass  # project may have switched to asymmetric signers — try JWKS
-    # Token is asymmetrically signed (RS256/ES256): must use JWKS.
-    if alg in ("RS256", "ES256"):
-        if not SUPABASE_URL:
-            raise HTTPException(status_code=500, detail=(
-                f"Auth is not configured: token uses {alg} but SUPABASE_URL is "
-                f"not set in the backend environment (needed to fetch JWKS)."))
-        kid = header.get("kid")
-        key = _jwk_for_kid(kid)
-        if key is None:
-            raise HTTPException(status_code=401, detail=(
-                f"Signing key kid={kid!r} not found in Supabase JWKS"))
+    client = _get_jwks_client()
+    if client is not None:
+        key = client.get_signing_key_from_jwt(token).key
         return jwt.decode(token, key, algorithms=["RS256", "ES256"], options=opts)
     return jwt.decode(token, _secret(), algorithms=["HS256"], options=opts)
 
@@ -193,21 +145,8 @@ async def get_current_user(request: Request) -> dict:
         claims = decode_supabase_token(token)
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Session expired")
-    except HTTPException:
-        raise
-    except jwt.PyJWTError as e:
-        # Surface enough context to diagnose prod misconfig without dumping the
-        # full token. Includes the JWT alg (so we know which verification path
-        # should apply) and whether SUPABASE_URL/SUPABASE_JWT_SECRET are set.
-        try:
-            alg = jwt.get_unverified_header(token).get("alg", "?")
-        except Exception:
-            alg = "?"
-        raise HTTPException(status_code=401, detail=(
-            f"Invalid token (alg={alg}, jwt_err={type(e).__name__}: {e}; "
-            f"supabase_url_set={bool(SUPABASE_URL)}, "
-            f"jwt_secret_set={bool(SUPABASE_JWT_SECRET)})"
-        ))
+    except jwt.PyJWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
     auth_uid = claims.get("sub")
     if not as_uuid(auth_uid):
         raise HTTPException(status_code=401, detail="Invalid token subject")
