@@ -30,6 +30,11 @@ SUPABASE_JWT_SECRET = os.environ.get("SUPABASE_JWT_SECRET", "")
 # Project URL is used to reach the JWKS endpoint when the project signs tokens
 # with asymmetric keys (RS256/ES256) instead of the shared HS256 secret.
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
+# Supabase anon key is sent as `apikey` on JWKS fetches. The JWKS endpoint is
+# public, but Supabase's Cloudflare edge may 401 requests from certain egress
+# IPs without this header — presenting the anon key marks the caller as a
+# legitimate Supabase project client and bypasses that edge policy.
+SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
 _jwks_client = None
 # Test/demo convenience: when on, /auth/test-login can mint tokens and
 # auto-provision profiles without a live Supabase project. Never set in prod.
@@ -57,12 +62,20 @@ def _secret() -> str:
 
 
 def _get_jwks_client():
-    """Lazy JWKS client for the project's asymmetric signing keys."""
+    """Lazy JWKS client for the project's asymmetric signing keys. Sends the
+    Supabase anon key as `apikey` (see SUPABASE_ANON_KEY comment above) and a
+    real User-Agent — both harden the fetch against Cloudflare edge policies
+    that reject bare requests from ephemeral cloud egress IPs."""
     global _jwks_client
     if _jwks_client is None and SUPABASE_URL:
         from jwt import PyJWKClient
+        headers = {"User-Agent": "captureagent-backend/1.0"}
+        if SUPABASE_ANON_KEY:
+            headers["apikey"] = SUPABASE_ANON_KEY
+            headers["Authorization"] = f"Bearer {SUPABASE_ANON_KEY}"
         _jwks_client = PyJWKClient(
-            f"{SUPABASE_URL.rstrip('/')}/auth/v1/.well-known/jwks.json")
+            f"{SUPABASE_URL.rstrip('/')}/auth/v1/.well-known/jwks.json",
+            headers=headers, timeout=10)
     return _jwks_client
 
 
