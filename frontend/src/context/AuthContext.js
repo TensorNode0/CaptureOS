@@ -73,13 +73,23 @@ export function AuthProvider({ children }) {
   const login = async (email, password) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw new Error(error.message);
-    const profile = await refreshUser();
-    if (!profile) {
-      throw new Error(
-        "Signed in, but your account profile could not be loaded (server configuration issue). " +
-        "Please try again in a moment — if this persists, contact support.");
+    // Call /auth/me directly here so the real backend error surfaces to the UI
+    // instead of being swallowed by refreshUser's catch. This is the key
+    // diagnostic path when Supabase auth succeeds but backend hydration fails.
+    try {
+      const { data } = await api.get("/auth/me");
+      authedRef.current = true;
+      setUser(data);
+      syncActiveOrg(data);
+      return data;
+    } catch (e) {
+      const status = e?.response?.status;
+      const detail = e?.response?.data?.detail;
+      const msg = detail
+        ? `Backend /auth/me ${status || ""}: ${typeof detail === "string" ? detail : JSON.stringify(detail)}`
+        : `Backend /auth/me unreachable: ${e?.message || "unknown error"}`;
+      throw new Error(msg.trim());
     }
-    return profile;
   };
 
   const register = async (name, email, password) => {
