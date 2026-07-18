@@ -29,16 +29,16 @@ export default function RequireTier({ minTier = "full", children, feature = "Thi
           <Lock size={22} />
         </div>
         <h1 className="mt-4 text-2xl font-bold text-ink">
-          Upgrade to Full Capture to unlock {feature}
+          Upgrade to Small Teams to unlock {feature}
         </h1>
         <p className="mx-auto mt-3 max-w-md text-sm text-dim">
           Federal Proposals, Investment Deals, and Accelerator Applications
-          are part of the <span className="text-ink font-semibold">Full
-          Capture</span> plan. You’re currently on <span className="text-ink font-semibold">
-          {sub.tier === "free" ? "Free (no active plan)" : sub.tier === "oi" ? "Opportunity Intelligence" : sub.tier}</span>.
+          are part of the <span className="text-ink font-semibold">Small
+          Teams</span> plan. You’re currently on <span className="text-ink font-semibold">
+          {sub.tier === "free" ? "Free (no active plan)" : sub.tier === "oi" ? "Starter" : sub.tier}</span>.
         </p>
         <Link to="/pricing"
-              className="btn btn-primary mt-6"
+              className="btn btn-liquid liquid-cyan mt-6"
               data-testid="tier-gate-upgrade">
           Compare plans <ArrowRight size={16} />
         </Link>

@@ -186,6 +186,105 @@ body {
   box-shadow: 0 0 24px rgba(139, 123, 255, 0.25);
 }
 
+/* Liquid-glass button — translucent, refractive edge, interactive hover.
+   Keeps text at max readability (white, semibold) against a live blur of
+   whatever's behind. Used on marketing CTAs and Pricing plan CTAs. */
+.btn-liquid {
+  position: relative;
+  isolation: isolate;                     /* new stacking context for ::before */
+  background: linear-gradient(140deg,
+      rgba(255, 255, 255, 0.10) 0%,
+      rgba(56, 225, 255, 0.14) 55%,
+      rgba(139, 123, 255, 0.12) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+  font-weight: 600;
+  backdrop-filter: blur(14px) saturate(1.4);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.28),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.35),
+      0 8px 32px -8px rgba(56, 225, 255, 0.22);
+  overflow: hidden;
+}
+.btn-liquid::before {
+  content: "";
+  position: absolute; inset: 0;
+  background: radial-gradient(80% 120% at 20% 0%,
+      rgba(255, 255, 255, 0.35) 0%, transparent 55%);
+  opacity: 0.55;
+  transition: opacity 0.35s ease, transform 0.6s ease;
+  pointer-events: none;
+  z-index: -1;
+}
+.btn-liquid:hover:not(:disabled) {
+  border-color: rgba(56, 225, 255, 0.55);
+  box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.4),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.35),
+      0 0 32px rgba(56, 225, 255, 0.35),
+      0 12px 40px -6px rgba(139, 123, 255, 0.25);
+  transform: translateY(-1px);
+}
+.btn-liquid:hover:not(:disabled)::before {
+  opacity: 0.85;
+  transform: translate(4px, -2px) scale(1.05);
+}
+.btn-liquid.liquid-cyan {
+  background: linear-gradient(140deg,
+      rgba(56, 225, 255, 0.28) 0%,
+      rgba(56, 225, 255, 0.14) 60%,
+      rgba(255, 255, 255, 0.08) 100%);
+  border-color: rgba(56, 225, 255, 0.45);
+}
+
+/* Liquid-glass surface — same treatment for cards / banners. */
+.liquid {
+  position: relative;
+  isolation: isolate;
+  background: linear-gradient(140deg,
+      rgba(255, 255, 255, 0.06) 0%,
+      rgba(56, 225, 255, 0.06) 40%,
+      rgba(139, 123, 255, 0.05) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  backdrop-filter: blur(18px) saturate(1.4);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.16),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.35),
+      0 20px 60px -20px rgba(56, 225, 255, 0.18);
+  border-radius: 20px;
+  transition: transform 0.35s ease, box-shadow 0.35s ease, border-color 0.35s ease;
+}
+.liquid::before {
+  content: "";
+  position: absolute; inset: 0;
+  background: radial-gradient(120% 90% at 10% -10%,
+      rgba(255, 255, 255, 0.18) 0%, transparent 55%);
+  opacity: 0.55;
+  pointer-events: none;
+  z-index: -1;
+  border-radius: inherit;
+  transition: opacity 0.4s ease;
+}
+.liquid-hover:hover {
+  transform: translateY(-3px);
+  border-color: rgba(56, 225, 255, 0.32);
+  box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.25),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.35),
+      0 30px 80px -20px rgba(56, 225, 255, 0.28);
+}
+.liquid-hover:hover::before { opacity: 0.85; }
+.liquid-featured {
+  border-color: rgba(56, 225, 255, 0.35);
+  box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.22),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.35),
+      0 0 0 1px rgba(56, 225, 255, 0.22),
+      0 30px 90px -20px rgba(56, 225, 255, 0.32);
+}
+
 .pill {
   display: inline-flex;
   align-items: center;

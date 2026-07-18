@@ -1,0 +1,33 @@
+{
+  "summary": "Iteration 16 — Phase 2 v2 pricing revision (tier renames + rounded yearly prices + liquid-glass UI) verified end-to-end. All 12 backend pytest cases PASS (health boot state, 4× Stripe checkout URL creation, 4× Stripe catalog Price.unit_amount cents check, 3× free-tier gates 402). All frontend acceptance criteria PASS: /home hero shows 'The TurboTax Of GovCon:' + 'An AI Capture Manager for Lean Startups & Small Businesses' with old copy ('Save Months and $$$$', 'Never miss a relevant opportunity', 'Start Free', '🚨 New feature alert!') completely removed. Hero buttons (hero-start='Start Now'→/register, hero-see='See it in action'→/features) carry .btn-liquid. All 6 KPI cards render with $5-10, 100×, <1 hr, AI color-team, One profile, 12+ — no 'proposal volumes exported' or 'API keys visible' leftovers. value-banner contains 'The One-Stop Shop For Winning Federal Contracts, Raising, and Accelerating.' MarketingLayout top-right CTA reads 'Start Now' (btn-primary, no 'Start Free' anywhere in marketing chrome). /pricing renders 3 cards named exactly 'Starter'/'Small Teams'/'Enterprise' with correct taglines. Monthly prices $49.99/mo · $99.99/mo · Contact us aligned to same Y (diff=0px). Yearly prices are $480/yr · $2,880/yr · Contact us (WHOLE DOLLARS — no $479.90 or $2,879.71 remnants anywhere on page). 'Save 20%' visible on yearly toggle. plan-seat-badge-full='up to 3 users', plan-seat-callout-oi='Single user seat included', plan-seat-callout-full='Includes up to 3 users'. All 3 plan cards have .liquid; Small Teams has .liquid-featured; all 3 CTAs have .btn-liquid; recommended CTA has .liquid-cyan. Icon badge heights identical (40px, variance 0). Header text Y-coords identical (variance 0px). Backend tier-gate H1 copy across /proposals, /investment-deals, /accelerator-applications, /disk-storage all now say 'Upgrade to Small Teams to unlock <Feature>'. /settings BillingCard shows tier name 'Free' with no stale 'Upgrade to Full Capture' language. Navigation /home → /pricing → /login → /register produced ZERO React console errors and ZERO unescaped-entity warnings.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter16_pricing_liquid.py",
+    "/app/test_reports/pytest/iter16_pricing.xml"
+  ],
+  "action_items": [
+    "Minor cosmetic (non-blocker): /app/frontend/src/components/BillingCard.js line 99 still shows literal 'Upgrade to Full' on the CTA button for `sub.tier === 'oi'` users. Free-tier users don't see it (they see 'Choose a plan' instead), so this did NOT fail any acceptance criterion — but for full consistency with the Starter/Small Teams rename, change 'Upgrade to Full' → 'Upgrade to Small Teams' on that oi→full upsell button."
+  ],
+  "critical_code_review_comments": [
+    "Home.js line 230 uses `&apos;` to escape the apostrophe in 'Nobody's' — good, no react/no-unescaped-entities warning fires (verified by console-log capture across /home, /register).",
+    "Pricing.js `fmtDollars()` correctly returns whole-dollar strings for integer amounts (48000/100=480 → '$480') and keeps decimals for non-integers ($49.99). Clean and reusable.",
+    "PlanCard renders `min-h-[38px]` on tagline and `min-h-[74px]` on price row — this is exactly what makes the 3 columns line up at the pixel level (verified: Y-coord diff = 0.0 px across all 3 cards on both monthly + yearly). Nice piece of layout engineering.",
+    "setup_stripe.py `_ensure_price` correctly archives + recreates the price when unit_amount changes and re-uses the lookup_key (`transfer_lookup_key=True`). This is why the code layer never had to change even though $479.90→$480 and $2,879.71→$2,880 rolled through. Verified live on Stripe: only 48000 and 288000 cents are ACTIVE under lookup_keys oi_yearly/full_yearly; the old .90/.71 rows are archived.",
+    "BillingCard.js TIER_LABEL now uses 'Starter'/'Small Teams' consistently — good. However the ONE remaining literal 'Upgrade to Full' string on line 99 slipped through the rename pass (see action item)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter16_pricing_liquid.py (new — 12 pytest cases: health boot + 4× checkout + 4× Stripe catalog price introspection + 3× free-tier gates)"
+  ],
+  "success_rate": {"backend": "100% (12/12)", "frontend": "100% (every acceptance criterion in the request verified — hero copy, buttons + classes, 6 KPIs, value-banner, mk-start, plan names + taglines, monthly/yearly prices with pixel-perfect Y-alignment, liquid classes, seat badge/callouts, tier-gate copy across 4 routes, BillingCard Free-tier name, zero console errors/warnings)"},
+  "test_credentials": "qa.captureagent@testmail.dev / CaptureQA#2026 (platform_owner, tier=free, org 499e35c6-ca12-4589-aa1a-ae22bdb72c07)",
+  "seed_data_creation": "0 rows created. No refund_requests inserted this iteration (that path was explicitly excluded per review request 'other_misc_info'). Stripe checkout sessions were created for 4 lookup keys (oi_monthly, oi_yearly, full_monthly, full_yearly) — they auto-expire in 24h and were never followed to completion.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Phase 2 v2 pricing rename + rounded yearly prices + liquid-glass UI is fully green on preview. Stripe catalog live-verified: oi_yearly=48000c, full_yearly=288000c, oi_monthly=4999c, full_monthly=9999c (all ACTIVE, correctly matched by lookup_key). Only remaining stale-string breadcrumb is the 'Upgrade to Full' button label in BillingCard.js line 99 (visible only when sub.tier==='oi'). Not testable with QA (free tier), so main agent can self-verify with a 5-second edit. All other 'Full Capture' → 'Small Teams' renames landed correctly.",
+  "rca_of_the_issue": "N/A — no bugs surfaced this iteration. All acceptance criteria met."
+}

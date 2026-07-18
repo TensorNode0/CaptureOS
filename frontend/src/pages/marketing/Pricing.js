@@ -8,19 +8,19 @@ import { useAuth } from "../../context/AuthContext";
 import { toast } from "sonner";
 
 // New pricing (Feb 2026):
-//   OI     $49.99/user/mo · $479.90/yr (single user)
-//   Full   $99.99/user/mo · $2,879.71/yr (bundles up to 3 users)
-//   Enterprise  sales-led, no Stripe price
-// Yearly discount = 20% off from 12× monthly. Kept out of the JSX so the copy
-// is easy to grep + audit against Stripe.
+//   Starter (OI)      $49.99/user/mo · $480/yr (single user)
+//   Small Teams (Full) $99.99/user/mo · $2,880/yr (bundles up to 3 users)
+//   Enterprise         sales-led, no Stripe price
+// Yearly discount = 20% off from 12× monthly (rounded to whole dollars for
+// readability on the marketing card). The Stripe catalog matches exactly.
 const YEARLY_DISCOUNT_PCT = 20;
 
 const PLANS = [
   {
     tier: "oi",
-    name: "Opportunity Intelligence",
-    tagline: "Find & qualify — no drafting",
-    monthly: 49.99, yearly: 479.90, yearlyBundleSeats: 1,
+    name: "Starter",
+    tagline: "Opportunity Intelligence",
+    monthly: 49.99, yearly: 480, yearlyBundleSeats: 1,
     monthlyLookup: "oi_monthly", yearlyLookup: "oi_yearly",
     icon: Sparkles,
     features: [
@@ -30,9 +30,7 @@ const PLANS = [
       "Private Capital & Accelerators AI scans",
       "Points-of-Contact & Opportunity Summaries",
     ],
-    featuresYearlyExtra: [
-      "Single user seat included",
-    ],
+    featuresYearlyExtra: ["Single user seat included"],
     notIncluded: [
       "Federal Proposals (full package drafting)",
       "Investment Deals (pitch decks, business plans, financials)",
@@ -43,14 +41,14 @@ const PLANS = [
   },
   {
     tier: "full",
-    name: "Full Capture & Proposal Generation",
-    tagline: "Everything in Opportunity Intelligence — plus drafting",
-    monthly: 99.99, yearly: 2879.71, yearlyBundleSeats: 3,
+    name: "Small Teams",
+    tagline: "Full Capture & Proposal Management",
+    monthly: 99.99, yearly: 2880, yearlyBundleSeats: 3,
     monthlyLookup: "full_monthly", yearlyLookup: "full_yearly",
     recommended: true,
     icon: Rocket,
     features: [
-      "Everything in Opportunity Intelligence",
+      "Everything in Starter",
       "Company disk storage (all seven folders)",
       "AI chat assistant on every page",
       "Federal Proposals — full volume drafting, evaluation & export",
@@ -59,9 +57,7 @@ const PLANS = [
       "Overleaf bidirectional git sync",
       "Bring your own OpenAI · Anthropic · Gemini keys — or use ours",
     ],
-    featuresYearlyExtra: [
-      "Includes up to 3 users",
-    ],
+    featuresYearlyExtra: ["Includes up to 3 users"],
     notIncluded: [],
   },
   {
@@ -71,7 +67,7 @@ const PLANS = [
     monthly: null, yearly: null,
     icon: Building2,
     features: [
-      "Everything in Full Capture",
+      "Everything in Small Teams",
       "Full Agentic Workflows",
       "AWS GovCloud hosting",
       "Support for CUI and ITAR-controlled data",
@@ -85,13 +81,19 @@ const PLANS = [
   },
 ];
 
+// Money formatter that shows whole dollars when the amount is integer, and
+// two decimals otherwise. Keeps the yearly numbers ($480, $2,880) clean while
+// the monthly $49.99 / $99.99 keep their decimals.
+function fmtDollars(n) {
+  return n % 1 === 0
+    ? `$${n.toLocaleString()}`
+    : `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
 function priceLabel(plan, interval) {
   if (plan.monthly === null) return "Contact us";
-  if (interval === "year") {
-    return `$${plan.yearly.toLocaleString(undefined,
-      { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/yr`;
-  }
-  return `$${plan.monthly.toFixed(2)}/mo`;
+  if (interval === "year") return `${fmtDollars(plan.yearly)}/yr`;
+  return `${fmtDollars(plan.monthly)}/mo`;
 }
 
 function perLabel(plan, interval) {
@@ -114,7 +116,7 @@ function PlanCard({ plan, interval, onSubscribe, busy }) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}
-      className={`glass relative flex flex-col p-6 ${highlight ? "border-cyan/60 shadow-[0_0_0_1px_rgba(102,232,255,0.35)]" : ""}`}
+      className={`liquid liquid-hover relative flex h-full flex-col p-7 ${highlight ? "liquid-featured" : ""}`}
       data-testid={`plan-card-${plan.tier}`}
     >
       {highlight && (
@@ -122,14 +124,22 @@ function PlanCard({ plan, interval, onSubscribe, busy }) {
           Recommended
         </div>
       )}
+
+      {/* HEADER — icon, name, tagline. Fixed heights so the 3 cards align. */}
       <div className="flex items-center gap-3">
-        <Icon size={22} className="text-cyan" />
-        <div>
-          <div className="text-lg font-bold text-ink">{plan.name}</div>
-          <div className="label-mono text-faint">{plan.tagline}</div>
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-cyan/30 bg-cyan/10 text-cyan">
+          <Icon size={20} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="text-xl font-bold leading-tight text-ink">{plan.name}</div>
         </div>
       </div>
-      <div className="mt-5">
+      <div className="mt-2 min-h-[38px] text-sm leading-snug text-dim">
+        {plan.tagline}
+      </div>
+
+      {/* PRICE row — fixed height so "Contact us" lines up with $ figures. */}
+      <div className="mt-6 min-h-[74px]">
         <div className="text-3xl font-extrabold tracking-tight text-ink" data-testid={`plan-price-${plan.tier}`}>
           {priceLabel(plan, interval)}
         </div>
@@ -142,12 +152,13 @@ function PlanCard({ plan, interval, onSubscribe, busy }) {
         )}
       </div>
 
-      <ul className="mt-6 flex-1 space-y-2 text-sm text-dim">
+      {/* FEATURES — flex-1 so the button stays pinned to the card bottom. */}
+      <ul className="mt-6 flex-1 space-y-2.5 text-sm text-dim">
         {fullFeatureList.map((f) => {
-          // Give the seat callouts extra emphasis so they read like a badge.
           const isSeatCallout = plan.featuresYearlyExtra.includes(f);
           return (
-            <li key={f} className={`flex items-start gap-2 ${isSeatCallout ? "font-semibold text-cyan" : ""}`}
+            <li key={f}
+                className={`flex items-start gap-2 ${isSeatCallout ? "font-semibold text-cyan" : ""}`}
                 data-testid={isSeatCallout ? `plan-seat-callout-${plan.tier}` : undefined}>
               {isSeatCallout
                 ? <Users size={15} className="mt-0.5 shrink-0 text-cyan" />
@@ -167,10 +178,11 @@ function PlanCard({ plan, interval, onSubscribe, busy }) {
         </div>
       )}
 
+      {/* CTA — always at the bottom, same size across all 3 cards. */}
       <div className="mt-6">
         {plan.tier === "enterprise" ? (
           <Link to="/contact"
-                className="btn btn-ghost w-full"
+                className="btn btn-liquid w-full !py-3 text-base"
                 data-testid={`plan-cta-${plan.tier}`}>
             Contact sales
           </Link>
@@ -178,7 +190,7 @@ function PlanCard({ plan, interval, onSubscribe, busy }) {
           <button
             onClick={() => onSubscribe(plan, interval)}
             disabled={busy === plan.tier}
-            className={`btn w-full ${highlight ? "btn-primary" : "btn-ghost"}`}
+            className={`btn btn-liquid w-full !py-3 text-base ${highlight ? "liquid-cyan" : ""}`}
             data-testid={`plan-cta-${plan.tier}`}
           >
             {busy === plan.tier ? "Redirecting to Stripe…" : "Start subscription"}
@@ -249,7 +261,7 @@ export default function Pricing() {
           </div>
         </div>
 
-        <div className="mt-10 grid gap-6 lg:grid-cols-3">
+        <div className="mt-10 grid items-stretch gap-6 lg:grid-cols-3">
           {plans.map((p) => (
             <PlanCard key={p.tier} plan={p} interval={interval}
                       onSubscribe={subscribe} busy={busy} />

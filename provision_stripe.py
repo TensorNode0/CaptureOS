@@ -28,7 +28,7 @@ PRODUCTS = [
         "tier": "oi",
         "prices": [
             {"lookup_key": "oi_monthly", "amount_cents": 4999,  "interval": "month", "seat_limit": 1},
-            {"lookup_key": "oi_yearly",  "amount_cents": 47990, "interval": "year",  "seat_limit": 1},
+            {"lookup_key": "oi_yearly",  "amount_cents": 48000, "interval": "year",  "seat_limit": 1},
         ],
     },
     {
@@ -42,7 +42,7 @@ PRODUCTS = [
         "tier": "full",
         "prices": [
             {"lookup_key": "full_monthly", "amount_cents": 9999,   "interval": "month", "seat_limit": 1},
-            {"lookup_key": "full_yearly",  "amount_cents": 287971, "interval": "year",  "seat_limit": 3},
+            {"lookup_key": "full_yearly",  "amount_cents": 288000, "interval": "year",  "seat_limit": 3},
         ],
     },
 ]

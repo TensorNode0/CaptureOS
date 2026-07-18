@@ -2,14 +2,50 @@ import React from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Radar, Sparkles, Package, ShieldCheck, ArrowRight, KeyRound,
-         Building2, FileSearch, PenTool, Send, Gauge, Rocket } from "lucide-react";
+         Building2, FileSearch, PenTool, Send, Gauge, Rocket, Clock, DollarSign,
+         Trophy, Zap } from "lucide-react";
 import MarketingLayout from "./MarketingLayout";
 
-const STATS = [
-  { v: "12+", l: "federal sources scanned per intelligence run" },
-  { v: "<1 hr", l: "from solicitation to a reviewable first-draft package" },
-  { v: "5", l: "proposal volumes exported in a single zip" },
-  { v: "0", l: "API keys visible to anyone — even us" },
+// KPIs — grouped in the order (price · time · quality · effort). No "volume of
+// artifacts scanned" (not a KPI) and no "keys visible to you" claims here —
+// those live in the Security section further down.
+const KPIS = [
+  {
+    icon: DollarSign,
+    v: "$5–10", suffix: "per proposal",
+    l: "Typical AI-credit cost to scan, draft, edit, evaluate & export a full package. Compare with $8k–25k for a consultant.",
+    tint: "cyan",
+  },
+  {
+    icon: Trophy,
+    v: "100×", suffix: "cheaper",
+    l: "vs. hiring a fractional capture manager ($150–$300/hr) or a proposal shop.",
+    tint: "violet",
+  },
+  {
+    icon: Clock,
+    v: "< 1 hr", suffix: "solicitation → first draft",
+    l: "AI produces a reviewable Technical + Management + Past-Perf + Cost + SF1449 volume-set in minutes, not weeks.",
+    tint: "cyan",
+  },
+  {
+    icon: Gauge,
+    v: "AI color-team", suffix: "review built-in",
+    l: "Every package is scored on all Section-M factors before submission — with the exact edits to raise the score.",
+    tint: "violet",
+  },
+  {
+    icon: Zap,
+    v: "One profile", suffix: "→ everything auto-fills",
+    l: "Enter certs, NAICS, past performance, differentiators once. It fuels every capability, proposal, and application.",
+    tint: "cyan",
+  },
+  {
+    icon: Rocket,
+    v: "12+", suffix: "federal + private sources",
+    l: "SAM.gov, Grants.gov, SBIR/DSIP, AFWERX, DIU, DARPA, NASA + curated investors & accelerators, all fit-scored to your org.",
+    tint: "violet",
+  },
 ];
 
 const TRIO = [
@@ -71,49 +107,79 @@ export default function Home() {
   return (
     <MarketingLayout>
       {/* hero */}
-      <section className="mx-auto max-w-6xl px-5 pb-16 pt-20 text-center">
+      <section className="relative mx-auto max-w-6xl px-5 pb-16 pt-20 text-center">
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.5 }}>
           <div className="label-mono mb-4 !text-cyan">Streamlining government capture</div>
-          <h1 className="mx-auto max-w-3xl text-4xl font-bold leading-tight text-ink md:text-5xl">
-            The TurboTax Of GovCon — An AI Capture Manager On Your Team That
-            Wins Federal Work… And All Your Fundraising Needs!
+          <h1 className="mx-auto max-w-4xl text-4xl font-bold leading-[1.08] text-ink md:text-6xl">
+            The TurboTax Of GovCon:
+            <span className="mt-2 block bg-gradient-to-r from-cyan via-ink to-violet-300 bg-clip-text text-transparent">
+              An AI Capture Manager for Lean Startups &amp; Small Businesses.
+            </span>
           </h1>
-          <p className="mx-auto mt-5 max-w-2xl text-lg text-dim">
-            End-to-end GovCon lifecycle in <span className="text-ink">minutes, not months</span>.
-          </p>
-          <p className="mx-auto mt-2 max-w-2xl text-base font-medium text-cyan">
-            Save Months and $$$$. Never miss a relevant opportunity.
+          <p className="mx-auto mt-6 max-w-2xl text-lg text-dim">
+            End-to-end GovCon lifecycle in <span className="text-ink font-semibold">minutes, not months</span> —
+            at a fraction of the price of a fractional capture manager.
           </p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-            <Link to="/register" className="btn btn-primary !px-6 !py-3 text-base" data-testid="hero-start">
-              Start Free — For a Limited Time <ArrowRight size={17} />
+            <Link to="/register"
+                  className="btn btn-liquid liquid-cyan !px-7 !py-3 text-base"
+                  data-testid="hero-start">
+              Start Now <ArrowRight size={17} />
             </Link>
-            <Link to="/features" className="btn btn-ghost !px-6 !py-3 text-base">See it in action</Link>
+            <Link to="/features"
+                  className="btn btn-liquid !px-7 !py-3 text-base"
+                  data-testid="hero-see">
+              See it in action
+            </Link>
           </div>
         </motion.div>
-        <div className="mt-14 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {STATS.map((s) => (
-            <div key={s.l} className="glass p-4 text-left">
-              <div className="mono text-2xl text-cyan">{s.v}</div>
-              <div className="mt-1 text-xs text-dim">{s.l}</div>
-            </div>
+
+        {/* KPIs — 3 across × 2 rows */}
+        <div className="mt-14 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {KPIS.map((k, i) => (
+            <motion.div key={k.l}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.05 * i }}
+              className="liquid liquid-hover p-5 text-left"
+              data-testid={`kpi-${i}`}
+            >
+              <div className={`mb-3 inline-flex h-9 w-9 items-center justify-center rounded-xl border ${k.tint === "cyan" ? "border-cyan/40 bg-cyan/10 text-cyan" : "border-violet-400/40 bg-violet-400/10 text-violet-300"}`}>
+                <k.icon size={17} />
+              </div>
+              <div className="mono text-2xl font-bold tracking-tight text-ink">
+                {k.v}
+              </div>
+              <div className="mono mt-0.5 text-[11px] uppercase tracking-widest text-faint">
+                {k.suffix}
+              </div>
+              <div className="mt-3 text-sm leading-relaxed text-dim">{k.l}</div>
+            </motion.div>
           ))}
         </div>
       </section>
 
-      {/* new-feature banner */}
-      <section className="mx-auto max-w-4xl px-5 pb-4 pt-2 text-center">
-        <div className="glass border-cyan/30 p-8">
-          <div className="label-mono !text-warn">🚨 New feature alert!</div>
-          <p className="mt-3 text-2xl font-semibold leading-snug text-ink md:text-3xl">
-            When you're raising or accelerating: scout defense investors and
-            accelerators, draft your deck, and apply to programs.
-          </p>
-          <p className="mt-3 text-lg font-medium text-cyan">
-            All your fundraising needs — now on CaptureAgent.
-          </p>
-        </div>
+      {/* Value-proposition banner — replaces the "New feature" strip. */}
+      <section className="mx-auto max-w-5xl px-5 pb-4 pt-6">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.98 }}
+          whileInView={{ opacity: 1, scale: 1 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.4 }}
+          className="liquid liquid-hover liquid-featured relative overflow-hidden px-8 py-10 text-center md:px-12 md:py-14"
+          data-testid="value-banner"
+        >
+          <div className="pointer-events-none absolute -right-24 -top-24 h-64 w-64 rounded-full bg-cyan/20 blur-3xl" />
+          <div className="pointer-events-none absolute -bottom-24 -left-24 h-64 w-64 rounded-full bg-violet-400/20 blur-3xl" />
+          <div className="label-mono !text-cyan">CaptureAgent</div>
+          <h2 className="mx-auto mt-4 max-w-4xl text-3xl font-bold leading-tight text-ink md:text-4xl">
+            The One-Stop Shop For{" "}
+            <span className="bg-gradient-to-r from-cyan to-violet-300 bg-clip-text text-transparent">
+              Winning Federal Contracts, Raising, and Accelerating.
+            </span>
+          </h2>
+        </motion.div>
       </section>
 
       {/* product trio with screenshots */}
@@ -161,7 +227,7 @@ export default function Home() {
               <div className="mb-3 inline-flex h-11 w-11 items-center justify-center rounded-xl border border-ok/40 bg-ok/10">
                 <ShieldCheck size={20} className="text-ok" />
               </div>
-              <h2 className="text-2xl font-semibold text-ink">Your keys. Your data. Nobody else's.</h2>
+              <h2 className="text-2xl font-semibold text-ink">Your keys. Your data. Nobody else&apos;s.</h2>
               <p className="mt-3 leading-relaxed text-dim">
                 Every organization brings its own SAM.gov, Claude, and OpenAI API
                 keys — so your usage runs on your accounts, at cost, with no markup
@@ -195,8 +261,8 @@ export default function Home() {
           opportunities on your dashboard before your first coffee tomorrow.
         </p>
         <div className="mt-7 flex justify-center gap-3">
-          <Link to="/register" className="btn btn-primary !px-6 !py-3 text-base">Create your workspace</Link>
-          <Link to="/resources" className="btn btn-ghost !px-6 !py-3 text-base">Get your API keys</Link>
+          <Link to="/register" className="btn btn-liquid liquid-cyan !px-6 !py-3 text-base">Create your workspace</Link>
+          <Link to="/pricing" className="btn btn-liquid !px-6 !py-3 text-base">See pricing</Link>
         </div>
       </section>
     </MarketingLayout>

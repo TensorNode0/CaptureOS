@@ -38,7 +38,7 @@ PRODUCTS = [
         "prices": [
             {"lookup_key": "oi_monthly", "amount_cents": 4999, "interval": "month",
              "seat_limit": 1},
-            {"lookup_key": "oi_yearly",  "amount_cents": 47990, "interval": "year",
+            {"lookup_key": "oi_yearly",  "amount_cents": 48000, "interval": "year",
              "seat_limit": 1},
         ],
     },
@@ -54,8 +54,9 @@ PRODUCTS = [
         "prices": [
             {"lookup_key": "full_monthly", "amount_cents": 9999, "interval": "month",
              "seat_limit": 1},
-            # 3 seats bundled — 3 × 12 × $99.99 × 0.80 = $2,879.712 → $2,879.71.
-            {"lookup_key": "full_yearly",  "amount_cents": 287971, "interval": "year",
+            # 3 seats bundled — priced at $2,880/yr for readability (20% off vs.
+            # 3 × 12 × $99.99 = $3,599.64 baseline).
+            {"lookup_key": "full_yearly",  "amount_cents": 288000, "interval": "year",
              "seat_limit": 3},
         ],
     },
