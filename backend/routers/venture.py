@@ -8,6 +8,7 @@ from typing import Any, Dict, Optional
 import database as db
 from utils import now_utc, serialize, as_uuid
 from rbac import require_role
+from billing import assert_full_tier, FULL_TIER_VENTURE_KINDS
 from domain import write_audit
 import venture_ai
 import ai_jobs
@@ -62,6 +63,8 @@ async def list_docs(kind: Optional[str] = None,
 async def create_doc(body: DocIn, ctx: dict = Depends(require_role("editor"))):
     if body.kind not in venture_ai.KINDS:
         raise HTTPException(status_code=400, detail="Unknown document kind")
+    if body.kind in FULL_TIER_VENTURE_KINDS:
+        await assert_full_tier(ctx["user"])
     meta = venture_ai.KINDS[body.kind]
     title = body.title.strip() or (
         f"{meta['title']}{' — ' + body.target.strip() if body.target.strip() else ''}")
@@ -178,6 +181,8 @@ async def draft_doc(docId: str, body: DraftIn,
     doc = await _get_doc(ctx["org_id"], docId)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
+    if doc.get("kind") in FULL_TIER_VENTURE_KINDS:
+        await assert_full_tier(ctx["user"])
     if doc.get("draft_status") == "drafting":
         raise HTTPException(status_code=409, detail="Draft already in progress")
     engine = body.engine if body.engine in ENGINES else "claude"
@@ -250,6 +255,7 @@ async def redraft_accelerator_form(docId: str,
     application. Preserves any answers the founder already entered by mapping
     them across on question `id`; new questions the AI picks up appear with
     their AI-drafted answers, and questions no longer relevant are dropped."""
+    await assert_full_tier(ctx["user"])
     doc = await _get_doc(ctx["org_id"], docId)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
@@ -322,6 +328,7 @@ async def create_from_program(body: FromProgramIn,
                               ctx: dict = Depends(require_role("editor"))):
     """Start an accelerator application from a program's own page: fetch the
     URL, AI-extract its real questions + tips, scaffold the answers."""
+    await assert_full_tier(ctx["user"])
     import httpx
     page_text = ""
     if body.url:

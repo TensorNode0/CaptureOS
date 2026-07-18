@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Save, KeyRound, Lock, Settings as SettingsIcon, RotateCw, Trash2, AlertTriangle } from "lucide-react";
+import { Save, KeyRound, Lock, Settings as SettingsIcon, RotateCw, Trash2, AlertTriangle, Download } from "lucide-react";
 import { toast } from "sonner";
 import { api, errMsg } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { Card, SectionLabel, Pill, Spinner, PageReveal, Field, Modal } from "../components/ui";
 import { resetAIOptionsCache } from "../components/AIButton";
+import BillingCard from "../components/BillingCard";
 
 export default function Settings() {
   const { activeOrgId, activeOrg, user, logout } = useAuth();
@@ -26,6 +27,24 @@ export default function Settings() {
   const [deleteEmail, setDeleteEmail] = useState("");
   const [deleteReason, setDeleteReason] = useState("");
   const [deleting, setDeleting] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
+  const exportData = async () => {
+    setExporting(true);
+    try {
+      const resp = await api.get("/auth/me/export", { responseType: "blob" });
+      const cd = resp.headers?.["content-disposition"] || "";
+      const m = /filename="([^"]+)"/.exec(cd);
+      const filename = m ? m[1] : `captureagent-export.zip`;
+      const url = URL.createObjectURL(resp.data);
+      const a = document.createElement("a");
+      a.href = url; a.download = filename;
+      document.body.appendChild(a); a.click();
+      a.remove(); URL.revokeObjectURL(url);
+      toast.success("Data export downloaded");
+    } catch (e) { toast.error(errMsg(e)); }
+    finally { setExporting(false); }
+  };
 
   useEffect(() => {
     if (!activeOrgId) return;
@@ -104,6 +123,8 @@ export default function Settings() {
   return (
     <PageReveal className="max-w-3xl space-y-5">
       <div><SectionLabel>Settings</SectionLabel><h1 className="mt-1 flex items-center gap-2 text-2xl font-semibold text-ink"><SettingsIcon size={22} className="text-cyan" /> Organization Settings</h1></div>
+
+      <BillingCard />
 
       <Card className="p-5">
         <SectionLabel>Organization</SectionLabel>
@@ -186,9 +207,19 @@ export default function Settings() {
           survive — ownership is transferred to the next active owner or admin.
           <br /><br />
           <b>This cannot be undone.</b> If you have an active paid subscription, your billing is
-          also cancelled and no further charges will be made.
+          also cancelled and no further charges will be made. If you might ever want the data
+          back, <b>Export my data</b> first — you'll get a ZIP with every record and every file
+          reference.
         </p>
-        <div className="mt-3">
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            className="btn btn-ghost"
+            onClick={exportData}
+            disabled={exporting}
+            data-testid="export-data-btn"
+          >
+            {exporting ? <Spinner /> : <Download size={15} />} Export my data
+          </button>
           <button
             className="btn"
             style={{ background: "rgba(239, 68, 68, 0.12)", color: "#fca5a5", borderColor: "rgba(239, 68, 68, 0.35)" }}

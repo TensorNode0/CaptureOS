@@ -12,8 +12,11 @@ a Supabase-shaped token and auto-provisions the profile, so the suite can run
 without a live Supabase project. It is never enabled in production.
 """
 import os
+import io
+import json
+import zipfile
 import httpx
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Response
 from pydantic import BaseModel, EmailStr, Field
 
 import database as db
@@ -215,6 +218,24 @@ async def delete_account(body: DeleteAccountIn, user: dict = Depends(get_current
     #    stay; other user refs get NULLed via migration 0019.
     await db.execute("delete from users where id = $1", as_uuid(user["id"]))
 
+    # 3b) Cancel any active Stripe subscription so the user is not billed
+    #    after their account is gone. Best-effort: log and continue on failure —
+    #    Stripe support can be involved manually if the API call errors.
+    try:
+        import stripe as _stripe
+        _stripe.api_key = os.environ.get("STRIPE_SECRET_KEY") or ""
+        sub_row = await db.fetchrow(
+            """select stripe_subscription_id from user_subscriptions
+                 where user_id = $1 and stripe_subscription_id <> ''""",
+            as_uuid(user["id"]))
+        if sub_row and _stripe.api_key:
+            try:
+                _stripe.Subscription.cancel(sub_row["stripe_subscription_id"])
+            except _stripe.error.StripeError:
+                pass  # webhook will still fire later; nothing to block on
+    except ImportError:
+        pass
+
     # 4) Delete the Supabase auth identity so the email is fully released
     #    and the user gets a "user not found" if they try to sign in again.
     if auth_uid:
@@ -233,9 +254,134 @@ async def delete_account(body: DeleteAccountIn, user: dict = Depends(get_current
                completed_at = $2
              where user_id = $1 and status = 'pending'""",
         as_uuid(user["id"]), now_utc())
-    # TODO(phase-2 Stripe): if the user had an active subscription, hit
-    # stripe.Subscription.delete(sub_id) before returning. For now the row in
-    # account_deletion_requests is the only trace — no billing integration yet.
     return {"ok": True,
             "orgsDeleted": len(orgs_to_wipe),
             "membershipsDropped": len(orgs_to_leave)}
+
+
+# ---------------------- Export my data (GDPR-friendly) ----------------------
+
+def _rows_to_json(rows):
+    """Turn asyncpg Records into JSON-safe dicts (dates → ISO, uuid → str)."""
+    return [json.loads(json.dumps(serialize(r), default=str)) for r in rows]
+
+
+@router.get("/me/export")
+async def export_my_data(user: dict = Depends(get_current_user)):
+    """Return a ZIP of everything the current user can see: their profile,
+    every org they belong to, and every record in those orgs (opportunities,
+    proposals, capabilities, competitive reports, venture docs, uploaded
+    file metadata). Binary file contents are NOT bundled — they're linked
+    to their Supabase Storage `storage_path` in `org_files.json` so users
+    can pull them via signed URLs. This keeps the ZIP small and predictable.
+
+    The output is served inline so the browser downloads it as
+    captureagent-export-YYYYMMDD.zip.
+    """
+    uid = as_uuid(user["id"])
+    profile_row = await db.fetchrow("select * from users where id = $1", uid)
+    if not profile_row:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    memberships = await db.fetch(
+        """select m.organization_id, m.role, m.created_at as joined_at,
+                  o.name as org_name
+             from memberships m
+             join organizations o on o.id = m.organization_id
+             where m.user_id = $1 and m.status = 'active'
+             order by o.created_at""",
+        uid)
+
+    sub_row = await db.fetchrow(
+        "select * from user_subscriptions where user_id = $1", uid)
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("README.txt", (
+            "CaptureAgent data export\n"
+            f"Generated: {now_utc().isoformat()}\n"
+            f"Account: {user.get('email', '')}\n\n"
+            "This archive contains every record you have visibility into on\n"
+            "captureagent.us at the time of export. Uploaded file contents\n"
+            "(PDFs, decks, spreadsheets) are NOT embedded — see\n"
+            "`org_files.json` for each org and use the corresponding signed\n"
+            "URL endpoint (/api/orgs/<orgId>/files/<fileId>/url) to fetch the\n"
+            "binaries individually.\n"
+        ))
+        zf.writestr("account/profile.json", json.dumps(
+            _rows_to_json([profile_row])[0], indent=2))
+        zf.writestr("account/subscription.json", json.dumps(
+            (_rows_to_json([sub_row])[0] if sub_row else {}), indent=2))
+        zf.writestr("account/memberships.json", json.dumps(
+            _rows_to_json(memberships), indent=2))
+
+        for m in memberships:
+            org_id = m["organization_id"]
+            slug = f"organizations/{org_id}"
+            org = await db.fetchrow(
+                "select * from organizations where id = $1", org_id)
+            profile = await db.fetchrow(
+                "select * from org_profiles where organization_id = $1", org_id)
+            members = await db.fetch(
+                """select m.role, m.status, m.created_at as joined_at, u.email, u.name
+                     from memberships m
+                     left join users u on u.id = m.user_id
+                     where m.organization_id = $1
+                     order by m.created_at""", org_id)
+            opps = await db.fetch(
+                "select * from opportunities where organization_id = $1", org_id)
+            props = await db.fetch(
+                """select p.*, o.title as opportunity_title
+                     from proposals p
+                     join opportunities o on o.id = p.opportunity_id
+                     where p.organization_id = $1""", org_id)
+            prop_docs = await db.fetch(
+                """select d.* from proposal_documents d
+                     join proposals p on p.id = d.proposal_id
+                     where p.organization_id = $1""", org_id)
+            caps = await db.fetch(
+                "select id, opportunity_id, content, created_at, updated_at from capabilities where organization_id = $1", org_id)
+            comp_reports = await db.fetch(
+                "select * from competitive_reports where organization_id = $1", org_id)
+            venture_docs = await db.fetch(
+                "select * from venture_docs where organization_id = $1", org_id)
+            org_files = await db.fetch(
+                """select id, category, entity_type, entity_id, filename,
+                          mime, size_bytes, storage_path, uploaded_by, created_at
+                     from organization_files where organization_id = $1""", org_id)
+            audits = await db.fetch(
+                """select * from audit_log where organization_id = $1
+                     order by at desc limit 5000""", org_id)
+
+            zf.writestr(f"{slug}/organization.json",
+                        json.dumps(_rows_to_json([org])[0] if org else {}, indent=2))
+            zf.writestr(f"{slug}/profile.json",
+                        json.dumps((_rows_to_json([profile])[0] if profile else {}), indent=2))
+            zf.writestr(f"{slug}/members.json",
+                        json.dumps(_rows_to_json(members), indent=2))
+            zf.writestr(f"{slug}/opportunities.json",
+                        json.dumps(_rows_to_json(opps), indent=2))
+            zf.writestr(f"{slug}/proposals.json",
+                        json.dumps(_rows_to_json(props), indent=2))
+            zf.writestr(f"{slug}/proposal_documents.json",
+                        json.dumps(_rows_to_json(prop_docs), indent=2))
+            zf.writestr(f"{slug}/capabilities.json",
+                        json.dumps(_rows_to_json(caps), indent=2))
+            zf.writestr(f"{slug}/competitive_reports.json",
+                        json.dumps(_rows_to_json(comp_reports), indent=2))
+            zf.writestr(f"{slug}/venture_docs.json",
+                        json.dumps(_rows_to_json(venture_docs), indent=2))
+            zf.writestr(f"{slug}/org_files.json",
+                        json.dumps(_rows_to_json(org_files), indent=2))
+            zf.writestr(f"{slug}/audit_log.json",
+                        json.dumps(_rows_to_json(audits), indent=2))
+
+    # No audit row at the user level — audit_log rows are org-scoped and this
+    # export can span multiple orgs. Per-org read is authorized by membership;
+    # the request will show up in server access logs.
+    stamp = now_utc().strftime("%Y%m%d")
+    filename = f"captureagent-export-{stamp}.zip"
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'})

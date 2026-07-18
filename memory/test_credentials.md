@@ -31,3 +31,24 @@
 - SUPABASE_URL/keys are in backend/.env; REACT_APP_SUPABASE_URL/ANON_KEY in frontend/.env.
 - frontend/.env REACT_APP_BACKEND_URL is set to https://captureagent.us (deploy convention);
   flip to https://govcon-workspace.preview.emergentagent.com before preview UI testing.
+
+## BILLING / STRIPE (2026-07-18) — Phase 2 shipped
+- Stripe sandbox provisioned (via `python -m setup_stripe`): products
+  `captureagent_oi` ($49/mo · $499.80/yr) and `captureagent_full` ($99/mo · $1009.80/yr).
+  Lookup keys: `oi_monthly`, `oi_yearly`, `full_monthly`, `full_yearly`.
+- backend/.env carries: STRIPE_SECRET_KEY, STRIPE_PUBLISHABLE_KEY, STRIPE_WEBHOOK_SECRET,
+  STRIPE_ACCOUNT_ID, STRIPE_MODE, CAPTUREAGENT_OWNER_EMAILS (comma-separated allowlist for
+  the refund approver role), BILLING_TIER_ALLOWLIST (comma-separated email allowlist that
+  bypasses tier gating — used for `info@orbitalservicescorporation.com` the platform owner).
+- QA (`qa.captureagent@testmail.dev`) IS a `platform_owner` (can access Admin → Refunds tab)
+  but is NOT grandfathered on billing — QA gets `tier=free` and IS tier-gated so we can
+  test the upgrade flow end-to-end. Sub row is auto-created on first `/api/payments/me`.
+- Tier gating enforced server-side (`billing.assert_full_tier`) on: proposal create/draft/
+  evaluate, venture doc create/draft/from-program/redraft-form for kinds in
+  `FULL_TIER_VENTURE_KINDS` (investor_email, pitch_deck, business_plan, financials,
+  accelerator_application). Scans (`investor_scan`, `accelerator_scan`) are NOT gated.
+- Tier gating on frontend via `<RequireTier minTier="full">` wrapping /proposals,
+  /investment-deals, /accelerator-applications, /opportunities/:id/proposal.
+- Refund flow: user submits from Settings → Billing → "Request refund"; platform owner sees
+  and approves/denies in Admin → Refunds tab (via `/api/refund-requests`). Approvals fire
+  `stripe.Refund.create` against the last payment_intent on file.

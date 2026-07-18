@@ -9,6 +9,7 @@ from typing import Any, Dict, Optional
 import database as db
 from utils import now_utc, serialize, as_uuid
 from rbac import require_role, require_perm
+from billing import assert_full_tier
 from domain import write_audit
 import proposal_ai
 import ai_jobs
@@ -85,6 +86,7 @@ async def get_proposal(oppId: str, ctx: dict = Depends(require_role("viewer"))):
 
 @router.post("/{orgId}/opportunities/{oppId}/proposal")
 async def create_proposal(oppId: str, ctx: dict = Depends(require_perm("proposal.create"))):
+    await assert_full_tier(ctx["user"])
     opp = await _get_opp(ctx["org_id"], oppId)
     if not opp:
         raise HTTPException(status_code=404, detail="Opportunity not found")
@@ -155,6 +157,7 @@ async def _run_draft(doc_id, engine, keys,
 @router.post("/{orgId}/opportunities/{oppId}/proposal/documents/{docId}/draft")
 async def draft_document(oppId: str, docId: str, body: DraftIn,
                          ctx: dict = Depends(require_role("editor"))):
+    await assert_full_tier(ctx["user"])
     opp = await _get_opp(ctx["org_id"], oppId)
     proposal = await _get_proposal(ctx["org_id"], oppId)
     if not opp or not proposal:
@@ -363,6 +366,7 @@ async def evaluate_proposal(oppId: str, body: DraftIn,
                             ctx: dict = Depends(require_role("editor"))):
     """AI color-team evaluation — runs once EVERY volume is drafted (the AI
     evaluates the package; the user never grades their own proposal)."""
+    await assert_full_tier(ctx["user"])
     opp = await _get_opp(ctx["org_id"], oppId)
     proposal = await _get_proposal(ctx["org_id"], oppId)
     if not opp or not proposal:

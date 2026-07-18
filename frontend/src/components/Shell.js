@@ -4,10 +4,11 @@ import {
   LayoutDashboard, Target, Building2, Users, Settings as SettingsIcon,
   Shield, LogOut, ChevronDown, Radar, AlertTriangle, X, Menu, FileText,
   Plus, KeyRound, Landmark, Handshake, Rocket, ClipboardList, Crosshair, FolderLock,
-  PanelLeftClose, PanelLeftOpen, HardDrive,
+  PanelLeftClose, PanelLeftOpen, HardDrive, Lock,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { canAdmin, canSeeDashboard } from "../lib/helpers";
+import { useSubscription, hasTier } from "../lib/billing";
 import IdleTimeout from "./IdleTimeout";
 import { LogoMark } from "./Logo";
 import { api, errMsg } from "../lib/api";
@@ -131,12 +132,12 @@ const NAV = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, testid: "nav-dashboard", dashboard: true },
   { to: "/profile", label: "Company Profile", icon: Building2, testid: "nav-profile" },
   { to: "/opportunities", label: "Federal Opportunities", icon: Target, testid: "nav-opportunities" },
-  { to: "/proposals", label: "Federal Proposals", icon: FileText, testid: "nav-proposals" },
+  { to: "/proposals", label: "Federal Proposals", icon: FileText, testid: "nav-proposals", requiresFull: true },
   { to: "/competitive-analysis", label: "Competitive Analysis", icon: Crosshair, testid: "nav-competitive" },
   { to: "/private-capital", label: "Private Capital", icon: Landmark, testid: "nav-capital" },
-  { to: "/investment-deals", label: "Investment Deals", icon: Handshake, testid: "nav-deals" },
+  { to: "/investment-deals", label: "Investment Deals", icon: Handshake, testid: "nav-deals", requiresFull: true },
   { to: "/accelerators", label: "Accelerators", icon: Rocket, testid: "nav-accelerators" },
-  { to: "/accelerator-applications", label: "Accelerator Applications", icon: ClipboardList, testid: "nav-accel-apps" },
+  { to: "/accelerator-applications", label: "Accelerator Applications", icon: ClipboardList, testid: "nav-accel-apps", requiresFull: true },
   { to: "/disk-storage", label: "Disk Storage", icon: HardDrive, testid: "nav-disk" },
   { to: "/admin", label: "Admin", icon: Users, testid: "nav-admin", admin: true },
   { to: "/settings", label: "Settings", icon: SettingsIcon, testid: "nav-settings", admin: true },
@@ -147,21 +148,30 @@ const SUB_NAV = [
 ];
 
 function NavList({ role, onNavigate }) {
+  const { sub } = useSubscription();
+  const isFull = hasTier(sub, "full");
   const items = role === "subcontractor"
     ? SUB_NAV
     : NAV.filter((n) => (!n.admin || canAdmin(role)) && (!n.dashboard || canSeeDashboard(role)));
   return (
     <nav className="flex flex-1 flex-col gap-1">
-      {items.map((n) => (
-        <NavLink key={n.to} to={n.to} data-testid={n.testid} onClick={onNavigate}
-          className={({ isActive }) =>
-            `flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors ${
-              isActive ? "border border-cyan/30 bg-cyan/10 text-cyan"
-                       : "border border-transparent text-dim hover:bg-white/5 hover:text-ink"}`}>
-          <n.icon size={17} />
-          {n.label}
-        </NavLink>
-      ))}
+      {items.map((n) => {
+        const locked = n.requiresFull && !isFull;
+        return (
+          <NavLink key={n.to} to={n.to} data-testid={n.testid} onClick={onNavigate}
+            className={({ isActive }) =>
+              `flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors ${
+                isActive ? "border border-cyan/30 bg-cyan/10 text-cyan"
+                         : "border border-transparent text-dim hover:bg-white/5 hover:text-ink"}`}>
+            <n.icon size={17} />
+            <span className="flex-1">{n.label}</span>
+            {locked && (
+              <Lock size={12} className="text-warn" data-testid={`${n.testid}-lock`}
+                    title="Included in the Full plan" />
+            )}
+          </NavLink>
+        );
+      })}
     </nav>
   );
 }

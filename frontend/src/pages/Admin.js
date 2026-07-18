@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from "react";
-import { UserPlus, Trash2, Crown, ScrollText, Users, KeyRound, Copy, RefreshCw } from "lucide-react";
+import { UserPlus, Trash2, Crown, ScrollText, Users, KeyRound, Copy, RefreshCw, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import { api, errMsg } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
+import { useSubscription } from "../lib/billing";
 import { Card, SectionLabel, Pill, Spinner, PageReveal, Modal, Field, EmptyState } from "../components/ui";
 import { fmtDateTime, isOwner } from "../lib/helpers";
+import RefundQueue from "../components/RefundQueue";
 
 const ROLES = ["viewer", "editor", "technical_writer", "proposal_writer", "pi",
                "capture_manager", "admin", "subcontractor"];
@@ -222,7 +224,9 @@ function InviteModal({ open, onClose, orgId, onDone }) {
 
 export default function Admin() {
   const { activeOrgId, activeOrg } = useAuth();
+  const { sub } = useSubscription();
   const owner = isOwner(activeOrg?.role);
+  const isPlatformOwner = !!sub?.isPlatformOwner;
   const [tab, setTab] = useState("members");
   const [members, setMembers] = useState(null);
   const [audit, setAudit] = useState(null);
@@ -262,6 +266,9 @@ export default function Admin() {
       <div className="flex gap-1 border-b border-line">
         <button onClick={() => setTab("members")} className={`flex items-center gap-2 px-3 py-2 text-sm ${tab === "members" ? "border-b-2 border-cyan text-cyan" : "text-dim hover:text-ink"}`} data-testid="tab-members"><Users size={15} /> Members</button>
         <button onClick={() => setTab("audit")} className={`flex items-center gap-2 px-3 py-2 text-sm ${tab === "audit" ? "border-b-2 border-cyan text-cyan" : "text-dim hover:text-ink"}`} data-testid="tab-audit"><ScrollText size={15} /> Audit Log</button>
+        {isPlatformOwner && (
+          <button onClick={() => setTab("refunds")} className={`flex items-center gap-2 px-3 py-2 text-sm ${tab === "refunds" ? "border-b-2 border-cyan text-cyan" : "text-dim hover:text-ink"}`} data-testid="tab-refunds"><Wallet size={15} /> Refunds</button>
+        )}
       </div>
 
       {tab === "members" && (
@@ -335,6 +342,7 @@ export default function Admin() {
 
       <InviteModal open={showInvite} onClose={() => setShowInvite(false)} orgId={activeOrgId} onDone={loadMembers} />
       <AccessModal member={accessMember} orgId={activeOrgId} onClose={() => setAccessMember(null)} />
+      {tab === "refunds" && isPlatformOwner && <RefundQueue />}
     </PageReveal>
   );
 }

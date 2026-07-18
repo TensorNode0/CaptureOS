@@ -40,6 +40,10 @@ import Profile from "./pages/Profile";
 import Admin from "./pages/Admin";
 import Settings from "./pages/Settings";
 import DiskStorage from "./pages/DiskStorage";
+import BillingSuccess from "./pages/BillingSuccess";
+import Pricing from "./pages/marketing/Pricing";
+import RequireTier from "./components/RequireTier";
+import { SubscriptionProvider } from "./lib/billing";
 
 function FullLoader() {
   return (
@@ -102,6 +106,7 @@ export default function App() {
         }}
       />
       <AuthProvider>
+        <SubscriptionProvider>
         <Routes>
           <Route path="/home" element={<Home />} />
           <Route path="/why" element={<Why />} />
@@ -114,6 +119,7 @@ export default function App() {
           <Route path="/reviews" element={<Reviews />} />
           <Route path="/contact" element={<Contact />} />
           <Route path="/about" element={<About />} />
+          <Route path="/pricing" element={<Pricing />} />
           <Route path="/login" element={<PublicOnly><Login /></PublicOnly>} />
           <Route path="/register" element={<PublicOnly><Register /></PublicOnly>} />
           <Route path="/forgot-password" element={<PublicOnly><ForgotPassword /></PublicOnly>} />
@@ -123,23 +129,25 @@ export default function App() {
           <Route path="/dashboard" element={<Protected><DashboardGate><Dashboard /></DashboardGate></Protected>} />
           <Route path="/intelligence" element={<Protected><Intelligence /></Protected>} />
           <Route path="/opportunities" element={<Protected><Opportunities /></Protected>} />
-          <Route path="/proposals" element={<Protected><Proposals /></Protected>} />
+          <Route path="/proposals" element={<Protected><RequireTier minTier="full" feature="Federal Proposals"><Proposals /></RequireTier></Protected>} />
           <Route path="/competitive-analysis" element={<Protected><CompetitiveAnalysis /></Protected>} />
           <Route path="/shared" element={<Protected><SharedWithMe /></Protected>} />
           <Route path="/private-capital" element={<Protected><PrivateCapital /></Protected>} />
-          <Route path="/investment-deals" element={<Protected><InvestmentDeals /></Protected>} />
+          <Route path="/investment-deals" element={<Protected><RequireTier minTier="full" feature="Investment Deals"><InvestmentDeals /></RequireTier></Protected>} />
           <Route path="/accelerators" element={<Protected><Accelerators /></Protected>} />
-          <Route path="/accelerator-applications" element={<Protected><AcceleratorApplications /></Protected>} />
+          <Route path="/accelerator-applications" element={<Protected><RequireTier minTier="full" feature="Accelerator Applications"><AcceleratorApplications /></RequireTier></Protected>} />
           <Route path="/opportunities/:id" element={<Protected><OpportunityDetail /></Protected>} />
           <Route path="/opportunities/:id/capability" element={<Protected><Capability /></Protected>} />
-          <Route path="/opportunities/:id/proposal" element={<Protected><ProposalWorkspace /></Protected>} />
+          <Route path="/opportunities/:id/proposal" element={<Protected><RequireTier minTier="full" feature="Federal Proposals"><ProposalWorkspace /></RequireTier></Protected>} />
           <Route path="/profile" element={<Protected><Profile /></Protected>} />
           <Route path="/admin" element={<Protected><Admin /></Protected>} />
           <Route path="/settings" element={<Protected><Settings /></Protected>} />
           <Route path="/disk-storage" element={<Protected><DiskStorage /></Protected>} />
+          <Route path="/billing/success" element={<Protected><BillingSuccess /></Protected>} />
           <Route path="/" element={<RootRedirect />} />
           <Route path="*" element={<RootRedirect />} />
         </Routes>
+        </SubscriptionProvider>
       </AuthProvider>
     </BrowserRouter>
   );

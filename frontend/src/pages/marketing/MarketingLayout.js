@@ -8,6 +8,7 @@ const NAV = [
   { to: "/about", label: "About" },
   { to: "/why", label: "Why CaptureAgent" },
   { to: "/features", label: "Features" },
+  { to: "/pricing", label: "Pricing" },
   { to: "/resources", label: "Resources" },
   { to: "/blog", label: "Blog" },
   { to: "/reviews", label: "Reviews" },

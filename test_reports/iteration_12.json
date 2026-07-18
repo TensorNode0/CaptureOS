@@ -1,0 +1,47 @@
+{
+  "summary": "Phase 2 (Stripe billing + tier gating + refunds + GDPR export) tested end-to-end on the preview build. Backend: 14/17 pytest cases pass — 3 failures are all one root-cause backend bug in POST /api/refund-requests (and /deny) that returns HTTP 500 even though the DB row is successfully inserted (see rca_of_the_issue). Frontend: every acceptance criterion in the review request is met — /pricing marketing page renders 3 plan cards with the Recommended pill on Full and correct yearly prices ($500/yr, $1,010/yr) after toggling data-testid pricing-interval-year; sidebar Lock icons render on Federal Proposals / Investment Deals / Accelerator Applications; tier-gate + tier-gate-upgrade → /pricing CTA render on all three gated pages for QA (tier=free); Settings shows the Billing card with 'Free' badge + 'Choose a plan' (billing-upgrade-btn) + 'Export my data' (export-data-btn); Admin → Refunds tab (tab-refunds) is visible for QA platform_owner and refund-queue renders with the pytest-inserted refund row visible. Sanity check on /dashboard, /opportunities, /company-profile, /accelerators, /private-capital, /disk-storage — all HTTP 200 with no client errors.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/refund-requests",
+        "issue": "Returns HTTP 500 with asyncpg NotNullViolationError on audit_log.organization_id. Root cause: routers/payments.py line 220 calls write_audit(None, user, 'billing.refund_request', ...) but domain.write_audit inserts into audit_log where organization_id is NOT NULL. The refund_requests row IS successfully inserted before the audit call fails (verified — the row shows up in the refund queue), so from the DB's perspective the request lands, but the client sees 500 and no requestId. Same bug also affects /refund-requests/{id}/approve (line 288) and /refund-requests/{id}/deny (line 305) which also call write_audit with org_id=None. Fix (main agent): either (a) make audit_log.organization_id nullable and update dependent code paths, or (b) inside write_audit skip the insert when org_id is None, or (c) plumb a system/global org sentinel through billing audit calls.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase2_billing.py",
+    "/app/test_reports/pytest/phase2_billing.xml"
+  ],
+  "action_items": [
+    "HIGH: Fix the write_audit(None, ...) → audit_log.organization_id NOT NULL 500 in POST /api/refund-requests, /api/refund-requests/{id}/approve and /api/refund-requests/{id}/deny (see backend_issues.critical). Recommended fix: guard inside domain.write_audit → `if org_id is None: skip insert` (this is the least disruptive change and still satisfies the audit trail for billing.refund_* by relying on the app-level logs). After the fix, rerun tests/test_phase2_billing.py::TestRefunds — the deny path must also be verified because it currently would also 500 after updating the refund row.",
+    "OPTIONAL (carried over from iter 10/11): silence the React Router v6→v7 future-flag warnings by adding v7_startTransition + v7_relativeSplatPath flags to BrowserRouter."
+  ],
+  "critical_code_review_comments": [
+    "backend/routers/payments.py: submit_refund_request/approve/deny all call write_audit with org_id=None, which is incompatible with the current audit_log schema (organization_id NOT NULL). Because asyncpg.execute() implicit-commits before the exception, the refund_requests row is left in the DB while the caller sees 500 — an inconsistent state (the row exists but the API says it didn't). This should be treated as a data-integrity issue, not just an error-handling issue.",
+    "backend/billing.py assert_tier: correctly enforces tier gating with HTTP 402 and a copy that names the specific plan ('Full Capture'). Grandfathering via BILLING_TIER_ALLOWLIST is short-circuited BEFORE the DB lookup, which is the right ordering.",
+    "backend/routers/payments.py stripe_webhook: correctly refuses invalid signatures with 400 when STRIPE_WEBHOOK_SECRET is set (verified). The fall-through to accept unverified events when secret is empty is guarded, but consider logging a WARNING when that branch fires so a misconfigured production env cannot silently accept spoofed webhooks.",
+    "backend/routers/auth.py /me/export: produces a well-formed ZIP with README.txt + account/*.json + organizations/{orgId}/*.json for each membership. profile.json includes password_hash — consider redacting it before serialization since this ZIP is user-facing (low priority; the ZIP is only returned to the account owner over an authenticated request).",
+    "frontend/src/lib/billing.js SubscriptionProvider: correctly caches the /api/payments/me snapshot in context so gated routes don't refetch on nav. The one edge: when useAuth().user transitions from null→user the effect refetches — which is what we want. No changes required.",
+    "frontend/src/components/RequireTier.js: renders a Spinner during sub==null/loading which is important because /api/payments/me can take 2-3s cold — the gate is not shown prematurely. Verified in preview: gate appears once /payments/me resolves."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase2_billing.py (new file — Phase 2 pytest suite covering /payments/me, checkout, portal, tier gating on proposals + venture-docs restricted kinds + from-program, investor_scan allowed on free tier, refund workflow, GDPR export ZIP shape, and Stripe webhook invalid-signature rejection)"
+  ],
+  "success_rate": {
+    "backend": "82% (14/17 — 3 failures are ALL the single write_audit NOT NULL bug in the refund endpoints; every non-refund endpoint including tier gating on proposals/venture-docs, checkout, portal 400, /payments/me, /auth/me/export ZIP, and webhook 400 all pass)",
+    "frontend": "100% of Phase 2 review-request UI acceptance criteria (pricing page, tier gates, sidebar locks, Settings Billing card, Settings Export button, Admin Refunds tab + queue, and sanity on 6 pre-existing routes)"
+  },
+  "test_credentials": "qa.captureagent@testmail.dev / CaptureQA#2026 (verified working via Supabase password-grant + UI login); verify.check.1783329822@testmail.dev / VerifyCheck#2026 (verified as non-platform-owner — /api/refund-requests correctly returns 403)",
+  "seed_data_creation": "One refund_requests row inserted for QA with reason='TEST_refund by pytest' via the pytest run. Because of the write_audit 500 bug the pytest teardown couldn't capture the id to delete it, but the frontend Admin → Refunds tab was used to verify the row is visible; main agent can either DELETE it manually or clean it up once the write_audit fix lets the deny endpoint complete without 500. No other data created.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "After main agent patches the write_audit(None, ...) issue, rerun `cd /app/backend && REACT_APP_BACKEND_URL=https://govcon-workspace.preview.emergentagent.com python -m pytest tests/test_phase2_billing.py -v` — expect 17/17 pass. To sanity re-verify the frontend refund submission end-to-end (Settings → Billing → Request refund → visible in Admin → Refunds), log in as qa.captureagent@testmail.dev / CaptureQA#2026 and click through. Existing pytest refund row (TEST_refund by pytest) should be cleaned up either by DELETE from refund_requests where reason like 'TEST_refund%' or via the Admin Deny button once the deny path is 500-free. QA account remains password CaptureQA#2026 (untouched). frontend/.env is currently REACT_APP_BACKEND_URL=https://govcon-workspace.preview.emergentagent.com — flip to https://captureagent.us + restart frontend before deploy.",
+  "rca_of_the_issue": "Bug: POST /api/refund-requests returns HTTP 500 to the caller despite the refund row being persisted. Reproduction: with any authenticated user (e.g. QA), POST /api/refund-requests {reason:'test'} → 500 Internal Server Error; then GET /api/refund-requests?status=pending as a platform_owner shows the row with the correct email + reason. Backend traceback: asyncpg.exceptions.NotNullViolationError: null value in column \"organization_id\" of relation \"audit_log\" violates not-null constraint — raised from domain.write_audit called at routers/payments.py:220 with org_id=None. Because the refund_requests INSERT executes as its own auto-committed asyncpg statement BEFORE the audit_log INSERT throws, the row is persisted but the endpoint response is aborted. Mitigation options: (1) guard inside domain.write_audit to no-op when org_id is None (least disruption, keeps the schema constraint), (2) alter table audit_log alter column organization_id drop not null (broadest, needs a migration), or (3) plumb a system/global 'billing' org sentinel through refund audit calls (cleanest for audit trail but requires a schema pick and code changes). Option (1) recommended for a same-day patch. Same 500 will also fire on /refund-requests/{id}/approve and /refund-requests/{id}/deny (both call write_audit with None org_id) so those paths need the same fix + retest."
+}
