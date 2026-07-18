@@ -308,8 +308,13 @@ async def export_my_data(user: dict = Depends(get_current_user)):
             "URL endpoint (/api/orgs/<orgId>/files/<fileId>/url) to fetch the\n"
             "binaries individually.\n"
         ))
-        zf.writestr("account/profile.json", json.dumps(
-            _rows_to_json([profile_row])[0], indent=2))
+        # Redact the legacy password_hash column — Supabase Auth owns the
+        # password now anyway, and the ZIP is exported over an authenticated
+        # endpoint that the account owner shouldn't accidentally re-share.
+        prof = _rows_to_json([profile_row])[0]
+        prof.pop("password_hash", None)
+        prof.pop("passwordHash", None)
+        zf.writestr("account/profile.json", json.dumps(prof, indent=2))
         zf.writestr("account/subscription.json", json.dumps(
             (_rows_to_json([sub_row])[0] if sub_row else {}), indent=2))
         zf.writestr("account/memberships.json", json.dumps(

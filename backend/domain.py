@@ -3,6 +3,12 @@ from utils import as_uuid
 
 
 async def write_audit(org_id, user, action, target=None, meta=None):
+    # audit_log.organization_id is NOT NULL. For account/billing-level events
+    # (refund requests, refund approvals/denies, exports) that live above any
+    # specific org, we simply skip the write — the action still surfaces in
+    # server access logs and Stripe's own audit trail.
+    if org_id is None:
+        return
     await db.execute(
         """insert into audit_log
                (organization_id, user_id, user_email, user_name, action, target, meta)
