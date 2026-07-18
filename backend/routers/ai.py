@@ -6,6 +6,7 @@ from typing import List, Literal
 import database as db
 from utils import serialize, as_uuid
 from rbac import require_role
+from billing import assert_full_tier
 from domain import write_audit
 import ai_jobs
 import genai
@@ -115,6 +116,7 @@ async def ai_chat(body: ChatIn, ctx: dict = Depends(require_role("viewer"))):
     """Single-turn chat. Client re-sends full history each call (stateless).
     Uses the org's configured API key for the chosen engine — no Emergent
     fallback so metering stays honest per org."""
+    await assert_full_tier(ctx["user"])
     if not body.messages or body.messages[-1].role != "user":
         raise HTTPException(status_code=400,
             detail="messages must end with a user turn.")

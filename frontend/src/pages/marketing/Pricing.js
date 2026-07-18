@@ -1,20 +1,27 @@
 import React, { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Check, Sparkles, Building2, Rocket } from "lucide-react";
+import { Check, Sparkles, Building2, Rocket, Users } from "lucide-react";
 import MarketingLayout from "./MarketingLayout";
 import { api, errMsg } from "../../lib/api";
 import { useAuth } from "../../context/AuthContext";
 import { toast } from "sonner";
 
-// $49 → 15% annual discount = $499.80/yr, $99 → $1009.80/yr. Kept out of the
-// component so the copy is easy to grep + audit.
+// New pricing (Feb 2026):
+//   OI     $49.99/user/mo · $479.90/yr (single user)
+//   Full   $99.99/user/mo · $2,879.71/yr (bundles up to 3 users)
+//   Enterprise  sales-led, no Stripe price
+// Yearly discount = 20% off from 12× monthly. Kept out of the JSX so the copy
+// is easy to grep + audit against Stripe.
+const YEARLY_DISCOUNT_PCT = 20;
+
 const PLANS = [
   {
     tier: "oi",
     name: "Opportunity Intelligence",
     tagline: "Find & qualify — no drafting",
-    monthly: 49, monthlyLookup: "oi_monthly", yearlyLookup: "oi_yearly",
+    monthly: 49.99, yearly: 479.90, yearlyBundleSeats: 1,
+    monthlyLookup: "oi_monthly", yearlyLookup: "oi_yearly",
     icon: Sparkles,
     features: [
       "AI-scored federal opportunities (SAM.gov + Grants.gov + open web)",
@@ -22,45 +29,58 @@ const PLANS = [
       "Competitive Analysis — top primes/subs + AI shortlist",
       "Private Capital & Accelerators AI scans",
       "Points-of-Contact & Opportunity Summaries",
-      "Company disk storage (all seven folders)",
-      "AI chat assistant on every page",
+    ],
+    featuresYearlyExtra: [
+      "Single user seat included",
     ],
     notIncluded: [
       "Federal Proposals (full package drafting)",
       "Investment Deals (pitch decks, business plans, financials)",
       "Accelerator Applications (structured fillable forms)",
+      "Company disk storage (all seven folders)",
+      "AI chat assistant on every page",
     ],
   },
   {
     tier: "full",
     name: "Full Capture & Proposal Generation",
     tagline: "Everything in Opportunity Intelligence — plus drafting",
-    monthly: 99, monthlyLookup: "full_monthly", yearlyLookup: "full_yearly",
+    monthly: 99.99, yearly: 2879.71, yearlyBundleSeats: 3,
+    monthlyLookup: "full_monthly", yearlyLookup: "full_yearly",
     recommended: true,
     icon: Rocket,
     features: [
       "Everything in Opportunity Intelligence",
+      "Company disk storage (all seven folders)",
+      "AI chat assistant on every page",
       "Federal Proposals — full volume drafting, evaluation & export",
       "Investment Deals — investor emails, pitch decks, business plans, financials",
       "Accelerator Applications — tailored fillable forms per program",
       "Overleaf bidirectional git sync",
       "Bring your own OpenAI · Anthropic · Gemini keys — or use ours",
     ],
+    featuresYearlyExtra: [
+      "Includes up to 3 users",
+    ],
     notIncluded: [],
   },
   {
     tier: "enterprise",
     name: "Enterprise",
-    tagline: "For agencies, primes & multi-org deployments",
-    monthly: null,      // no Stripe price — contact us
+    tagline: "For large teams and primes",
+    monthly: null, yearly: null,
     icon: Building2,
     features: [
       "Everything in Full Capture",
+      "Full Agentic Workflows",
+      "AWS GovCloud hosting",
+      "Support for CUI and ITAR-controlled data",
+      "Enhanced security & encryption (FIPS 140-2, KMS-backed at rest, mTLS in transit)",
       "SSO / SAML (Okta, Azure AD)",
       "Dedicated support & onboarding",
-      "Custom data-handling & procurement paperwork",
-      "Volume seat pricing",
+      "Volume seat pricing & custom procurement paperwork",
     ],
+    featuresYearlyExtra: [],
     notIncluded: [],
   },
 ];
@@ -68,24 +88,29 @@ const PLANS = [
 function priceLabel(plan, interval) {
   if (plan.monthly === null) return "Contact us";
   if (interval === "year") {
-    const yearly = Math.round(plan.monthly * 12 * 0.85);
-    return `$${yearly.toLocaleString()}/yr`;
+    return `$${plan.yearly.toLocaleString(undefined,
+      { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/yr`;
   }
-  return `$${plan.monthly}/mo`;
+  return `$${plan.monthly.toFixed(2)}/mo`;
 }
 
-function perMonthLabel(plan, interval) {
+function perLabel(plan, interval) {
   if (plan.monthly === null) return "";
   if (interval === "year") {
-    const effective = (plan.monthly * 12 * 0.85) / 12;
-    return `≈ $${effective.toFixed(2)}/mo billed annually`;
+    return plan.yearlyBundleSeats > 1
+      ? `${YEARLY_DISCOUNT_PCT}% off · ${plan.yearlyBundleSeats} users included`
+      : `${YEARLY_DISCOUNT_PCT}% off · billed annually`;
   }
-  return "billed monthly, cancel anytime";
+  return "per user, billed monthly · cancel anytime";
 }
 
 function PlanCard({ plan, interval, onSubscribe, busy }) {
   const Icon = plan.icon;
   const highlight = plan.recommended;
+  const showsBundle = interval === "year" && plan.yearlyBundleSeats > 1;
+  const fullFeatureList = interval === "year"
+    ? [...plan.features, ...plan.featuresYearlyExtra]
+    : plan.features;
   return (
     <motion.div
       initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}
@@ -108,16 +133,29 @@ function PlanCard({ plan, interval, onSubscribe, busy }) {
         <div className="text-3xl font-extrabold tracking-tight text-ink" data-testid={`plan-price-${plan.tier}`}>
           {priceLabel(plan, interval)}
         </div>
-        <div className="mt-1 text-xs text-faint">{perMonthLabel(plan, interval)}</div>
+        <div className="mt-1 text-xs text-faint">{perLabel(plan, interval)}</div>
+        {showsBundle && (
+          <div className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-cyan/30 bg-cyan/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-cyan"
+               data-testid={`plan-seat-badge-${plan.tier}`}>
+            <Users size={11} /> up to {plan.yearlyBundleSeats} users
+          </div>
+        )}
       </div>
 
       <ul className="mt-6 flex-1 space-y-2 text-sm text-dim">
-        {plan.features.map((f) => (
-          <li key={f} className="flex items-start gap-2">
-            <Check size={15} className="mt-0.5 shrink-0 text-cyan" />
-            <span>{f}</span>
-          </li>
-        ))}
+        {fullFeatureList.map((f) => {
+          // Give the seat callouts extra emphasis so they read like a badge.
+          const isSeatCallout = plan.featuresYearlyExtra.includes(f);
+          return (
+            <li key={f} className={`flex items-start gap-2 ${isSeatCallout ? "font-semibold text-cyan" : ""}`}
+                data-testid={isSeatCallout ? `plan-seat-callout-${plan.tier}` : undefined}>
+              {isSeatCallout
+                ? <Users size={15} className="mt-0.5 shrink-0 text-cyan" />
+                : <Check size={15} className="mt-0.5 shrink-0 text-cyan" />}
+              <span>{f}</span>
+            </li>
+          );
+        })}
       </ul>
 
       {plan.notIncluded.length > 0 && (
@@ -158,8 +196,6 @@ export default function Pricing() {
   const navigate = useNavigate();
 
   const subscribe = async (plan, ivl) => {
-    // No account yet? Send them to register with a return path so they land
-    // right back on the pricing page after signup + email confirm.
     if (!user) {
       navigate("/register?next=/pricing");
       return;
@@ -187,12 +223,13 @@ export default function Pricing() {
         <div className="text-center">
           <div className="label-mono text-cyan">Pricing</div>
           <h1 className="mt-2 text-4xl font-extrabold tracking-tight text-ink sm:text-5xl">
-            Two plans. No seat games.
+            Three plans. Pay for what you use.
           </h1>
           <p className="mx-auto mt-4 max-w-2xl text-dim">
-            Every plan includes AI-scored federal opportunities and the
-            company disk. Move up when you need proposal, investor, and
-            accelerator drafting.
+            Every plan includes AI-scored federal opportunities, competitive
+            analysis, and private-capital + accelerator scans. Move up when
+            you need drafting, disk storage, the AI chat assistant, or a
+            GovCloud-hosted deployment.
           </p>
 
           <div className="mt-6 inline-flex items-center gap-1 rounded-full border border-line bg-panel/40 p-1"
@@ -207,7 +244,7 @@ export default function Pricing() {
               className={`rounded-full px-4 py-1.5 text-sm ${interval === "year" ? "bg-cyan text-deep" : "text-dim hover:text-ink"}`}
               data-testid="pricing-interval-year"
             >
-              Yearly <span className={`ml-1 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${interval === "year" ? "bg-deep/20 text-deep" : "bg-cyan/15 text-cyan"}`}>Save 15%</span>
+              Yearly <span className={`ml-1 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${interval === "year" ? "bg-deep/20 text-deep" : "bg-cyan/15 text-cyan"}`}>Save {YEARLY_DISCOUNT_PCT}%</span>
             </button>
           </div>
         </div>

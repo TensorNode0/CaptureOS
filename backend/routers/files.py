@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Q
 import database as db
 from utils import serialize, as_uuid, now_utc
 from rbac import require_role
+from billing import assert_full_tier
 from domain import write_audit
 import files_storage as storage
 
@@ -45,6 +46,7 @@ async def upload_file(
 ):
     """Upload one file. Exactly one of (category) or (entityType+entityId)
     must be provided — org-level asset vs per-item attachment."""
+    await assert_full_tier(ctx["user"])
     if bool(category) == bool(entityType):
         raise HTTPException(status_code=400,
             detail="Provide either category (org asset) OR entityType+entityId (attachment).")
@@ -102,6 +104,7 @@ async def list_files(
     """List files for the org. Filter by category (org assets), by
     entityType+entityId (attachments), or leave both blank for the Disk
     Storage tab (returns everything, most recent first)."""
+    await assert_full_tier(ctx["user"])
     sql = ["select id, organization_id, category, entity_type, entity_id, "
            "filename, mime, size_bytes, storage_path, uploaded_by, created_at "
            "from organization_files where organization_id = $1"]
@@ -124,6 +127,7 @@ async def list_files(
 async def download_url(orgId: str, fileId: str,
                        ctx: dict = Depends(require_role("viewer"))):
     """Return a short-lived signed URL the browser can use to download."""
+    await assert_full_tier(ctx["user"])
     row = await db.fetchrow(
         "select storage_path, filename from organization_files "
         "where id = $1 and organization_id = $2",
@@ -140,6 +144,7 @@ async def download_url(orgId: str, fileId: str,
 @router.delete("/{orgId}/files/{fileId}")
 async def delete_file(orgId: str, fileId: str,
                       ctx: dict = Depends(require_role("editor"))):
+    await assert_full_tier(ctx["user"])
     row = await db.fetchrow(
         "select storage_path, filename from organization_files "
         "where id = $1 and organization_id = $2",

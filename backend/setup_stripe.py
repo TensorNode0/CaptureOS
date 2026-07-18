@@ -1,47 +1,65 @@
 """One-off Stripe catalog bootstrap. Idempotent — re-run any time.
 
-Creates three products (Opportunity Intelligence · $49, Full Capture · $99,
-Enterprise · contact-us) with monthly + yearly prices. Yearly gets a
-15% discount from 12× monthly (rounded to the nearest cent).
-Enterprise has no Stripe price — sales-led.
+Creates three products (Opportunity Intelligence · $49.99, Full Capture ·
+$99.99, Enterprise · contact-us) with monthly + yearly prices.
+
+Pricing model (customer-visible):
+  * OI monthly:   $49.99/user/mo — single seat
+  * OI yearly:    $479.90/user/yr — single seat, 20% off vs. 12 × monthly
+  * Full monthly: $99.99/user/mo — single seat
+  * Full yearly:  $2,879.71 — bundles up to 3 seats (3 × 12 × $99.99 × 0.80)
+  * Enterprise: sales-led, no Stripe price
 
 Each product carries `metadata.emergent_product_id` for stable lookup so we
 never depend on Stripe-generated IDs. Prices are looked up by `lookup_key`.
+When we change unit_amount, the old Stripe price is archived (its lookup_key
+freed) and a new price is created reusing the same lookup_key — that way the
+backend code never needs to change to pick up new pricing.
 
 Run: `python -m setup_stripe`.
 """
 import os
-import sys
 
 import stripe
 from dotenv import load_dotenv
 
 
+# Yearly rows are FLAT prices — not derived from monthly at run time — because
+# some plans bundle multiple seats (Full yearly = 3 seats). Keeping the number
+# explicit avoids ambiguity between "per seat" and "per subscription".
 PRODUCTS = [
     {
         "emergent_product_id": "captureagent_oi",
         "name": "Opportunity Intelligence",
-        "description": ("Scans for new federal opportunities, private capital, and "
-                        "accelerators — no proposal or application generation."),
-        "monthly_cents": 4900,
-        "tax_code": "txcd_10103001",  # SaaS
+        "description": ("Federal opportunity intel, competitive analysis, and "
+                        "private-capital + accelerator scans. Single-user seat."),
+        "tax_code": "txcd_10103001",   # SaaS
         "tier": "oi",
+        "prices": [
+            {"lookup_key": "oi_monthly", "amount_cents": 4999, "interval": "month",
+             "seat_limit": 1},
+            {"lookup_key": "oi_yearly",  "amount_cents": 47990, "interval": "year",
+             "seat_limit": 1},
+        ],
     },
     {
         "emergent_product_id": "captureagent_full",
         "name": "Full Capture & Proposal Generation",
-        "description": ("Everything in Opportunity Intelligence, plus AI proposal, "
-                        "investor email, and accelerator application drafting."),
-        "monthly_cents": 9900,
+        "description": ("Everything in Opportunity Intelligence, plus AI drafting "
+                        "for federal proposals, investor decks/emails/plans, and "
+                        "accelerator applications. Includes disk storage and the "
+                        "AI chat assistant."),
         "tax_code": "txcd_10103001",
         "tier": "full",
+        "prices": [
+            {"lookup_key": "full_monthly", "amount_cents": 9999, "interval": "month",
+             "seat_limit": 1},
+            # 3 seats bundled — 3 × 12 × $99.99 × 0.80 = $2,879.712 → $2,879.71.
+            {"lookup_key": "full_yearly",  "amount_cents": 287971, "interval": "year",
+             "seat_limit": 3},
+        ],
     },
 ]
-
-
-def _yearly_cents(monthly_cents: int) -> int:
-    """12x monthly with a 15% discount, rounded to the nearest cent."""
-    return round(monthly_cents * 12 * 0.85)
 
 
 def _get_or_create_product(entry):
@@ -62,18 +80,22 @@ def _get_or_create_product(entry):
                   "tier": entry["tier"]})
 
 
-def _ensure_price(product_id, lookup_key, amount_cents, interval, currency="usd"):
+def _ensure_price(product_id, lookup_key, amount_cents, interval,
+                  seat_limit: int, currency: str = "usd"):
     existing = stripe.Price.list(lookup_keys=[lookup_key], active=True, limit=1).data
     if existing:
         p = existing[0]
-        if p.unit_amount == amount_cents and p.currency == currency:
+        if (p.unit_amount == amount_cents and p.currency == currency
+                and (p.metadata or {}).get("seat_limit") == str(seat_limit)):
             return p
-        # Amount changed → deactivate old price so lookup_key can be reassigned.
+        # Anything drifted → archive the existing price so lookup_key + amount
+        # can move onto the new active price without collision.
         stripe.Price.modify(p.id, active=False, lookup_key=None)
     return stripe.Price.create(
         product=product_id, unit_amount=amount_cents, currency=currency,
         lookup_key=lookup_key, transfer_lookup_key=True,
-        recurring={"interval": interval})
+        recurring={"interval": interval},
+        metadata={"seat_limit": str(seat_limit)})
 
 
 def main():
@@ -85,12 +107,12 @@ def main():
 
     for entry in PRODUCTS:
         product = _get_or_create_product(entry)
-        m = _ensure_price(product.id,
-                          f"{entry['tier']}_monthly", entry["monthly_cents"], "month")
-        y = _ensure_price(product.id,
-                          f"{entry['tier']}_yearly",  _yearly_cents(entry["monthly_cents"]), "year")
-        print(f"[stripe] {entry['name']:40s} monthly={m.lookup_key} ${m.unit_amount/100:.2f} "
-              f"yearly={y.lookup_key} ${y.unit_amount/100:.2f}")
+        for pr in entry["prices"]:
+            price = _ensure_price(product.id, pr["lookup_key"], pr["amount_cents"],
+                                  pr["interval"], pr["seat_limit"])
+            print(f"[stripe] {entry['name']:42s} {price.lookup_key:14s} "
+                  f"${price.unit_amount/100:>9,.2f}/{pr['interval']:<5s} "
+                  f"seats={pr['seat_limit']}")
 
 
 if __name__ == "__main__":

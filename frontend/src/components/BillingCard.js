@@ -8,13 +8,13 @@ import { Card, SectionLabel, Pill, Spinner, Field, Modal } from "./ui";
 
 const TIER_LABEL = {
   free: { name: "Free", tone: "neutral", icon: CreditCard,
-    desc: "No active plan. Federal Proposals, Investment Deals, and Accelerator Applications are locked." },
+    desc: "No active plan. Drafting, disk storage, and the AI chat assistant are locked." },
   oi: { name: "Opportunity Intelligence", tone: "cyan", icon: Sparkles,
-    desc: "AI-scored opportunities + Competitive + Scans + Disk Storage. Upgrade to Full for drafting." },
+    desc: "Federal opportunities + competitive analysis + private-capital and accelerator scans. Upgrade to Full for drafting, disk storage, and AI chat." },
   full: { name: "Full Capture & Proposal Generation", tone: "ok", icon: Rocket,
-    desc: "Every feature is unlocked, including drafting, evaluation, and Overleaf sync." },
+    desc: "Everything is unlocked, including drafting, disk storage, AI chat, and Overleaf sync." },
   enterprise: { name: "Enterprise", tone: "violet", icon: Building2,
-    desc: "Custom deployment managed by CaptureAgent." },
+    desc: "GovCloud-hosted deployment with CUI/ITAR support and full agentic workflows." },
 };
 
 function fmtDate(iso) {

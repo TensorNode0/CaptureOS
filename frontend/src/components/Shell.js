@@ -138,7 +138,7 @@ const NAV = [
   { to: "/investment-deals", label: "Investment Deals", icon: Handshake, testid: "nav-deals", requiresFull: true },
   { to: "/accelerators", label: "Accelerators", icon: Rocket, testid: "nav-accelerators" },
   { to: "/accelerator-applications", label: "Accelerator Applications", icon: ClipboardList, testid: "nav-accel-apps", requiresFull: true },
-  { to: "/disk-storage", label: "Disk Storage", icon: HardDrive, testid: "nav-disk" },
+  { to: "/disk-storage", label: "Disk Storage", icon: HardDrive, testid: "nav-disk", requiresFull: true },
   { to: "/admin", label: "Admin", icon: Users, testid: "nav-admin", admin: true },
   { to: "/settings", label: "Settings", icon: SettingsIcon, testid: "nav-settings", admin: true },
 ];

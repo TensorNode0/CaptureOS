@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Upload, Trash2, Download, FileText, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { api, errMsg } from "../lib/api";
+import { useSubscription, hasTier } from "../lib/billing";
 import { Spinner } from "./ui";
 
 /* Reusable files panel. Two modes controlled by `mode`:
@@ -24,6 +25,7 @@ export default function FilesPanel({
   orgId, mode, category = "", entityType = "", entityId = "",
   label, canEdit = true, testid = "files-panel",
 }) {
+  const { sub } = useSubscription();
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -42,8 +44,7 @@ export default function FilesPanel({
     } catch (e) { toast.error(errMsg(e)); }
     finally { setLoading(false); }
   };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { if (orgId) load(); }, [orgId, category, entityType, entityId]);
+  useEffect(() => { if (orgId && hasTier(sub, "full")) load(); }, [orgId, category, entityType, entityId, sub]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const doUpload = async (fileList) => {
     for (const f of fileList) {
@@ -81,7 +82,7 @@ export default function FilesPanel({
     <div className="rounded-lg border border-line/60 bg-white/[0.02] p-3" data-testid={testid}>
       <div className="flex items-center justify-between gap-2">
         <div className="text-xs font-medium text-ink">{label}</div>
-        {canEdit && (
+        {canEdit && hasTier(sub, "full") && (
           <>
             <input type="file" ref={inputRef} className="hidden" multiple
                    onChange={(e) => { if (e.target.files?.length) doUpload(e.target.files); e.target.value = ""; }} />
@@ -96,7 +97,12 @@ export default function FilesPanel({
         )}
       </div>
       <div className="mt-2 space-y-1">
-        {loading ? (
+        {!hasTier(sub, "full") ? (
+          <div className="py-2 text-[11px] text-faint" data-testid={`${testid}-locked`}>
+            Disk storage is part of the Full Capture plan.{" "}
+            <a href="/pricing" className="text-cyan hover:underline">Upgrade to unlock</a>.
+          </div>
+        ) : loading ? (
           <div className="flex items-center gap-2 py-2 text-[11px] text-faint"><Spinner size={12} /> Loading…</div>
         ) : files.length === 0 ? (
           <div className="py-2 text-[11px] text-faint">No files yet.</div>

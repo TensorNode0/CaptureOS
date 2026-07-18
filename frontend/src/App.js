@@ -90,7 +90,7 @@ function DashboardGate({ children }) {
 
 export default function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <div className="space-bg" />
       <div className="starfield" />
       <CookieConsent />
@@ -142,7 +142,7 @@ export default function App() {
           <Route path="/profile" element={<Protected><Profile /></Protected>} />
           <Route path="/admin" element={<Protected><Admin /></Protected>} />
           <Route path="/settings" element={<Protected><Settings /></Protected>} />
-          <Route path="/disk-storage" element={<Protected><DiskStorage /></Protected>} />
+          <Route path="/disk-storage" element={<Protected><RequireTier minTier="full" feature="Company Disk Storage"><DiskStorage /></RequireTier></Protected>} />
           <Route path="/billing/success" element={<Protected><BillingSuccess /></Protected>} />
           <Route path="/" element={<RootRedirect />} />
           <Route path="*" element={<RootRedirect />} />

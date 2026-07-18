@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { MessageSquare, X, Send, Sparkles, RefreshCw } from "lucide-react";
 import { api, errMsg } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
+import { useSubscription, hasTier } from "../lib/billing";
 import { Spinner } from "./ui";
 
 /* Reusable AI chat drawer bound to any workspace document.
@@ -21,6 +22,11 @@ const STORAGE_PREFIX = "captureagent.chat.engine";
 export default function AIChatButton({ contextTitle = "", contextText = "",
                                        suggestions = [] }) {
   const { activeOrgId } = useAuth();
+  const { sub } = useSubscription();
+  // AI chat is a Full-plan feature. Hide the launcher entirely for lower
+  // tiers so the pricing story stays honest — users on OI/free won't see
+  // the button at all and can't discover it accidentally.
+  const isFull = hasTier(sub, "full");
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState([]);      // {role, content}
   const [engines, setEngines] = useState([]);
@@ -75,6 +81,9 @@ export default function AIChatButton({ contextTitle = "", contextText = "",
       setMessages((m) => m.slice(0, -1));   // roll back the user bubble on failure
     } finally { setSending(false); }
   };
+
+  // Full-plan-only feature — hide entirely for lower tiers.
+  if (!isFull) return null;
 
   return (
     <>
