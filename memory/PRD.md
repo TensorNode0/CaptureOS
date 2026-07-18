@@ -1,6 +1,67 @@
 # CaptureAgent (captureagent.us) — PRD & Deployment Log
 
 
+## Phase 2 (Stripe Billing + Tier Gating + Refunds + GDPR Export) ✅ 2026-07-18
+- **3 tiers** provisioned in the Emergent Stripe sandbox via `setup_stripe.py`:
+  - `oi_monthly` $49/mo / `oi_yearly` $499.80/yr (15% off)  — Opportunity Intelligence
+  - `full_monthly` $99/mo / `full_yearly` $1009.80/yr (15% off) — **Recommended**
+  - Enterprise = contact-us, no Stripe price.
+- Migration 0022 → `user_subscriptions`, `payment_transactions`, `refund_requests`.
+- `backend/routers/payments.py`: `/api/payments/{me,checkout,portal,status/{sid}}` +
+  `/api/refund-requests` (create/list/approve/deny). Webhook `/api/stripe/webhook`
+  updates the subscription tier from `checkout.session.completed`,
+  `customer.subscription.{created,updated,deleted}`, `invoice.paid`, and
+  `invoice.payment_failed`. Uses `stripe.Refund.create` from the platform-owner
+  approval path.
+- `backend/billing.py`: `assert_full_tier`/`require_tier` helpers. Grandfather via
+  `BILLING_TIER_ALLOWLIST` (env var, comma-sep emails).
+- **Tier gating** blocks the $49 (`oi`) and free tiers from:
+  - Federal Proposals — `create_proposal`, `draft_document`, `evaluate_proposal`.
+  - Investment Deals — venture-docs create/draft where kind ∈ `{investor_email,
+    pitch_deck, business_plan, financials}`.
+  - Accelerator Applications — venture-docs where kind = `accelerator_application`,
+    plus `from-program` and `redraft-form` endpoints.
+  - Scans (`investor_scan`, `accelerator_scan`) remain OPEN on all tiers.
+- Frontend:
+  - `pages/marketing/Pricing.js` — public `/pricing` with monthly/yearly toggle
+    (Save 15% pill), Recommended ribbon on Full, "Contact us" on Enterprise.
+  - `lib/billing.js` → `SubscriptionProvider` + `useSubscription` + `hasTier`.
+  - `components/RequireTier.js` → wraps `/proposals`, `/investment-deals`,
+    `/accelerator-applications`, `/opportunities/:id/proposal`.
+  - `components/BillingCard.js` in Settings — shows tier, status, period end,
+    Manage-in-Stripe portal button, and "Request refund" modal.
+  - `components/RefundQueue.js` in Admin (`/admin` → Refunds tab, gated to
+    `platform_owner`) with Approve (with optional partial refund cents) and Deny.
+  - Sidebar lock icons on gated tabs when user tier < full.
+  - `/billing/success?session_id=…` polls `/api/payments/status/{sid}` for 30s.
+- New env vars (all in `backend/.env`): `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`,
+  `STRIPE_WEBHOOK_SECRET`, `STRIPE_ACCOUNT_ID`, `STRIPE_MODE`,
+  `CAPTUREAGENT_OWNER_EMAILS`, `BILLING_TIER_ALLOWLIST`.
+- Data-testids: `plan-card-{oi,full,enterprise}`, `plan-cta-{oi,full,enterprise}`,
+  `plan-price-{oi,full,enterprise}`, `pricing-interval-{month,year}`,
+  `billing-card`, `billing-tier-name`, `billing-upgrade-btn`, `billing-portal-btn`,
+  `billing-refund-btn`, `refund-modal`, `refund-submit`, `refund-cancel`,
+  `refund-reason`, `tier-gate`, `tier-gate-upgrade`, `nav-proposals-lock`,
+  `nav-deals-lock`, `nav-accel-apps-lock`, `tab-refunds`, `refund-queue`,
+  `refunds-table`, `refund-row-*`, `refund-approve-*`, `refund-deny-*`,
+  `refund-decision-modal`, `refund-amount-cents`, `refund-admin-notes`,
+  `refund-decision-submit`, `billing-success`, `billing-success-cta`.
+- **Testing**: `/app/backend/tests/test_phase2_billing.py` (17) +
+  `/app/backend/tests/test_iter13_regression.py` (6) — all 23 pass.
+
+
+## Account Deletion + GDPR Export ✅ 2026-07-18 (updated Phase 2)
+- `DELETE /api/auth/me` now **cancels the active Stripe subscription** before
+  wiping the profile.
+- New `GET /api/auth/me/export` — returns a ZIP with `README.txt`,
+  `account/{profile,subscription,memberships}.json`, and per-org folders
+  containing `organization.json`, `profile.json`, `members.json`,
+  `opportunities.json`, `proposals.json`, `proposal_documents.json`,
+  `capabilities.json`, `competitive_reports.json`, `venture_docs.json`,
+  `org_files.json`, `audit_log.json`. `password_hash`/`passwordHash` redacted.
+  Data-testid: `export-data-btn` in Settings → Danger Zone.
+
+
 ## Phase 5 (Files & Media Storage + AI RAG) ✅ 2026-07-18
 - Migration 0021 → `organization_files` table (org_id, category, entity_type,
   entity_id, filename, mime, size_bytes, storage_path, extracted_text, uploaded_by)
