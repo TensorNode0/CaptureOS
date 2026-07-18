@@ -170,6 +170,7 @@ def _combined_markdown(volumes: list[dict]) -> str:
 async def push_proposal(*, org_id, proposal_id, token, project_id):
     """Push every proposal volume as a `.md` file to the Overleaf project.
     Returns { filesWritten, commitSha }."""
+    _require_git()
     volumes = await db.fetch(
         """select id, doc_type, title, content_md
              from proposal_documents
@@ -226,6 +227,7 @@ async def pull_proposal(*, org_id, proposal_id, token, project_id):
     """Pull the latest .md files from Overleaf into each proposal volume.
     Only files whose slug matches an existing volume are applied; new files
     the user created in Overleaf are ignored (we don't invent volumes)."""
+    _require_git()
     volumes = await db.fetch(
         """select id, doc_type, content_md
              from proposal_documents
@@ -280,9 +282,12 @@ async def mark_synced(*, proposal_id):
         as_uuid(proposal_id), now_utc())
 
 
-# Guarantee git is installed on import — fail loudly at startup instead of at
-# the first user click. Keeps deployment failures visible to the platform.
-if shutil.which("git") is None:
-    raise RuntimeError(
-        "The `git` CLI is required for the Overleaf integration but is not installed "
-        "in this container. Add it to your Docker image (apt install git).")
+# git is required only when actually syncing to Overleaf, so check at CALL time
+# rather than import time. This lets a container without the git CLI still boot
+# (the whole app runs normally); only Overleaf push/pull reports the missing
+# dependency, as a clean OverleafError the router surfaces to the user.
+def _require_git() -> None:
+    if shutil.which("git") is None:
+        raise OverleafError(
+            "The `git` CLI is required for the Overleaf integration but is not "
+            "installed in this container. Add it to your Docker image (apt install git).")
