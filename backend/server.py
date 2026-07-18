@@ -2,6 +2,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import os
+import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -11,9 +12,23 @@ from apply_migrations import apply_migrations
 from seed import seed
 from routers import auth, orgs, opportunities, intel, capabilities, proposals, venture, competitive, shared, ai, public, files, payments
 
+logger = logging.getLogger("captureagent")
+logging.basicConfig(level=logging.INFO,
+                    format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+
 app = FastAPI(title="CaptureAgent API")
 
 frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+
+# Env vars that MUST be present in production. When any is missing we still
+# let the process boot so /api/health responds (readiness probe succeeds and
+# operators can see the log line explaining what's wrong), but we log a loud
+# warning so the failure is obvious in the deploy logs.
+_REQUIRED_ENVS = [
+    "DATABASE_URL",
+    "SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_JWT_SECRET",
+    "SECRETS_ENC_KEY", "JWT_SECRET",
+]
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -56,18 +71,55 @@ app.include_router(files.router)
 app.include_router(payments.router)
 
 
+# Boot-state flag. Even if DB init fails, `/api/health` still answers so the
+# K8s readiness probe passes and operators can read the crash log — otherwise
+# the pod hits a silent 10-minute deploy timeout with no signal.
+_BOOT_STATE = {"db": "pending", "migrated": False, "missing_env": []}
+
+
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "service": "captureagent"}
+    return {"status": "ok", "service": "captureagent", "boot": _BOOT_STATE}
 
 
 @app.on_event("startup")
 async def startup():
-    pool = await database.init_pool()
+    # 1) Env-var sanity check — log LOUDLY before anything else touches env.
+    missing = [k for k in _REQUIRED_ENVS if not os.environ.get(k)]
+    _BOOT_STATE["missing_env"] = missing
+    if missing:
+        logger.error(
+            "STARTUP: %d required env var(s) are missing: %s — pod will "
+            "answer /api/health but API routes will 5xx until fixed.",
+            len(missing), ", ".join(missing))
+        return  # Don't crash — let the pod become ready so logs are readable.
+
+    # 2) DB pool.
+    try:
+        pool = await database.init_pool()
+        _BOOT_STATE["db"] = "ready"
+        logger.info("STARTUP: DB pool initialised.")
+    except Exception as e:
+        _BOOT_STATE["db"] = f"error: {type(e).__name__}: {e}"
+        logger.exception("STARTUP: DB pool init failed. Continuing so /api/health "
+                         "stays live — API routes will 5xx until reachable.")
+        return
+
+    # 3) Auto-migrations (safe to disable in prod via AUTO_MIGRATE=0).
     if os.environ.get("AUTO_MIGRATE", "1") == "1":
-        async with pool.acquire() as conn:
-            await apply_migrations(conn)
-    await seed()
+        try:
+            async with pool.acquire() as conn:
+                await apply_migrations(conn)
+            _BOOT_STATE["migrated"] = True
+        except Exception:
+            logger.exception("STARTUP: migrations failed — the pod stays up but "
+                             "features that rely on new columns may 5xx.")
+
+    # 4) Optional demo seed (SEED_DEMO=1 only).
+    try:
+        await seed()
+    except Exception:
+        logger.exception("STARTUP: demo seed failed — non-fatal.")
 
 
 @app.on_event("shutdown")
