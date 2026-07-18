@@ -7,6 +7,7 @@ import { Card, SectionLabel, Pill, Skeleton, EmptyState, PageReveal, Modal, Fiel
 import AIButton from "../../components/AIButton";
 import AIChatButton from "../../components/AIChatButton";
 import AcceleratorForm from "../../components/AcceleratorForm";
+import FilesPanel from "../../components/FilesPanel";
 import { fmtDateTime, canEdit } from "../../lib/helpers";
 
 function downloadBlob(data, filename) {
@@ -270,13 +271,20 @@ function EditModal({ doc, onClose, orgId, onSaved }) {
   return (
     <Modal open={!!doc} onClose={onClose} title={`Edit — ${doc.title}`} wide>
       {isAcceleratorForm ? (
-        <AcceleratorForm
-          orgId={orgId}
-          doc={doc}
-          redrafting={redrafting}
-          onRedraft={redraftForm}
-          onSaved={(fresh) => { onSaved(); if (fresh) onClose(); }}
-        />
+        <div className="space-y-4">
+          <AcceleratorForm
+            orgId={orgId}
+            doc={doc}
+            redrafting={redrafting}
+            onRedraft={redraftForm}
+            onSaved={(fresh) => { onSaved(); if (fresh) onClose(); }}
+          />
+          <FilesPanel orgId={orgId} mode="entity"
+            entityType="venture_doc" entityId={doc.id}
+            label="Attachments (BMC, financials, cap table, LOIs, traction proof — extracted text feeds AI redraft)"
+            canEdit
+            testid="venture-doc-files" />
+        </div>
       ) : isJson ? (
         <p className="text-sm text-dim">
           This document is structured data (slides / financial rows). Redraft it with

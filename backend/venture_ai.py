@@ -28,9 +28,9 @@ SYSTEM = (
 )
 
 
-def _org_context(org, profile):
+def _org_context(org, profile, files_context=""):
     p = profile or {}
-    return (
+    base = (
         "COMPANY CONTEXT (use faithfully; never invent numbers):\n"
         f"- Name: {org.get('name', '')}\n"
         f"- NAICS: {', '.join(org.get('naics') or [])}\n"
@@ -45,6 +45,15 @@ def _org_context(org, profile):
         f"- Key personnel: {p.get('keyPersonnel') or 'n/a'}\n"
         f"- Locations: {p.get('locations') or 'n/a'}; website: {p.get('website') or 'n/a'}\n"
     )
+    if files_context:
+        base += (
+            "\nORGANIZATION FILES (extracted text from company-uploaded documents — "
+            "use these as ground truth for capabilities, past performance, resumes, "
+            "and terminology; DO NOT quote large chunks verbatim into user-facing "
+            "outputs, and never expose file paths):\n"
+            f"{files_context}\n"
+        )
+    return base
 
 
 def _prompt(kind, ctx_text, target, notes):
@@ -156,12 +165,15 @@ def _prompt(kind, ctx_text, target, notes):
 
 
 async def draft(engine, keys, kind, org, profile, target="", notes="",
-                model="", effort="", job_id=None):
-    """Returns (content_md, content_json, model)."""
+                model="", effort="", job_id=None, files_context=""):
+    """Returns (content_md, content_json, model). `files_context` (optional)
+    is the extracted text from the org's uploaded files, spliced into the
+    company context so the AI grounds answers in real capability
+    statements / past performance / resumes."""
     import ai_jobs
     if kind not in KINDS:
         raise ValueError(f"Unknown document kind: {kind}")
-    ctx_text = _org_context(org, profile)
+    ctx_text = _org_context(org, profile, files_context)
     fmt = KINDS[kind]["fmt"]
     prompt = _prompt(kind, ctx_text, target, notes)
     if job_id:
@@ -260,12 +272,14 @@ def _questions_to_md(name: str, key_facts: dict, questions: list) -> str:
 
 
 async def form_from_program(anthropic_key, name, page_text, org, profile,
-                            model="", job_id=None):
+                            model="", job_id=None, files_context=""):
     """Extract a program's actual application questions from its page text and
     scaffold answers with tips. Returns (content_md, content_json, used_model)
     where content_json = {"kind": "acceleratorApplication", "keyFacts": {...},
     "questions": [{id, label, type, answer, tip}, ...]}. Falls back to the
-    generic template + questions if we don't have a key or a page."""
+    generic template + questions if we don't have a key or a page. Uploaded
+    org files feed the company context so drafted answers reference real
+    capabilities, resumes, and past performance."""
     import ai_jobs
     if not anthropic_key or not page_text:
         md = GENERIC_APPLICATION_TEMPLATE.format(name=name)
@@ -274,7 +288,7 @@ async def form_from_program(anthropic_key, name, page_text, org, profile,
         return md, schema, ""
     if job_id:
         await ai_jobs.stage(job_id, "Reading the program page and extracting questions…", 30)
-    ctx_text = _org_context(org, profile)
+    ctx_text = _org_context(org, profile, files_context)
     prompt = (
         f"{ctx_text}\n"
         f"PROGRAM: {name}\n"

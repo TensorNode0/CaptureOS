@@ -450,18 +450,25 @@ ENRICH_SYSTEM = (
 )
 
 
-def _enrich_prompt(today, opp, profile, live):
+def _enrich_prompt(today, opp, profile, live, files_context=""):
     import json as _json
     prof = {}
     if profile:
         prof = {k: profile.get(k) for k in
                 ("capabilities", "techFocus", "pastPerformance", "clearances",
                  "cmmcLevel", "targetAgencies", "vehicles", "isSmall", "certs")}
+    files_block = ""
+    if files_context:
+        files_block = ("\nORGANIZATION FILES (extracted from uploads — treat as "
+                       "authoritative for capabilities/past performance/team, but "
+                       "never quote verbatim into your output):\n"
+                       f"{files_context}\n")
     return (
         f"TODAY: {today}\n"
         f"LIVE WEB SEARCH: {'yes — verify against the official notice/source pages' if live else 'no — analyze the saved data only'}\n\n"
         f"SAVED OPPORTUNITY:\n{_json.dumps(opp, default=str)[:8000]}\n\n"
-        f"ORG CAPABILITY PROFILE (for requirement matching):\n{_json.dumps(prof, default=str)[:3000]}\n\n"
+        f"ORG CAPABILITY PROFILE (for requirement matching):\n{_json.dumps(prof, default=str)[:3000]}\n"
+        f"{files_block}\n"
         "Return JSON exactly in this shape (use \"Unknown\" when unverifiable):\n"
         '{ "fields": {\n'
         '  "scopeSummary": "one sentence: what the government is buying",\n'
@@ -513,6 +520,9 @@ async def enrich_opportunity(oppId: str, body: VerifyIn = None,
     if not opp:
         raise HTTPException(status_code=404, detail="Opportunity not found")
     profile = await _profile(ctx["org_id"])
+    from routers import files as files_router  # local import — file uploads router
+    files_context = await files_router.gather_org_file_context(
+        ctx["org_id"], entity_type="opportunity", entity_id=oppId)
     saved = serialize(opp)
     slim = {k: saved.get(k) for k in
             ("title", "solNumber", "agency", "office", "vehicle", "setAside", "naics",
@@ -522,7 +532,8 @@ async def enrich_opportunity(oppId: str, body: VerifyIn = None,
     today = now_utc().strftime("%Y-%m-%d")
     try:
         text, model, _ = await genai.generate(
-            engine, keys, ENRICH_SYSTEM, _enrich_prompt(today, slim, profile, live),
+            engine, keys, ENRICH_SYSTEM,
+            _enrich_prompt(today, slim, profile, live, files_context),
             max_tokens=8000, web_search=live, model=body.model, effort=body.effort)
     except Exception as e:
         msg = str(e)

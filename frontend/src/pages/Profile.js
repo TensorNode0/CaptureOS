@@ -4,7 +4,8 @@ import { toast } from "sonner";
 import { api, errMsg } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { Card, SectionLabel, Spinner, PageReveal, Field } from "../components/ui";
-import { canAdmin } from "../lib/helpers";
+import { canAdmin, canEdit } from "../lib/helpers";
+import FilesPanel from "../components/FilesPanel";
 
 const CERTS = [
   ["sba", "Small Business (self-cert)"],
@@ -151,6 +152,36 @@ export default function Profile() {
           <Field label="Size note"><input className="field" disabled={!admin} value={p.sizeNote || ""} onChange={(e) => set({ sizeNote: e.target.value })} /></Field>
         </div>
         <Field label="Notes" ><textarea className="field mt-2 min-h-[80px]" disabled={!admin} value={p.notes || ""} onChange={(e) => set({ notes: e.target.value })} /></Field>
+      </Card>
+
+      {/* Organization Files — the 7 curated categories the AI ingests as
+          ground truth for scoring, qualification, and proposal writing. */}
+      <Card className="p-5" data-testid="org-files-card">
+        <SectionLabel>Organization Files</SectionLabel>
+        <p className="mt-1 text-xs text-faint">
+          PDF, DOCX, and TXT contents are extracted and fed into every AI feature
+          (opportunity qualification, proposal writing, competitive analysis, venture
+          drafting) so its output reflects your actual company. Max 25 MB per file.
+        </p>
+        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+          {[
+            ["past_performance",     "Past Performance"],
+            ["commercialization",    "Commercialization Reports"],
+            ["capability_statements","Capability Statements"],
+            ["quad_charts",          "Quad Charts"],
+            ["resumes",              "Resumes of Key Personnel"],
+            ["letters_of_support",   "Letters of Support"],
+            ["pitch_decks",          "Pitch Decks"],
+          ].map(([key, label]) => (
+            <FilesPanel key={key}
+              orgId={activeOrgId}
+              mode="category"
+              category={key}
+              label={label}
+              canEdit={canEdit(activeOrg?.role)}
+              testid={`org-files-${key}`} />
+          ))}
+        </div>
       </Card>
     </PageReveal>
   );

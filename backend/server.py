@@ -9,7 +9,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 import database
 from apply_migrations import apply_migrations
 from seed import seed
-from routers import auth, orgs, opportunities, intel, capabilities, proposals, venture, competitive, shared, ai, public
+from routers import auth, orgs, opportunities, intel, capabilities, proposals, venture, competitive, shared, ai, public, files
 
 app = FastAPI(title="CaptureAgent API")
 
@@ -52,6 +52,7 @@ app.include_router(competitive.router)
 app.include_router(shared.router)
 app.include_router(ai.router)
 app.include_router(public.router)
+app.include_router(files.router)
 
 
 @app.get("/api/health")

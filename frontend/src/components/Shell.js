@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Target, Building2, Users, Settings as SettingsIcon,
   Shield, LogOut, ChevronDown, Radar, AlertTriangle, X, Menu, FileText,
   Plus, KeyRound, Landmark, Handshake, Rocket, ClipboardList, Crosshair, FolderLock,
-  PanelLeftClose, PanelLeftOpen,
+  PanelLeftClose, PanelLeftOpen, HardDrive,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { canAdmin, canSeeDashboard } from "../lib/helpers";
@@ -137,6 +137,7 @@ const NAV = [
   { to: "/investment-deals", label: "Investment Deals", icon: Handshake, testid: "nav-deals" },
   { to: "/accelerators", label: "Accelerators", icon: Rocket, testid: "nav-accelerators" },
   { to: "/accelerator-applications", label: "Accelerator Applications", icon: ClipboardList, testid: "nav-accel-apps" },
+  { to: "/disk-storage", label: "Disk Storage", icon: HardDrive, testid: "nav-disk" },
   { to: "/admin", label: "Admin", icon: Users, testid: "nav-admin", admin: true },
   { to: "/settings", label: "Settings", icon: SettingsIcon, testid: "nav-settings", admin: true },
 ];

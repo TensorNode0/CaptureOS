@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { api, errMsg } from "../lib/api";
 import { Pill, SectionLabel, Spinner } from "./ui";
 import AIButton from "./AIButton";
+import FilesPanel from "./FilesPanel";
 import {
   fmtMoney, fmtDate, fmtDateTime, dueColor, businessDaysUntil,
   ELIG_STATUS, FIT_BAND_CLS, PRIORITY_CFG, PWIN_CLS,
@@ -261,6 +262,19 @@ export default function OppDrawer({ opp, orgId, editor, onSaved, onClose }) {
               </div>
             </Sect>
           )}
+
+          {/* A4. Files attached to this opportunity (proposal drafts, SOW,
+              tech volumes) — extracted text feeds AI Qualify / Verify / chat. */}
+          <Sect title="Attached Files" testid="drawer-files">
+            <FilesPanel
+              orgId={orgId}
+              mode="entity"
+              entityType="opportunity"
+              entityId={opp.id}
+              label="Docs for this opportunity"
+              canEdit={editor}
+              testid="opp-files" />
+          </Sect>
 
           {/* B. Fit analysis */}
           <Sect title={`Fit Analysis — ${f.effective}/100 (${f.band}) · confidence ${f.confidence}`} testid="drawer-fit">

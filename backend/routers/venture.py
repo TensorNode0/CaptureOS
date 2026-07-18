@@ -14,6 +14,7 @@ import ai_jobs
 import genai
 import exports
 import org_keys
+from routers import files as files_router
 
 router = APIRouter(prefix="/api/orgs", tags=["venture"])
 
@@ -131,11 +132,13 @@ async def _persist_discovered(org_id, doc_id, kind_key, items):
 
 
 async def _run_draft(doc_id, engine, keys, org, profile, kind, target, notes,
-                     user, org_id, model="", effort="", job_id=None):
+                     user, org_id, model="", effort="", job_id=None,
+                     files_context=""):
     try:
         md, data, used_model = await venture_ai.draft(
             engine, keys, kind, org, profile, target, notes,
-            model=model, effort=effort, job_id=job_id)
+            model=model, effort=effort, job_id=job_id,
+            files_context=files_context)
         if job_id:
             await ai_jobs.stage(job_id, "Saving the draft…", 95)
         discovered_items, md = _extract_discovered_block(md)
@@ -189,6 +192,8 @@ async def draft_doc(docId: str, body: DraftIn,
         doc["id"], now_utc())
     profile = await db.fetchrow(
         "select * from org_profiles where organization_id = $1", ctx["org_id"])
+    files_context = await files_router.gather_org_file_context(
+        ctx["org_id"], entity_type="venture_doc", entity_id=str(doc["id"]))
     job_id = await ai_jobs.create(ctx["org_id"], ctx["user"], "venture.draft",
                                   ref_id=str(doc["id"]), engine=engine,
                                   model=body.model, effort=body.effort)
@@ -196,7 +201,7 @@ async def draft_doc(docId: str, body: DraftIn,
         doc["id"], engine, keys, serialize(ctx["org"]), serialize(profile),
         doc["kind"], doc.get("target", ""), body.notes,
         ctx["user"], ctx["org_id"], model=body.model, effort=body.effort,
-        job_id=job_id))
+        job_id=job_id, files_context=files_context))
     return {"ok": True, "status": "drafting", "jobId": str(job_id)}
 
 
@@ -262,9 +267,12 @@ async def redraft_accelerator_form(docId: str,
                                    purpose="venture.redraft_form")
     profile = await db.fetchrow(
         "select * from org_profiles where organization_id = $1", ctx["org_id"])
+    files_context = await files_router.gather_org_file_context(
+        ctx["org_id"], entity_type="venture_doc", entity_id=str(doc["id"]))
     md, schema, model_used = await venture_ai.form_from_program(
         keys.get("anthropic", ""), doc["target"] or doc["title"], "",
-        serialize(ctx["org"]), serialize(profile), model="")
+        serialize(ctx["org"]), serialize(profile), model="",
+        files_context=files_context)
     # Merge previous answers onto matching new questions so the founder's edits
     # survive the redraft. AI answers stay on any brand-new questions.
     for q in schema.get("questions", []):
@@ -331,9 +339,11 @@ async def create_from_program(body: FromProgramIn,
     keys = await org_keys.get_keys(ctx["org_id"], ctx["user"], purpose="venture.from_program")
     profile = await db.fetchrow(
         "select * from org_profiles where organization_id = $1", ctx["org_id"])
+    files_context = await files_router.gather_org_file_context(ctx["org_id"])
     md, schema, model_used = await venture_ai.form_from_program(
         keys.get("anthropic", ""), body.name.strip(), page_text,
-        serialize(ctx["org"]), serialize(profile), model=body.model)
+        serialize(ctx["org"]), serialize(profile), model=body.model,
+        files_context=files_context)
     row = await db.fetchrow(
         """insert into venture_docs (organization_id, kind, target, title,
                                      content_md, content_json, model, created_by)

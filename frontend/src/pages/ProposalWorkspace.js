@@ -13,6 +13,7 @@ import { canEdit, canCreateProposal, canSubmitProposal } from "../lib/helpers";
 import AIButton from "../components/AIButton";
 import AIChatButton from "../components/AIChatButton";
 import OverleafPanel from "../components/OverleafPanel";
+import FilesPanel from "../components/FilesPanel";
 import {
   PEO_SOURCES, GOV_SECTORS, CIVIL_AGENCIES, DEFENSE_BRANCHES, IC_AGENCIES,
   COMMERCIAL_MARKETS,
@@ -237,6 +238,13 @@ export default function ProposalWorkspace() {
         <OverleafPanel orgId={activeOrgId} proposal={proposal}
           canEdit={editor}
           onSynced={(fresh) => setProposal((p) => ({ ...p, ...fresh }))} />
+      )}
+
+      {proposal && (
+        <FilesPanel orgId={activeOrgId} mode="entity"
+          entityType="proposal" entityId={proposal.id}
+          label="Attached files (SoW, WBS, schedule, budget, tech volume, past proposals — extracted text feeds AI redrafts)"
+          canEdit={editor} testid="proposal-files" />
       )}
 
       {proposal && (

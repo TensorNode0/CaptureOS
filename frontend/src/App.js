@@ -39,6 +39,7 @@ import ProposalWorkspace from "./pages/ProposalWorkspace";
 import Profile from "./pages/Profile";
 import Admin from "./pages/Admin";
 import Settings from "./pages/Settings";
+import DiskStorage from "./pages/DiskStorage";
 
 function FullLoader() {
   return (
@@ -135,6 +136,7 @@ export default function App() {
           <Route path="/profile" element={<Protected><Profile /></Protected>} />
           <Route path="/admin" element={<Protected><Admin /></Protected>} />
           <Route path="/settings" element={<Protected><Settings /></Protected>} />
+          <Route path="/disk-storage" element={<Protected><DiskStorage /></Protected>} />
           <Route path="/" element={<RootRedirect />} />
           <Route path="*" element={<RootRedirect />} />
         </Routes>

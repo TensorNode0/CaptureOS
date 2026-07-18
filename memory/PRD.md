@@ -1,6 +1,41 @@
 # CaptureAgent (captureagent.us) — PRD & Deployment Log
 
 
+## Phase 5 (Files & Media Storage + AI RAG) ✅ 2026-07-18
+- Migration 0021 → `organization_files` table (org_id, category, entity_type,
+  entity_id, filename, mime, size_bytes, storage_path, extracted_text, uploaded_by)
+  and provisions the private Supabase Storage bucket `captureagent-org-files`.
+- **Simplified RAG (per credit-saving lever)**: no pgvector. On upload we
+  synchronously extract up to 50 KB of text from PDF (pypdf), DOCX (python-docx),
+  and TXT/MD; the text is stored on the row and spliced into AI prompts by
+  `files_storage.gather_org_file_context()`.
+- `backend/files_storage.py`: httpx wrapper over Supabase Storage API using
+  SERVICE_ROLE_KEY (upload / delete / signed_url) + text extraction dispatcher.
+- `backend/routers/files.py`: POST (multipart upload), GET (list w/ category or
+  entity filters), GET `/{fileId}/url` (short-lived signed URL), DELETE. Max
+  25 MB per file. 7 valid categories, 3 valid entity types.
+- AI integration:
+    - `venture_ai._org_context(org, profile, files_context)` now splices in
+      the extracted text; `draft()` and `form_from_program()` gained an
+      optional `files_context` parameter; router callsites pass in
+      `files_router.gather_org_file_context(...)` for org-level + entity-level files.
+    - `routers/opportunities._enrich_prompt` gained `files_context`, wired in.
+- Frontend:
+    - `components/FilesPanel.js` — reusable upload/list/download/delete panel
+      with `mode="category"` (org-level) or `mode="entity"` (attachment).
+    - 7 category folders on `pages/Profile.js` (Past Performance,
+      Commercialization Reports, Capability Statements, Quad Charts, Resumes
+      of Key Personnel, Letters of Support, Pitch Decks).
+    - Attachment section on OppDrawer, ProposalWorkspace, and Venture
+      accelerator-application editor.
+    - New `pages/DiskStorage.js` — unified browser (search + scope + category
+      filters) linked from the sidebar between Accelerator Applications and Admin.
+- Data-testids: `files-panel`, `files-panel-upload`, `files-panel-row-*`,
+  `files-panel-download-*`, `files-panel-delete-*`, `disk-search`, `disk-scope`,
+  `disk-category`, `disk-table`, `disk-row-*`, `disk-delete-*`, `nav-disk`.
+
+
+
 ## Phase 9 (Overleaf full git bidirectional sync) ✅ 2026-07-18
 - Migration 0020 adds `overleaf_key` to `org_secrets` and `overleaf_project_id` + `overleaf_last_sync` to `proposals`.
 - New `backend/overleaf.py` module wraps the `git` CLI via `asyncio.subprocess` in a
