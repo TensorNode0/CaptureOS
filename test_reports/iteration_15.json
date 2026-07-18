@@ -1,0 +1,30 @@
+{
+  "summary": "Iteration 15 post-deploy-hardening smoke — 9/9 backend pytest + all frontend spot-checks green. server.py rewrite is verified: /api/health returns 200 with boot={db:'ready', migrated:true, missing_env:[]}. All 6 required endpoint spot-checks pass (payments/me tier=free & isPlatformOwner=true, checkout full_monthly returns valid checkout.stripe.com URL, opportunity proposal 402, refund-requests 200 ok:true, /auth/me/export ZIP with no password_hash, ai/chat 402). /pricing renders 3 plan cards ($49.99 / $99.99 / Contact us) with correct yearly toggle ($479.90/yr, $2,879.71/yr, 'Includes up to 3 users' badge, 'Save 20%'). /login and /register are anonymous-accessible. QA login → /dashboard renders with zero console errors and zero warnings. DEPLOY_REGRESSION refund_requests row was auto-denied by the module teardown fixture. Production deploy can be retried with confidence.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter15_deploy_hardening.py",
+    "/app/test_reports/pytest/iter15_deploy_hardening.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py rewrite is well-structured: _BOOT_STATE is module-scoped and mutated in place from startup(); /api/health reads it live so the K8s readiness probe passes even while startup is still churning through DB init/migrations. Good separation of concerns (env check → pool init → migrations → seed) with each step in its own try/except and explicit return-on-failure. LGTM.",
+    "One tiny hardening opportunity (non-blocker): the pod will still 5xx on all real endpoints (via database.py get_pool()) when boot.db != 'ready'. Consider a lightweight middleware or router-level dependency that returns 503 with a clear JSON body like {error:'boot_not_ready', boot: _BOOT_STATE} instead of the generic 5xx that would come out of asyncpg NoneType attribute access. That would give ops much clearer signal in Datadog/Sentry when env is misconfigured. Current behavior is correct enough for the deploy-timeout fix though.",
+    "Optional 'missing env' simulation was intentionally SKIPPED per review request — verified via code read of /app/backend/server.py lines 85-95: the loop `missing = [k for k in _REQUIRED_ENVS if not os.environ.get(k)]` writes to _BOOT_STATE['missing_env'] BEFORE any DB call, and then `return` short-circuits startup so the pod stays up. Patching DATABASE_URL to empty on the live preview would break every other endpoint mid-test, so we (correctly) opted for the code-review path.",
+    "Test file /app/backend/tests/test_iter15_deploy_hardening.py is the reusable smoke suite for future deploy validations — 9 assertions, ~27s wallclock, covers the 6 review-request endpoints + boot-state + anon-route sanity."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter15_deploy_hardening.py (new — 9 pytest cases)"
+  ],
+  "success_rate": {"backend": "100% (9/9)", "frontend": "100% (pricing + login + register + dashboard all green, zero console errors)"},
+  "test_credentials": "qa.captureagent@testmail.dev / CaptureQA#2026 (platform_owner, tier=free, org 499e35c6-ca12-4589-aa1a-ae22bdb72c07)",
+  "seed_data_creation": "1 DEPLOY_REGRESSION refund_requests row created during test_d_refund_request_ok. Module-scoped teardown fixture in test_iter15_deploy_hardening.py automatically denied any pending DEPLOY_REGRESSION rows for QA at exit. 1 short-lived Stripe checkout session (full_monthly) was created via api/payments/checkout — auto-expires in 24h, never followed to completion.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Deploy-hardening rewrite verified. Preview backend boot state is {db:'ready', migrated:true, missing_env:[]}. If the production deploy is retried and still fails to become ready, the FIRST thing to check is `kubectl exec ... -- curl 127.0.0.1:8001/api/health` inside the pod — the new code guarantees that endpoint answers even when env is missing, so if it's still failing readiness, the issue is now elsewhere (port binding, ingress, container image) not env/DB. QA org, Supabase keys, Stripe test-mode catalog all unchanged from iter14.",
+  "rca_of_the_issue": "Original prod K8s readiness timeout was caused by missing env vars (blank Emergent Secrets tab) → KeyError in startup handler → uvicorn process exit → readiness probe never passes → 10-min deploy timeout. Fix (verified on preview): (1) required-envs check with `os.environ.get()` returns None instead of KeyError, missing keys are logged and stored in _BOOT_STATE.missing_env; startup short-circuits with `return` instead of raising. (2) DB pool init wrapped in try/except → sets _BOOT_STATE.db='error: ...' and returns. (3) migrations + seed also wrapped in try/except → non-fatal. (4) /api/health is now the FIRST route registered and reads only from _BOOT_STATE (no DB access) so K8s readiness always passes once the process is up."
+}
