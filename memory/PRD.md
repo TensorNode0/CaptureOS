@@ -1,6 +1,45 @@
 # CaptureAgent (captureagent.us) — PRD & Deployment Log
 
 
+## Phase 7 (Discovered accelerators/investors) ✅ 2026-07-18
+- Migration 0018 → `discovered_venture` table (org-scoped; kind ∈ {'accelerator','investor'}; jsonb `data`).
+- `venture_ai.py`: both scan prompts now append a fenced ```json``` block listing the programs
+  they identified. `routers/venture.py::_extract_discovered_block` parses & strips it out of the
+  markdown so users still see the same doc.
+- `_persist_discovered()` upserts each program into `discovered_venture` on
+  (organization_id, kind, name).
+- New endpoints: GET `/orgs/{orgId}/venture/discovered/{accelerator|investor}`,
+  DELETE `.../{itemId}`.
+- Frontend: `Accelerators.js` and `PrivateCapital.js` fetch discovered rows on mount and after
+  `ScanPanel.onDone`, merge them with the curated seed list (curated names win on dupe), and mark
+  the AI-discovered rows with a small cyan **AI ✨** pill on the name column.
+- ScanPanel gained an `onDone` prop so pages can refresh in-place after a scan completes.
+
+## Account Deletion feature ✅ 2026-07-18 (added out-of-plan by user request)
+- Migration 0019: softens the `on delete no action` foreign keys referencing `users`
+  (organizations.owner_id, aor_certified_by, competitive_reports.created_by, venture_docs.created_by,
+  subcontractor_grants.created_by, proposals.submitted_by, profile_edit_requests.decided_by,
+  ai_jobs.user_id) → **SET NULL** so a user can delete themselves without leaving orphans.
+  Also creates `account_deletion_requests` table for the Stripe-cancellation queue (Phase 2 hook).
+- `DELETE /api/auth/me` (backend/routers/auth.py::delete_account):
+  - Requires body `{ confirmEmail: <user's email>, reason?: str }`; email must match caller's own.
+  - Wipes any org where the user is the ONLY active member (cascades opportunities, proposals,
+    secrets, venture docs, files → everything).
+  - For shared orgs: drops membership; if the user was owner, transfers ownership to the oldest
+    remaining active owner → admin → editor (guaranteed non-null owner).
+  - Deletes `public.users` row → all remaining pointers (`created_by`, `submitted_by`, etc.) become NULL.
+  - Calls Supabase Admin API `DELETE /auth/v1/admin/users/{auth_uid}` with SUPABASE_SERVICE_ROLE_KEY
+    to release the email; 404 treated as idempotent success.
+  - Persists a row in `account_deletion_requests` (pending → completed/failed).
+  - TODO(phase-2): call `stripe.Subscription.delete` before finalizing when Stripe lands.
+- Frontend Settings.js gains a "Danger zone — delete account" card + confirmation Modal.
+  User must type their exact email; textarea for optional reason; logs out and returns to /home
+  on success. Tone: red-tinted borders, `data-testid`s: `danger-zone`, `delete-account-open`,
+  `delete-account-modal`, `delete-account-confirm-email`, `delete-account-reason`,
+  `delete-account-cancel`, `delete-account-confirm`.
+
+
+
 ## TERMINOLOGY LOCK — 2026-07-18
 - User is the platform owner. **Never** use "Platform Creator", "Super Admin", or "Admin"
   in any user-facing UI text to describe them. In UI/marketing they = **CaptureAgent (the

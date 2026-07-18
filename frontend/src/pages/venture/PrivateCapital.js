@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from "react";
-import { Search, ExternalLink, Landmark } from "lucide-react";
+import React, { useEffect, useMemo, useState } from "react";
+import { Search, ExternalLink, Landmark, Sparkles } from "lucide-react";
+import { api } from "../../lib/api";
 import { useAuth } from "../../context/AuthContext";
 import { Card, SectionLabel, Pill, PageReveal, EmptyState, Modal } from "../../components/ui";
 import ScanPanel from "../../components/ScanPanel";
@@ -21,6 +22,22 @@ function maxCheckOf(s) {
   return max;
 }
 
+/* Shape an AI-discovered investor into the row format the table expects. */
+const discoveredToRow = (d) => ({
+  name: d.name,
+  discovered: true,
+  url: d.url || d.source || "",
+  checkSize: d.checkSize || "",
+  stage: d.stage || "",
+  sectors: d.sector || "",
+  portfolio: d.recentDeal || d.fitReason || "",
+  checkType: d.verified === false ? "Unverified" : "AI-discovered",
+  notes: d.fitReason || "",
+  techAreas: d.sector || "",
+  discoveredAt: d.discoveredAt,
+  _did: d.id,
+});
+
 export default function PrivateCapital() {
   const { activeOrgId, activeOrg } = useAuth();
   const editor = canEdit(activeOrg?.role);
@@ -29,15 +46,32 @@ export default function PrivateCapital() {
   const [sector, setSector] = useState("");
   const [checkMin, setCheckMin] = useState(0);
   const [selected, setSelected] = useState(null);
+  const [discovered, setDiscovered] = useState([]);
 
-  const rows = useMemo(() => INVESTORS.filter((r) => {
+  const loadDiscovered = async () => {
+    if (!activeOrgId) return;
+    try {
+      const { data } = await api.get(`/orgs/${activeOrgId}/venture/discovered/investor`);
+      setDiscovered(data);
+    } catch { setDiscovered([]); }
+  };
+  useEffect(() => { loadDiscovered(); }, [activeOrgId]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  const all = useMemo(() => {
+    const dRows = discovered.map(discoveredToRow);
+    const curatedNames = new Set(INVESTORS.map((i) => (i.name || "").toLowerCase().trim()));
+    const dRowsUnique = dRows.filter((r) => !curatedNames.has((r.name || "").toLowerCase().trim()));
+    return [...dRowsUnique, ...INVESTORS];
+  }, [discovered]);
+
+  const rows = useMemo(() => all.filter((r) => {
     const hay = `${r.name} ${r.sectors} ${r.techAreas} ${r.notes} ${r.portfolio}`.toLowerCase();
     if (q && !hay.includes(q.toLowerCase())) return false;
     if (stage && !`${r.stage}`.toLowerCase().includes(stage.toLowerCase())) return false;
     if (sector && !`${r.sectors}`.toLowerCase().includes(sector.toLowerCase())) return false;
     if (checkMin && maxCheckOf(r.checkSize) < checkMin) return false;
     return true;
-  }), [q, stage, sector, checkMin]);
+  }), [all, q, stage, sector, checkMin]);
 
   return (
     <PageReveal className="space-y-5">
@@ -59,8 +93,9 @@ export default function PrivateCapital() {
       <ScanPanel orgId={activeOrgId} kind="investor_scan" editor={editor}
         label="AI deep scan: investors tailored to your company"
         blurb="Searches the live web for active investors matched to your stage, sector,
-               and traction — with warm-path ideas and sources. Runs on Claude with web search."
-        testid="investor-scan" />
+               and traction — with warm-path ideas and sources. Runs on Claude with web search.
+               Newly discovered investors are added to the table below with an AI tag."
+        testid="investor-scan" onDone={loadDiscovered} />
 
       <Card className="p-4">
         <div className="flex flex-wrap items-center gap-2">
@@ -109,6 +144,11 @@ export default function PrivateCapital() {
                       className="cursor-pointer border-b border-line/60 align-top hover:bg-white/5">
                     <td className="px-3 py-3">
                       <span className="font-medium text-ink">{r.name}</span>
+                      {r.discovered && (
+                        <Pill tone="cyan" className="ml-1.5 !py-0 !text-[9px]" title="Discovered by AI scan">
+                          <Sparkles size={9} className="mr-0.5" />AI
+                        </Pill>
+                      )}
                       {r.url && (
                         <a href={r.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}
                            className="ml-1.5 inline-flex text-faint hover:text-cyan" aria-label="Investor site">

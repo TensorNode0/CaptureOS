@@ -110,7 +110,16 @@ def _prompt(kind, ctx_text, target, notes):
             "## Warm-path ideas (who in their portfolio/network overlaps), "
             "## Outreach order (prioritized 5 with one-line rationale). NEVER invent "
             "an investor or a check size — cite a source URL per row or mark "
-            "unverified. Markdown ONLY."
+            "unverified. Markdown ONLY.\n\n"
+            "AFTER the markdown report, append this exact fenced block on a new line "
+            "(so the app can index the discoveries into the Private Capital table):\n"
+            "```json\n"
+            '{ "discovered": [ { "name": "", "checkSize": "", "stage": "", '
+            '"sector": "", "recentDeal": "", "url": "", "source": "", '
+            '"fitReason": "", "verified": true } ] }\n'
+            "```\n"
+            "Include every best-fit investor from the report. Preserve names EXACTLY as "
+            "in the report."
         )
     if kind == "accelerator_scan":
         return (
@@ -121,7 +130,16 @@ def _prompt(kind, ctx_text, target, notes):
             "## Open now (table: program | due date | duration | terms | attendance | "
             "why this fit | source), ## Opening soon, ## Skip and why (programs that "
             "look relevant but aren't for this stage). NEVER invent dates or terms — "
-            "cite a source URL per row or mark unverified. Markdown ONLY."
+            "cite a source URL per row or mark unverified. Markdown ONLY.\n\n"
+            "AFTER the markdown report, append this exact fenced block on a new line "
+            "(so the app can index the discoveries into the Accelerators table):\n"
+            "```json\n"
+            '{ "discovered": [ { "name": "", "dueDate": "", "duration": "", '
+            '"terms": "", "attendance": "", "url": "", "source": "", '
+            '"fitReason": "", "verified": true } ] }\n'
+            "```\n"
+            "Include every 'Open now' AND 'Opening soon' program. Do NOT include "
+            "programs from the 'Skip' section. Preserve names EXACTLY as in the report."
         )
     # accelerator_application
     return (

@@ -10,7 +10,7 @@ import { fmtDateTime } from "../lib/helpers";
 /* AI web-search scan for a venture page (investor_scan / accelerator_scan):
    one report per org+kind, redrafted in place. Claude-only — the scan uses
    live web search, which runs on the Anthropic engine. */
-export default function ScanPanel({ orgId, kind, label, blurb, editor, testid }) {
+export default function ScanPanel({ orgId, kind, label, blurb, editor, testid, onDone }) {
   const [doc, setDoc] = useState(null);
   const [open, setOpen] = useState(true);
 
@@ -40,6 +40,7 @@ export default function ScanPanel({ orgId, kind, label, blurb, editor, testid })
   const done = async () => {
     const fresh = await load().catch(() => null);
     if (fresh?.contentMd) { setOpen(true); toast.success("Scan ready"); }
+    if (onDone) onDone(fresh);
   };
 
   const remove = async () => {

@@ -1,6 +1,6 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, ExternalLink, Rocket, Plus, FileText } from "lucide-react";
+import { Search, ExternalLink, Rocket, Plus, FileText, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { api, errMsg } from "../../lib/api";
 import { useAuth } from "../../context/AuthContext";
@@ -10,6 +10,26 @@ import { ACCELERATORS } from "../../lib/ventureData";
 import { canEdit } from "../../lib/helpers";
 
 const dur = (w) => (w ? (w >= 20 ? `${Math.round(w / 4.3)} months` : `${w} weeks`) : "Varies");
+
+/* Convert an AI-discovered accelerator record into the shape the table
+   expects — filling in fields the curated ACCELERATORS list uses. */
+const discoveredToRow = (d) => ({
+  name: d.name,
+  discovered: true,
+  url: d.url || d.source || "",
+  focus: d.fitReason || "",
+  location: "",
+  tips: d.fitReason || "",
+  phase: d.stage || "",
+  terms: d.terms || "",
+  attendance: d.attendance || "",
+  durationWeeks: null,
+  dueDate: d.dueDate || "",
+  verified: d.verified !== false,
+  sourceDocId: d.sourceDocId,
+  discoveredAt: d.discoveredAt,
+  _did: d.id,
+});
 
 export default function Accelerators() {
   const { activeOrgId, activeOrg } = useAuth();
@@ -22,11 +42,29 @@ export default function Accelerators() {
   const [fPhase, setFPhase] = useState("");
   const [fDurMax, setFDurMax] = useState(0);
   const [custom, setCustom] = useState([]);          // user-added programs (this session)
+  const [discovered, setDiscovered] = useState([]);  // AI-discovered programs (persistent)
   const [selected, setSelected] = useState(null);    // drawer row
   const [showAdd, setShowAdd] = useState(false);
   const [starting, setStarting] = useState(false);
 
-  const all = useMemo(() => [...custom, ...ACCELERATORS], [custom]);
+  const loadDiscovered = async () => {
+    if (!activeOrgId) return;
+    try {
+      const { data } = await api.get(`/orgs/${activeOrgId}/venture/discovered/accelerator`);
+      setDiscovered(data);
+    } catch { setDiscovered([]); }
+  };
+  useEffect(() => { loadDiscovered(); }, [activeOrgId]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* Merge order: user-added first, then AI discoveries (freshest first), then curated. */
+  const all = useMemo(() => {
+    const dRows = discovered.map(discoveredToRow);
+    // Dedupe against curated by lowercased name so AI picks that duplicate the
+    // seed list are hidden (curated wins — it has fuller fields).
+    const curatedNames = new Set(ACCELERATORS.map((a) => (a.name || "").toLowerCase().trim()));
+    const dRowsUnique = dRows.filter((r) => !curatedNames.has((r.name || "").toLowerCase().trim()));
+    return [...custom, ...dRowsUnique, ...ACCELERATORS];
+  }, [custom, discovered]);
 
   const rows = useMemo(() => all.filter((r) => {
     const hay = `${r.name} ${r.focus} ${r.location} ${r.tips} ${r.phase}`.toLowerCase();
@@ -76,8 +114,9 @@ export default function Accelerators() {
       <ScanPanel orgId={activeOrgId} kind="accelerator_scan" editor={editor}
         label="AI deep scan: programs that fit your company"
         blurb="Searches the live web for currently open and upcoming cohorts matched to
-               your profile — with due dates, terms, and sources. Runs on Claude with web search."
-        testid="accel-scan" />
+               your profile — with due dates, terms, and sources. Runs on Claude with web search.
+               Newly discovered programs are added to the table below with an AI tag."
+        testid="accel-scan" onDone={loadDiscovered} />
 
       <Card className="p-4">
         <div className="flex flex-wrap items-center gap-2">
@@ -140,6 +179,11 @@ export default function Accelerators() {
                       className="cursor-pointer border-b border-line/60 align-top hover:bg-white/5">
                     <td className="px-3 py-3">
                       <span className="font-medium text-ink">{r.name}</span>
+                      {r.discovered && (
+                        <Pill tone="cyan" className="ml-1.5 !py-0 !text-[9px]" title="Discovered by AI scan">
+                          <Sparkles size={9} className="mr-0.5" />AI
+                        </Pill>
+                      )}
                       {r.url && (
                         <a href={r.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}
                            className="ml-1.5 inline-flex text-faint hover:text-cyan" aria-label="Program site">

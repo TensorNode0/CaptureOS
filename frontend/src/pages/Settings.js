@@ -1,13 +1,15 @@
 import React, { useEffect, useState } from "react";
-import { Save, KeyRound, Lock, Settings as SettingsIcon, RotateCw } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Save, KeyRound, Lock, Settings as SettingsIcon, RotateCw, Trash2, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { api, errMsg } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
-import { Card, SectionLabel, Pill, Spinner, PageReveal, Field } from "../components/ui";
+import { Card, SectionLabel, Pill, Spinner, PageReveal, Field, Modal } from "../components/ui";
 import { resetAIOptionsCache } from "../components/AIButton";
 
 export default function Settings() {
-  const { activeOrgId, activeOrg } = useAuth();
+  const { activeOrgId, activeOrg, user, logout } = useAuth();
+  const navigate = useNavigate();
   const [org, setOrg] = useState(null);
   const [secrets, setSecrets] = useState(null);
   const [anthropic, setAnthropic] = useState("");
@@ -19,6 +21,10 @@ export default function Settings() {
   const [savingOrg, setSavingOrg] = useState(false);
   const [savingKeys, setSavingKeys] = useState(false);
   const [rotating, setRotating] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteEmail, setDeleteEmail] = useState("");
+  const [deleteReason, setDeleteReason] = useState("");
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (!activeOrgId) return;
@@ -68,6 +74,27 @@ export default function Settings() {
       toast.success(`Encryption key rotated (now v${data.keyVersion})`);
     } catch (e) { toast.error(errMsg(e)); }
     finally { setRotating(false); }
+  };
+
+  const deleteAccount = async () => {
+    if (!user?.email) return;
+    if ((deleteEmail || "").trim().toLowerCase() !== user.email.toLowerCase()) {
+      toast.error("Type your exact email to confirm.");
+      return;
+    }
+    setDeleting(true);
+    try {
+      const { data } = await api.delete("/auth/me", {
+        data: { confirmEmail: deleteEmail.trim(), reason: deleteReason },
+      });
+      const summary = [];
+      if (data.orgsDeleted) summary.push(`${data.orgsDeleted} organization${data.orgsDeleted === 1 ? "" : "s"} deleted`);
+      if (data.membershipsDropped) summary.push(`left ${data.membershipsDropped} organization${data.membershipsDropped === 1 ? "" : "s"}`);
+      toast.success("Account deleted", { description: summary.join(" · ") || "All your data has been removed." });
+      await logout();
+      navigate("/home");
+    } catch (e) { toast.error(errMsg(e)); }
+    finally { setDeleting(false); }
   };
 
   if (!org || !secrets) return <div className="flex h-64 items-center justify-center"><Spinner size={26} className="text-cyan" /></div>;
@@ -135,6 +162,88 @@ export default function Settings() {
         <SectionLabel>Data Sensitivity</SectionLabel>
         <p className="mt-2 text-xs text-faint">This workspace holds <b>unclassified</b> pipeline metadata only. Do not store CUI or ITAR-controlled technical data here — that requires a separate, controlled environment.</p>
       </Card>
+
+      {/* Danger zone: hard-delete the signed-in user's account. Solo-owned
+          orgs and all their data are wiped; multi-member orgs get ownership
+          re-assigned. Requires typing the exact account email to guard against
+          accidental clicks. Paid subscriptions cancel automatically once
+          Stripe (Phase 2) is wired in. */}
+      <Card className="p-5" style={{ borderColor: "rgba(239, 68, 68, 0.35)" }} data-testid="danger-zone">
+        <div className="flex items-center gap-2">
+          <AlertTriangle size={18} className="text-bad" />
+          <SectionLabel>Danger zone — delete account</SectionLabel>
+        </div>
+        <p className="mt-2 max-w-2xl text-xs text-faint">
+          Permanently remove your account, your memberships, and any organization you solely own.
+          This clears every opportunity, proposal, capability, competitive report, venture doc,
+          and file associated with those organizations. Organizations you share with other members
+          survive — ownership is transferred to the next active owner or admin.
+          <br /><br />
+          <b>This cannot be undone.</b> If you have an active paid subscription, your billing is
+          also cancelled and no further charges will be made.
+        </p>
+        <div className="mt-3">
+          <button
+            className="btn"
+            style={{ background: "rgba(239, 68, 68, 0.12)", color: "#fca5a5", borderColor: "rgba(239, 68, 68, 0.35)" }}
+            onClick={() => { setDeleteEmail(""); setDeleteReason(""); setDeleteOpen(true); }}
+            data-testid="delete-account-open"
+          >
+            <Trash2 size={15} /> Delete my account
+          </button>
+        </div>
+      </Card>
+
+      <Modal open={deleteOpen} onClose={() => !deleting && setDeleteOpen(false)} title="Delete your CaptureAgent account" maxW="max-w-lg">
+        <div className="space-y-3 text-sm" data-testid="delete-account-modal">
+          <div className="rounded-md border p-3 text-xs"
+               style={{ borderColor: "rgba(239, 68, 68, 0.35)", background: "rgba(239, 68, 68, 0.08)" }}>
+            <b className="text-bad">This is permanent.</b>
+            <ul className="mt-1.5 list-inside list-disc space-y-0.5 text-dim">
+              <li>Organizations you solely own are wiped, along with every record inside.</li>
+              <li>Shared organizations survive — ownership passes to the next active member.</li>
+              <li>Your Supabase login and email are released for reuse.</li>
+              <li>Any active paid subscription is cancelled with no further charges.</li>
+            </ul>
+          </div>
+          <Field label={<>Type <span className="mono text-ink">{user?.email || "your email"}</span> to confirm</>}>
+            <input
+              className="field mono"
+              value={deleteEmail}
+              onChange={(e) => setDeleteEmail(e.target.value)}
+              placeholder={user?.email || "you@example.com"}
+              autoComplete="off"
+              data-testid="delete-account-confirm-email"
+            />
+          </Field>
+          <Field label="Why are you leaving? (optional, helps us improve)">
+            <textarea
+              className="field"
+              rows={3}
+              value={deleteReason}
+              onChange={(e) => setDeleteReason(e.target.value)}
+              maxLength={500}
+              placeholder="Not required."
+              data-testid="delete-account-reason"
+            />
+          </Field>
+          <div className="flex justify-end gap-2 pt-1">
+            <button className="btn btn-ghost" onClick={() => setDeleteOpen(false)} disabled={deleting} data-testid="delete-account-cancel">
+              Cancel
+            </button>
+            <button
+              className="btn"
+              style={{ background: "rgba(239, 68, 68, 0.15)", color: "#fca5a5", borderColor: "rgba(239, 68, 68, 0.4)" }}
+              onClick={deleteAccount}
+              disabled={deleting || !deleteEmail}
+              data-testid="delete-account-confirm"
+            >
+              {deleting ? <Spinner /> : <Trash2 size={15} />}
+              Permanently delete my account
+            </button>
+          </div>
+        </div>
+      </Modal>
     </PageReveal>
   );
 }

@@ -81,6 +81,55 @@ class DraftIn(BaseModel):
     effort: str = "standard"
 
 
+_SCAN_KIND_MAP = {"accelerator_scan": "accelerator", "investor_scan": "investor"}
+
+
+def _extract_discovered_block(md: str):
+    """Pull the trailing ```json { "discovered": [...] } ``` block from a scan
+    result and strip it out of the markdown. Returns (list_of_items, cleaned_md).
+    Silent on parse errors — discovery persistence is best-effort."""
+    import re, json as _json
+    m = re.search(r"```json\s*(\{[\s\S]*?\})\s*```\s*$", md or "", re.MULTILINE)
+    if not m:
+        return [], md
+    try:
+        parsed = _json.loads(m.group(1))
+        items = parsed.get("discovered") if isinstance(parsed, dict) else None
+        if not isinstance(items, list):
+            return [], md
+        cleaned = (md[:m.start()] + md[m.end():]).rstrip() + "\n"
+        return items, cleaned
+    except Exception:
+        return [], md
+
+
+async def _persist_discovered(org_id, doc_id, kind_key, items):
+    """Upsert discovered accelerator/investor programs so they show up as extra
+    rows on the venture pages alongside the curated seed lists."""
+    if not items or kind_key not in _SCAN_KIND_MAP:
+        return 0
+    dv_kind = _SCAN_KIND_MAP[kind_key]
+    saved = 0
+    for it in items:
+        name = (it.get("name") or "").strip()
+        if not name:
+            continue
+        # Drop `name` from payload to avoid duplication; keep everything else.
+        payload = {k: v for k, v in it.items() if k != "name"}
+        await db.execute(
+            """insert into discovered_venture
+                   (organization_id, kind, name, data, source_doc_id)
+               values ($1, $2, $3, $4, $5)
+               on conflict (organization_id, kind, name) do update
+                   set data          = excluded.data,
+                       source_doc_id = excluded.source_doc_id,
+                       discovered_at = now()""",
+            as_uuid(org_id), dv_kind, name, payload,
+            as_uuid(doc_id) if doc_id else None)
+        saved += 1
+    return saved
+
+
 async def _run_draft(doc_id, engine, keys, org, profile, kind, target, notes,
                      user, org_id, model="", effort="", job_id=None):
     try:
@@ -89,16 +138,20 @@ async def _run_draft(doc_id, engine, keys, org, profile, kind, target, notes,
             model=model, effort=effort, job_id=job_id)
         if job_id:
             await ai_jobs.stage(job_id, "Saving the draft…", 95)
+        discovered_items, md = _extract_discovered_block(md)
         await db.execute(
             """update venture_docs
                set content_md = $2, content_json = $3, draft_status = 'idle',
                    draft_error = '', model = $4, updated_at = $5
                where id = $1""",
             doc_id, md, data, used_model, now_utc())
+        saved = await _persist_discovered(org_id, doc_id, kind, discovered_items)
         if job_id:
-            await ai_jobs.finish(job_id, "Draft ready")
+            note = f"Draft ready · indexed {saved} program(s)" if saved else "Draft ready"
+            await ai_jobs.finish(job_id, note)
         await write_audit(org_id, user, "venture.draft", kind,
-                          {"engine": engine, "model": used_model})
+                          {"engine": engine, "model": used_model,
+                           "indexed": saved})
     except ai_jobs.JobCancelled:
         await db.execute(
             """update venture_docs set draft_status = 'idle', draft_error = '',
@@ -249,3 +302,46 @@ async def create_from_program(body: FromProgramIn,
                       body.name.strip(), {"hadPage": bool(page_text),
                                           "tailored": bool(model_used)})
     return serialize(row)
+
+
+# --------- Discovered programs (from AI scans) — merged with curated lists ---------
+_DISCOVERED_KINDS = {"accelerator", "investor"}
+
+
+@router.get("/{orgId}/venture/discovered/{kind}")
+async def list_discovered(kind: str,
+                          ctx: dict = Depends(require_role("viewer"))):
+    """Return venture programs the AI scan discovered for this org, most recent
+    first. Frontend merges these with the curated seed list for display."""
+    if kind not in _DISCOVERED_KINDS:
+        raise HTTPException(status_code=400, detail="Invalid kind")
+    rows = await db.fetch(
+        """select id, name, data, source_doc_id, discovered_at
+             from discovered_venture
+             where organization_id = $1 and kind = $2
+             order by discovered_at desc
+             limit 200""",
+        as_uuid(ctx["org_id"]), kind)
+    return [{
+        "id": str(r["id"]),
+        "name": r["name"],
+        "discoveredAt": r["discovered_at"].isoformat() if r["discovered_at"] else None,
+        "sourceDocId": str(r["source_doc_id"]) if r["source_doc_id"] else None,
+        **(r["data"] or {}),
+    } for r in rows]
+
+
+@router.delete("/{orgId}/venture/discovered/{kind}/{itemId}")
+async def delete_discovered(kind: str, itemId: str,
+                            ctx: dict = Depends(require_role("editor"))):
+    """Remove a discovered program from the merged list (e.g. duplicate of a
+    curated entry or a bad AI pick)."""
+    if kind not in _DISCOVERED_KINDS:
+        raise HTTPException(status_code=400, detail="Invalid kind")
+    await db.execute(
+        """delete from discovered_venture
+             where id = $1 and organization_id = $2 and kind = $3""",
+        as_uuid(itemId), as_uuid(ctx["org_id"]), kind)
+    await write_audit(ctx["org_id"], ctx["user"], "venture.discovered.remove",
+                      kind, {"id": itemId})
+    return {"ok": True}
