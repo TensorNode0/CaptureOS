@@ -1,5 +1,66 @@
 # CaptureAgent (captureagent.us) — PRD & Deployment Log
 
+
+## PRODUCT EXPANSION IN PROGRESS 2026-07-18 (this session)
+Massive feature plan approved by user across 9 phases. Batched in size-first order to
+stay within a tight credit budget. Login/auth is CONFIRMED FIXED (do not touch).
+
+### Phase 1 — Sidebar UX + Tab Reorder + Rename ✅ DONE
+- New sidebar structure: aside is sticky h-screen; nav is scrollable; UserFooter (name/email/
+  Sign out) is pinned and NEVER scrolls off-screen. Email truncates within sidebar boundary.
+- New `sidebar-mode-toggle` button (top-left icon in header): switches between "persistent"
+  and "drawer" mode. Persists in localStorage.
+- Tab order updated to: Dashboard, Company Profile, Federal Opportunities, Federal Proposals,
+  Competitive Analysis, Private Capital, Investment Deals, Accelerators, Accelerator Applications,
+  Admin (admin-only), Settings.
+- "Proposals" → "Federal Proposals" everywhere (sidebar label + page H1).
+- Files: /app/frontend/src/components/Shell.js, /app/frontend/src/pages/Proposals.js.
+- Verified via screenshot + automated toggle test.
+
+### Phase 4 — Opportunity Summary + Points of Contact ✅ DONE
+- SAM.gov fetch (integrations.py fetch_sam) now parses each notice's `pointOfContact` list into
+  a compact `pocs: [{name, role: 'PoC'|'TPoC', title, email, phone}]` and stores the source
+  description alongside it. Populated at pull time — no AI required to see contacts.
+- New endpoint `POST /api/orgs/{orgId}/opportunities/{oppId}/summary` (opportunities router)
+  generates a 3-5-paragraph AI narrative and merges any additional PoCs the AI extracted from
+  the source description (deduped by name+email). Stores in `ai_enrichment` jsonb.
+- OppDrawer now shows: "Opportunity Summary" section (paragraph text) + "Points of Contact"
+  section (per-contact card with mailto/tel links). New "Summary & PoCs" AI button in the
+  drawer actions row runs the endpoint.
+- Files: backend/integrations.py, backend/routers/opportunities.py, frontend/OppDrawer.js.
+
+### Phase 6 — Competitive Analysis: AI direct-competitor shortlist ✅ DONE
+- USASpending pool expanded to top 30 primes + top 30 subs (was 10 each) — the raw pool the
+  AI ranks from.
+- New backend endpoint `POST /api/orgs/{orgId}/competitive/market/shortlist` runs an AI
+  scoring pass over the pool using the org's own capability profile. Returns ranked list
+  (0-100 overlapScore, rationale, confidence). Anti-hallucination guard: filters out any
+  name not present in the actual USASpending pool.
+- New Competitive Analysis page section: "Likely direct competitors — AI shortlist" appears
+  when the user clicks "Shortlist direct competitors" in the market panel.
+- Files: backend/competitive.py, backend/routers/competitive.py, frontend/CompetitiveAnalysis.js.
+
+### Phases 2, 3, 5, 7, 8, 9 — QUEUED (approved, not yet started this batch)
+See original message. In credit-efficient smallest-first order:
+- Phase 9: Overleaf integration (git + Open in Overleaf; NOT embeddable — Overleaf sets
+  X-Frame-Options DENY; user was informed).
+- Phase 7: Accelerator + Private Capital AI scans that persist discovered rows.
+- Phase 3: AI chat assistant (OpenAI/Anthropic/Gemini) attached to proposals/deals/apps/opps.
+- Phase 8: Structured (fillable-form) accelerator applications tailored per program.
+- Phase 5: Supabase Storage — Org files (7 subfolders) + per-item attachments + Disk Storage
+  tab + AI RAG on uploads (pgvector).
+- Phase 2: Stripe — 3 tiers ($49 / $99 / Enterprise), 15% annual off, admin-owned promo codes,
+  admin refund workflow, per-tier feature gating.
+
+### Product decisions locked with user this session
+- Stripe country: US.
+- Downgrade/cancel behavior: keep access to end of billing period (grace).
+- Refunds: users request → super admin (user) approves in /admin.
+- Files/RAG: full RAG (pgvector on Supabase) once Phase 5 begins.
+- Overleaf: git-based integration only (embedding is impossible).
+- Tab order + rename: applied as-specified.
+
+
 ## AUTH MIGRATION RESCUE 2026-07-16 (latest session)
 - User's dev team migrated auth to SUPABASE AUTH (GoTrue) via GitHub sync ("Reconcile: Supabase
   auth onto Emergent's live code"). Old custom-JWT endpoints removed; frontend now uses

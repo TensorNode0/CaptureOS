@@ -184,6 +184,22 @@ async def fetch_sam(api_key, naics, keywords, limit=60, psc=None):
             continue  # belt-and-suspenders: never surface expired notices
         sa_code = o.get("typeOfSetAside") or ""
         ptype = (o.get("type") or "").lower()[:1]
+        # Normalize SAM.gov pointOfContact entries into a compact PoC list.
+        # SAM returns primary/secondary contacts (contract + technical) — keep
+        # the ones with a real name and classify by `type` (primary=PoC,
+        # secondary=TPoC) so the UI can render both roles.
+        pocs = []
+        for pc in (o.get("pointOfContact") or [])[:6]:
+            name = (pc.get("fullName") or "").strip()
+            email = (pc.get("email") or "").strip()
+            phone = (pc.get("phone") or "").strip()
+            if not (name or email):
+                continue
+            ctype = (pc.get("type") or "").lower()
+            role = "TPoC" if "secondary" in ctype or "tech" in ctype else "PoC"
+            pocs.append({"name": name, "role": role,
+                         "title": (pc.get("title") or "").strip(),
+                         "email": email, "phone": phone})
         results.append({
             "title": title,
             "solNumber": sol,
@@ -201,6 +217,8 @@ async def fetch_sam(api_key, naics, keywords, limit=60, psc=None):
             "oppType": "Contract",
             "url": o.get("uiLink") or "",
             "source": "sam",
+            "pocs": pocs,
+            "description": desc,
         })
     return results
 

@@ -111,17 +111,25 @@ async def _insert_opp(ctx, rec, source):
     url = rec.get("url") or (f"https://sam.gov/opp/{sol}" if sol else "")
     links = [{"label": "Solicitation", "url": url, "status": "live",
               "checkedAt": iso(now_utc())}]
+    # Seed ai_enrichment with anything the source already gave us (PoCs +
+    # source description) so it's queryable/displayable before AI runs.
+    seed_enrichment = {}
+    if rec.get("pocs"):
+        seed_enrichment["pocs"] = rec["pocs"]
+    if rec.get("description"):
+        seed_enrichment["sourceDescription"] = rec["description"][:4000]
     return await db.fetchrow(
         """insert into opportunities
                (organization_id, title, sol_number, agency, office, vehicle, set_aside,
                 naics, ceiling, pop, due_date, stage, url, win_themes, source,
                 last_verified, verify_report, links, fit, pwin, proposal_strength,
                 compliance, budget, criteria, decision, created_by, notice_status,
-                scope_summary, psc, due_time, acq_stage, opp_type, value_type)
+                scope_summary, psc, due_time, acq_stage, opp_type, value_type,
+                ai_enrichment)
            values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'Identified', $12, '',
                    $13, $14, null, $15, $16, 0, 0, $17, $18, $19,
                    '{"call": "TBD", "rationale": ""}'::jsonb, $20, $21,
-                   $22, $23, $24, $25, $26, $27)
+                   $22, $23, $24, $25, $26, $27, $28)
            returning *""",
         ctx["org_id"], rec.get("title", ""), sol, rec.get("agency", ""),
         rec.get("office", ""), rec.get("vehicle", "RFP"), rec.get("setAside") or "None",
@@ -131,7 +139,8 @@ async def _insert_opp(ctx, rec, source):
         as_uuid(ctx["user"]["id"]), rec.get("noticeStatus") or "open",
         rec.get("scopeSummary", "") or "", rec.get("psc", "") or "",
         rec.get("dueTime", "") or "", rec.get("acqStage", "") or "",
-        rec.get("oppType", "") or "", rec.get("valueType", "") or "")
+        rec.get("oppType", "") or "", rec.get("valueType", "") or "",
+        seed_enrichment or None)
 
 
 def _decorate(opp_row, profile, org=None):
@@ -657,3 +666,101 @@ async def pull_sam_grants(ctx: dict = Depends(require_role("editor"))):
                       {"summary": summary})
     return {"ok": True, "summary": summary, "added": added, "updated": updated,
             "errors": errors, "mock": False}
+
+
+
+# ---------------- AI Opportunity Summary + PoC extraction ----------------
+SUMMARY_SYSTEM = (
+    "You are a senior U.S. federal capture analyst. Read the saved opportunity data "
+    "(including any source description) and produce a compact, human-readable brief "
+    "for a busy business developer. NEVER fabricate: if a field is not present in the "
+    "provided data, say so. Respond with a SINGLE JSON object ONLY."
+)
+
+
+def _summary_prompt(opp: dict, source_desc: str) -> str:
+    import json as _json
+    slim = {k: opp.get(k) for k in (
+        "title", "solNumber", "agency", "office", "vehicle", "setAside", "naics",
+        "psc", "ceiling", "dueDate", "url", "scopeSummary", "oppType", "acqStage",
+        "contractType", "incumbent", "pop")}
+    return (
+        f"OPPORTUNITY:\n{_json.dumps(slim, default=str)[:4000]}\n\n"
+        f"SOURCE DESCRIPTION (may be truncated):\n{(source_desc or '')[:6000]}\n\n"
+        "Return JSON exactly in this shape:\n"
+        '{ "summary": "3-5 tight paragraphs covering: what the government is buying, '
+        'who it is for, the mission/context, key requirements, dates & value, '
+        'and the top 2-3 questions a bidder must answer",\n'
+        '  "pocs": [ { "name": "", "role": "PoC|TPoC", "title": "", '
+        '"email": "", "phone": "" } ],\n'
+        '  "confidence": "low|medium|high" }\n'
+        "Extract any names/emails/phones present in the source description as PoCs. "
+        "Classify contracting/procurement contacts as PoC and technical/program contacts as TPoC."
+    )
+
+
+class SummaryIn(BaseModel):
+    engine: str = "claude"
+    model: str = ""
+    effort: str = "standard"
+
+
+@router.post("/{orgId}/opportunities/{oppId}/summary")
+async def opportunity_summary(oppId: str, body: SummaryIn = None,
+                              ctx: dict = Depends(require_role("editor"))):
+    """Generate a human-readable summary + extract PoCs/TPoCs for one opportunity.
+    Merges any AI-discovered contacts with those already parsed from SAM.gov.
+    Persists both in the `ai_enrichment` jsonb column."""
+    body = body or SummaryIn()
+    engine = body.engine if body.engine in AI_ENGINES else "claude"
+    keys = await org_keys.get_keys(ctx["org_id"], ctx["user"],
+                                   purpose="ai.opportunity_summary")
+    if not keys.get(AI_ENGINES[engine]):
+        raise HTTPException(status_code=400,
+            detail=f"No {genai.ENGINE_LABELS[engine]} API key set. "
+                   "Add it in Settings → API Keys.")
+    opp = await _get_opp(ctx["org_id"], oppId)
+    if not opp:
+        raise HTTPException(status_code=404, detail="Opportunity not found")
+    saved = serialize(opp)
+    enr_before = opp.get("ai_enrichment") or {}
+    source_desc = enr_before.get("sourceDescription", "")
+    try:
+        text, model, _ = await genai.generate(
+            engine, keys, SUMMARY_SYSTEM, _summary_prompt(saved, source_desc),
+            max_tokens=4000, model=body.model, effort=body.effort)
+    except Exception as e:
+        msg = str(e)
+        label = genai.ENGINE_LABELS[engine]
+        if "authentication" in msg.lower() or "401" in msg or "invalid x-api-key" in msg.lower():
+            raise HTTPException(status_code=400,
+                detail=f"{label} rejected the API key. Update it in Settings → API Keys.")
+        raise HTTPException(status_code=502, detail=f"{label} summary failed: {msg}")
+    data = genai.extract_json(text) or {}
+    summary_text = (data.get("summary") or "").strip()
+    ai_pocs = [p for p in (data.get("pocs") or []) if (p.get("name") or p.get("email"))]
+    # Merge AI-extracted PoCs with any already parsed from SAM.gov, dedupe by
+    # (name, email) so we don't show duplicates when SAM already provided them.
+    seen = set()
+    merged_pocs = []
+    for p in [*(enr_before.get("pocs") or []), *ai_pocs]:
+        key = ((p.get("name") or "").lower().strip(),
+               (p.get("email") or "").lower().strip())
+        if key in seen or key == ("", ""):
+            continue
+        seen.add(key)
+        merged_pocs.append(p)
+    new_enrichment = {**enr_before,
+                      "summary": summary_text,
+                      "summaryGeneratedAt": iso(now_utc()),
+                      "summaryModel": model,
+                      "pocs": merged_pocs,
+                      "summaryConfidence": data.get("confidence", "medium")}
+    fresh = await db.fetchrow(
+        """update opportunities set ai_enrichment = $2, updated_at = $3
+           where id = $1 returning *""",
+        opp["id"], new_enrichment, now_utc())
+    await write_audit(ctx["org_id"], ctx["user"], "ai.opportunity_summary",
+                      opp.get("title"), {"model": model})
+    profile = await _profile(ctx["org_id"])
+    return _decorate(fresh, profile, ctx["org"])

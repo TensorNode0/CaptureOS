@@ -174,7 +174,7 @@ async def fetch_market(naics_list):
     }
     async with httpx.AsyncClient(timeout=60) as client:
         r = await client.post(f"{USASPENDING}/search/spending_by_category/recipient", json={
-            "filters": filters, "limit": 10, "page": 1,
+            "filters": filters, "limit": 30, "page": 1,
         })
         r.raise_for_status()
         for row in (r.json().get("results") or []):
@@ -183,7 +183,7 @@ async def fetch_market(naics_list):
                 "obligated": round(float(row.get("amount") or 0)),
             })
         r = await client.post(f"{USASPENDING}/search/spending_by_category/recipient", json={
-            "filters": filters, "limit": 10, "page": 1, "subawards": True,
+            "filters": filters, "limit": 30, "page": 1, "subawards": True,
         })
         if r.status_code == 200:
             for row in (r.json().get("results") or []):
@@ -192,3 +192,89 @@ async def fetch_market(naics_list):
                     "obligated": round(float(row.get("amount") or 0)),
                 })
     return out
+
+
+SHORTLIST_SYSTEM = (
+    "You are a senior federal capture strategist. Given a pool of top prime "
+    "and sub award recipients in the client's NAICS and the client's own "
+    "capability profile, identify the LIKELY DIRECT COMPETITORS — companies "
+    "whose capabilities substantially overlap with the client's, not simply "
+    "any large recipient in the NAICS. Score each candidate 0–100 for direct "
+    "capability overlap; include a one-line rationale grounded in what you "
+    "know about the company. If a name is a generic services conglomerate "
+    "with no clear overlap, score it low. Respond with a SINGLE JSON object."
+)
+
+
+def _shortlist_prompt(org_name, org_naics, capabilities, tech_focus, pool):
+    return (
+        f"CLIENT: {org_name}\n"
+        f"CLIENT NAICS: {', '.join(org_naics or []) or 'n/a'}\n"
+        f"CLIENT CAPABILITIES: {(capabilities or '')[:1200]}\n"
+        f"CLIENT TECH FOCUS: {(tech_focus or '')[:600]}\n\n"
+        f"CANDIDATE POOL (top primes + subs by USASpending obligations):\n"
+        f"{json.dumps(pool, default=str)[:6000]}\n\n"
+        "Return JSON exactly in this shape:\n"
+        '{ "shortlist": [ { "name": "", "role": "prime|sub|both", '
+        '"overlapScore": 0, "obligated": 0, '
+        '"rationale": "one sentence why this is a direct competitor (capability/tech overlap)", '
+        '"confidence": "low|medium|high" } ] }\n'
+        "Return AT MOST 12 entries, ranked by overlapScore descending. "
+        "Exclude candidates with overlapScore < 40. Never invent names — "
+        "only pick from the CANDIDATE POOL. Preserve the obligated value."
+    )
+
+
+async def shortlist_competitors(engine, keys, org_name, org_naics, capabilities,
+                                tech_focus, model="", effort="standard"):
+    """Run AI over the USASpending pool to pick likely direct competitors.
+
+    Returns (shortlist_list, used_model). Requires an AI key for `engine`;
+    caller should validate. Never fabricates names — the AI only picks from
+    the candidate pool provided by USASpending.
+    """
+    market = await fetch_market(org_naics)
+    pool = []
+    seen = set()
+    for row in (market.get("topPrimes") or []):
+        name = (row.get("name") or "").strip()
+        if not name or name in seen: continue
+        seen.add(name)
+        pool.append({"name": name, "role": "prime", "obligated": row.get("obligated") or 0})
+    for row in (market.get("topSubs") or []):
+        name = (row.get("name") or "").strip()
+        if not name: continue
+        if name in seen:
+            # already in as prime — mark role "both"
+            for p in pool:
+                if p["name"] == name:
+                    p["role"] = "both"
+                    p["obligated"] = max(p["obligated"], row.get("obligated") or 0)
+            continue
+        seen.add(name)
+        pool.append({"name": name, "role": "sub", "obligated": row.get("obligated") or 0})
+    if not pool:
+        return {"shortlist": [], "naics": market.get("naics", []),
+                "pool_size": 0, "model": None}
+    text, used_model, _ = await genai.generate(
+        engine, keys, SHORTLIST_SYSTEM,
+        _shortlist_prompt(org_name, org_naics, capabilities, tech_focus, pool),
+        max_tokens=4000, model=model, effort=effort)
+    data = genai.extract_json(text) or {}
+    picks = []
+    valid_names = {p["name"] for p in pool}
+    for item in (data.get("shortlist") or [])[:12]:
+        name = (item.get("name") or "").strip()
+        if name not in valid_names:
+            continue  # anti-hallucination guard
+        picks.append({
+            "name": name,
+            "role": item.get("role") or next((p["role"] for p in pool if p["name"] == name), "prime"),
+            "overlapScore": int(item.get("overlapScore") or 0),
+            "obligated": next((p["obligated"] for p in pool if p["name"] == name), 0),
+            "rationale": (item.get("rationale") or "").strip()[:500],
+            "confidence": item.get("confidence") or "medium",
+        })
+    picks.sort(key=lambda p: -p["overlapScore"])
+    return {"shortlist": picks, "naics": market.get("naics", []),
+            "pool_size": len(pool), "model": used_model}

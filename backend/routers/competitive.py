@@ -133,3 +133,44 @@ async def market_default(ctx: dict = Depends(require_role("viewer"))):
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=502,
             detail=f"USASpending market lookup failed: {str(e)[:200]}")
+
+
+class ShortlistIn(BaseModel):
+    engine: str = "claude"
+    model: str = ""
+    effort: str = "standard"
+
+
+@router.post("/{orgId}/competitive/market/shortlist")
+async def shortlist_direct_competitors(body: ShortlistIn = None,
+                                       ctx: dict = Depends(require_role("editor"))):
+    """AI-shortlist likely direct competitors from the org's NAICS pool.
+    Unlike the raw market list (top recipients by dollars), this filters to
+    companies with substantive capability overlap with the org's profile."""
+    body = body or ShortlistIn()
+    engine = body.engine if body.engine in AI_ENGINES else "claude"
+    keys = await org_keys.get_keys(ctx["org_id"], ctx["user"],
+                                   purpose="competitive.shortlist")
+    if not keys.get(AI_ENGINES[engine]):
+        raise HTTPException(status_code=400,
+            detail=f"No {genai.ENGINE_LABELS[engine]} API key set. "
+                   "Add it in Settings → API Keys.")
+    prof = await db.fetchrow(
+        "select capabilities, tech_focus from org_profiles where organization_id = $1",
+        ctx["org_id"])
+    capabilities = (prof or {}).get("capabilities", "") if prof else ""
+    tech_focus = (prof or {}).get("tech_focus", "") if prof else ""
+    try:
+        result = await competitive.shortlist_competitors(
+            engine, keys, ctx["org"]["name"], ctx["org"].get("naics") or [],
+            capabilities, tech_focus, model=body.model, effort=body.effort)
+    except Exception as e:  # noqa: BLE001
+        msg = str(e)
+        if "authentication" in msg.lower() or "401" in msg.lower():
+            raise HTTPException(status_code=400,
+                detail="The AI provider rejected the API key. Update it in Settings → API Keys.")
+        raise HTTPException(status_code=502,
+            detail=f"Competitor shortlist failed: {msg[:300]}")
+    await write_audit(ctx["org_id"], ctx["user"], "competitive.shortlist",
+                      "market", {"picks": len(result.get("shortlist", []))})
+    return result

@@ -4,6 +4,7 @@ import {
   LayoutDashboard, Target, Building2, Users, Settings as SettingsIcon,
   Shield, LogOut, ChevronDown, Radar, AlertTriangle, X, Menu, FileText,
   Plus, KeyRound, Landmark, Handshake, Rocket, ClipboardList, Crosshair, FolderLock,
+  PanelLeftClose, PanelLeftOpen,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { canAdmin, canSeeDashboard } from "../lib/helpers";
@@ -128,14 +129,14 @@ function OrgSwitcher() {
 
 const NAV = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, testid: "nav-dashboard", dashboard: true },
+  { to: "/profile", label: "Company Profile", icon: Building2, testid: "nav-profile" },
   { to: "/opportunities", label: "Federal Opportunities", icon: Target, testid: "nav-opportunities" },
-  { to: "/proposals", label: "Proposals", icon: FileText, testid: "nav-proposals" },
+  { to: "/proposals", label: "Federal Proposals", icon: FileText, testid: "nav-proposals" },
   { to: "/competitive-analysis", label: "Competitive Analysis", icon: Crosshair, testid: "nav-competitive" },
   { to: "/private-capital", label: "Private Capital", icon: Landmark, testid: "nav-capital" },
   { to: "/investment-deals", label: "Investment Deals", icon: Handshake, testid: "nav-deals" },
   { to: "/accelerators", label: "Accelerators", icon: Rocket, testid: "nav-accelerators" },
   { to: "/accelerator-applications", label: "Accelerator Applications", icon: ClipboardList, testid: "nav-accel-apps" },
-  { to: "/profile", label: "Company Profile", icon: Building2, testid: "nav-profile" },
   { to: "/admin", label: "Admin", icon: Users, testid: "nav-admin", admin: true },
   { to: "/settings", label: "Settings", icon: SettingsIcon, testid: "nav-settings", admin: true },
 ];
@@ -201,10 +202,18 @@ function VerifyBanner() {
 
 function UserFooter({ user, onLogout }) {
   return (
-    <div className="mt-4 border-t border-line pt-4">
-      <div className="px-2 text-sm font-medium text-ink">{user?.name}</div>
-      <div className="px-2 text-xs text-faint">{user?.email}</div>
-      <button onClick={onLogout} className="mt-3 flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm text-dim hover:bg-white/5 hover:text-bad" data-testid="logout-btn">
+    <div className="shrink-0 border-t border-line px-2 pt-3 pb-1">
+      <div className="truncate text-sm font-medium text-ink" title={user?.name} data-testid="sidebar-user-name">
+        {user?.name}
+      </div>
+      <div className="truncate text-[11px] text-faint" title={user?.email} data-testid="sidebar-user-email">
+        {user?.email}
+      </div>
+      <button
+        onClick={onLogout}
+        className="mt-2 flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm text-dim hover:bg-white/5 hover:text-bad"
+        data-testid="logout-btn"
+      >
         <LogOut size={16} /> Sign out
       </button>
     </div>
@@ -216,6 +225,17 @@ export default function Shell({ children }) {
   const navigate = useNavigate();
   const role = activeOrg?.role;
   const [drawer, setDrawer] = useState(false);
+  // Sidebar display mode on lg+ screens. "persistent" (default) shows the
+  // sidebar next to content; "drawer" hides it and requires the menu button
+  // to open it as an overlay — same UX as mobile. Persisted so the user's
+  // choice survives reloads.
+  const [sidebarMode, setSidebarMode] = useState(
+    () => localStorage.getItem("sidebarMode") || "persistent"
+  );
+  useEffect(() => {
+    localStorage.setItem("sidebarMode", sidebarMode);
+  }, [sidebarMode]);
+  const persistent = sidebarMode === "persistent";
 
   const doLogout = async () => {
     await logout();
@@ -225,23 +245,44 @@ export default function Shell({ children }) {
   return (
     <div className="flex min-h-screen">
       <IdleTimeout />
-      {/* Desktop sidebar */}
-      <aside className="hidden w-60 shrink-0 flex-col border-r border-line bg-panel/40 px-3 py-5 lg:flex">
-        <div className="mb-8"><Brand /></div>
-        <NavList role={role} />
-        <UserFooter user={user} onLogout={doLogout} />
-      </aside>
+      {/* Desktop sidebar — only when in "persistent" mode. Uses fixed viewport
+          height with the nav list scrollable so the UserFooter (sign-out +
+          email) stays pinned and never scrolls off-screen. */}
+      {persistent && (
+        <aside
+          className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-line bg-panel/40 px-3 py-5 lg:flex"
+          data-testid="sidebar-persistent"
+        >
+          <div className="mb-6 shrink-0"><Brand /></div>
+          <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+            <NavList role={role} />
+          </div>
+          <UserFooter user={user} onLogout={doLogout} />
+        </aside>
+      )}
 
-      {/* Mobile drawer */}
+      {/* Mobile / drawer-mode overlay */}
       {drawer && (
-        <div className="fixed inset-0 z-50 lg:hidden" data-testid="mobile-drawer">
+        <div className="fixed inset-0 z-50" data-testid="mobile-drawer">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setDrawer(false)} />
-          <aside className="absolute left-0 top-0 flex h-full w-64 flex-col border-r border-line bg-panel px-3 py-5" style={{ background: "var(--bg-elev)" }}>
-            <div className="mb-6 flex items-center justify-between">
+          <aside
+            className="absolute left-0 top-0 flex h-full w-64 flex-col border-r border-line bg-panel px-3 py-5"
+            style={{ background: "var(--bg-elev)" }}
+          >
+            <div className="mb-6 flex shrink-0 items-center justify-between">
               <Brand />
-              <button onClick={() => setDrawer(false)} className="text-faint hover:text-ink" data-testid="drawer-close"><X size={18} /></button>
+              <button
+                onClick={() => setDrawer(false)}
+                className="text-faint hover:text-ink"
+                data-testid="drawer-close"
+                aria-label="Close menu"
+              >
+                <X size={18} />
+              </button>
             </div>
-            <NavList role={role} onNavigate={() => setDrawer(false)} />
+            <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+              <NavList role={role} onNavigate={() => setDrawer(false)} />
+            </div>
             <UserFooter user={user} onLogout={doLogout} />
           </aside>
         </div>
@@ -251,8 +292,26 @@ export default function Shell({ children }) {
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-line bg-deep/70 px-4 py-3 backdrop-blur-md">
           <div className="flex items-center gap-2">
-            <button onClick={() => setDrawer(true)} className="btn btn-ghost !px-2 !py-2 lg:hidden" data-testid="mobile-menu-btn" aria-label="Open menu">
+            {/* Menu button: always visible on <lg (mobile), and visible on lg+
+                only when sidebar is in "drawer" mode. */}
+            <button
+              onClick={() => setDrawer(true)}
+              className={`btn btn-ghost !px-2 !py-2 ${persistent ? "lg:hidden" : ""}`}
+              data-testid="mobile-menu-btn"
+              aria-label="Open menu"
+            >
               <Menu size={18} />
+            </button>
+            {/* Sidebar-mode toggle: only shown on lg+ where it actually
+                changes layout. */}
+            <button
+              onClick={() => setSidebarMode(persistent ? "drawer" : "persistent")}
+              className="btn btn-ghost !px-2 !py-2 hidden lg:inline-flex"
+              data-testid="sidebar-mode-toggle"
+              aria-label={persistent ? "Hide sidebar" : "Pin sidebar"}
+              title={persistent ? "Hide sidebar (overlay mode)" : "Pin sidebar (always visible)"}
+            >
+              {persistent ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
             </button>
             <OrgSwitcher />
             {role && <span className="pill border-line bg-white/5 text-dim" data-testid="active-role-pill">{role.toUpperCase()}</span>}

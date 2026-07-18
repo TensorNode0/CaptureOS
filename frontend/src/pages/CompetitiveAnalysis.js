@@ -18,6 +18,7 @@ export default function CompetitiveAnalysis() {
   const [pendingReportId, setPendingReportId] = useState(null);
   const [reportQ, setReportQ] = useState("");
   const [market, setMarket] = useState(undefined); // undefined=loading, null=failed
+  const [shortlist, setShortlist] = useState(null); // AI-picked direct competitors
 
   const load = async () => {
     const { data } = await api.get(`/orgs/${activeOrgId}/competitive`);
@@ -31,6 +32,16 @@ export default function CompetitiveAnalysis() {
       .then((r) => setMarket(r.data)).catch(() => setMarket(null));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeOrgId]);
+
+  const runShortlist = async ({ engine, model, effort }) => {
+    const { data } = await api.post(`/orgs/${activeOrgId}/competitive/market/shortlist`,
+      { engine, model: model || "", effort: effort || "standard" });
+    setShortlist(data);
+    const n = (data.shortlist || []).length;
+    toast.success(`Shortlisted ${n} direct competitor${n === 1 ? "" : "s"}`,
+      { description: `From a pool of ${data.pool_size} recipients in your NAICS.` });
+    return data;
+  };
 
   const open = async (id) => {
     try {
@@ -114,11 +125,21 @@ export default function CompetitiveAnalysis() {
 
       {!report && market !== null && (
         <Card className="p-5" data-testid="market-panel">
-          <SectionLabel>Your market — top primes & subs (NAICS {(market?.naics || []).join(", ") || "…"})</SectionLabel>
-          <p className="mt-1 text-xs text-faint">
-            Defaults from the NAICS codes in your Company Profile — verified USASpending
-            obligations since FY2024. Click any name into the analysis box above to profile them.
-          </p>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <SectionLabel>Your market — top primes & subs (NAICS {(market?.naics || []).join(", ") || "…"})</SectionLabel>
+              <p className="mt-1 text-xs text-faint">
+                Defaults from the NAICS codes in your Company Profile — verified USASpending
+                obligations since FY2024. Click any name into the analysis box above to profile them.
+              </p>
+            </div>
+            {editor && (market?.topPrimes || []).length > 0 && (
+              <AIButton orgId={activeOrgId} compact icon={Target}
+                label="Shortlist direct competitors" testid="shortlist-btn"
+                note="AI reviews the top recipients in your NAICS and picks likely direct competitors — companies with real capability overlap with your profile, not every large firm in the code."
+                onStart={runShortlist} />
+            )}
+          </div>
           {market === undefined ? (
             <div className="mt-3 space-y-2">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-8" />)}</div>
           ) : (
@@ -136,6 +157,40 @@ export default function CompetitiveAnalysis() {
                     </button>
                   ))}
                 </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      )}
+
+      {!report && shortlist && (
+        <Card className="p-5" data-testid="shortlist-panel">
+          <SectionLabel>Likely direct competitors — AI shortlist</SectionLabel>
+          <p className="mt-1 text-xs text-faint">
+            Picked by AI from {shortlist.pool_size} recipients in your NAICS, ranked by capability overlap.
+            {shortlist.model && <span className="mono ml-1 text-[10px]">· {shortlist.model}</span>}
+          </p>
+          {(shortlist.shortlist || []).length === 0 ? (
+            <div className="mt-3 text-xs text-faint">No clear direct competitors found in the current NAICS pool.</div>
+          ) : (
+            <div className="mt-3 divide-y divide-line/60">
+              {shortlist.shortlist.map((c) => (
+                <button key={c.name}
+                  onClick={() => setCompetitor(c.name)}
+                  className="flex w-full items-start justify-between gap-3 py-2 text-left hover:bg-white/5"
+                  data-testid={`shortlist-row-${c.name}`}>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-ink">{c.name}</span>
+                      <Pill className="border-line bg-white/5 text-[10px] text-faint">{c.role}</Pill>
+                      <span className={`text-xs font-semibold ${c.overlapScore >= 75 ? "text-ok" : c.overlapScore >= 55 ? "text-warn" : "text-dim"}`}>
+                        {c.overlapScore}
+                      </span>
+                    </div>
+                    <div className="mt-0.5 text-[11px] text-faint">{c.rationale}</div>
+                  </div>
+                  <span className="mono shrink-0 text-xs text-ink">{fmtMoney(c.obligated)}</span>
+                </button>
               ))}
             </div>
           )}

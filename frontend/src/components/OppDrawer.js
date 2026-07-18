@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   X, ExternalLink, Star, Save, Sparkles, AlertTriangle, CheckCircle2,
-  HelpCircle, MinusCircle,
+  HelpCircle, MinusCircle, Mail, Phone, User as UserIcon, FileText,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api, errMsg } from "../lib/api";
@@ -111,6 +111,17 @@ export default function OppDrawer({ opp, orgId, editor, onSaved, onClose }) {
     return data;
   };
 
+  const runSummary = async ({ engine, model, effort }) => {
+    const { data } = await api.post(`/orgs/${orgId}/opportunities/${opp.id}/summary`,
+      { engine, model: model || "", effort: effort || "standard" });
+    onSaved(data);
+    const pocCount = ((data.aiEnrichment || {}).pocs || []).length;
+    toast.success("Summary generated", {
+      description: pocCount ? `${pocCount} contact${pocCount === 1 ? "" : "s"} extracted.` : "AI summary saved.",
+    });
+    return data;
+  };
+
   const toggleWatch = async () => {
     try {
       const { data } = await api.put(`/orgs/${orgId}/opportunities/${opp.id}`, { watch: !opp.watch });
@@ -161,6 +172,11 @@ export default function OppDrawer({ opp, orgId, editor, onSaved, onClose }) {
                 note="Extracts scope, classification, requirement matches & gaps. Anthropic verifies on the live web; other engines review saved data. Fills empty fields only."
                 onStart={runEnrich} />
             )}
+            {editor && (
+              <AIButton orgId={orgId} compact icon={FileText} label="Summary & PoCs" testid="summary-button"
+                note="Generates a plain-English brief of the opportunity and extracts Points of Contact (PoCs) and Technical PoCs (TPoCs)."
+                onStart={runSummary} />
+            )}
             <button className="btn btn-ghost !px-2.5 !py-1 text-xs"
               onClick={() => navigate(`/opportunities/${opp.id}`)} data-testid="open-workspace">
               Full workspace <ExternalLink size={12} />
@@ -199,6 +215,52 @@ export default function OppDrawer({ opp, orgId, editor, onSaved, onClose }) {
               <KV k="Contract" v={`${opp.contractType || "Unknown"}${opp.awardsCount ? " · " + opp.awardsCount : ""}${opp.pop ? " · PoP " + opp.pop : ""}`} />
             </div>
           </Sect>
+
+          {/* A2. AI Opportunity Summary */}
+          {enr?.summary && (
+            <Sect title={`Opportunity Summary${enr.summaryModel ? " · " + enr.summaryModel : ""}`} testid="drawer-summary">
+              <p className="whitespace-pre-line text-xs leading-relaxed text-dim">
+                {enr.summary}
+              </p>
+              {enr.summaryConfidence && (
+                <div className="mt-1.5 text-[10px] text-faint">Confidence: {enr.summaryConfidence}</div>
+              )}
+            </Sect>
+          )}
+
+          {/* A3. Points of Contact (PoCs / TPoCs) */}
+          {(enr?.pocs || []).length > 0 && (
+            <Sect title="Points of Contact" testid="drawer-pocs">
+              <div className="space-y-2">
+                {enr.pocs.map((p, i) => (
+                  <div key={i} className="rounded-md border border-line/60 bg-white/5 p-2" data-testid={`poc-${i}`}>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex min-w-0 items-center gap-1.5 text-xs text-ink">
+                        <UserIcon size={12} className="shrink-0 text-cyan" />
+                        <span className="truncate font-medium">{p.name || "Unnamed contact"}</span>
+                      </div>
+                      <span className={`pill text-[9px] ${p.role === "TPoC" ? "border-cyan/30 bg-cyan/10 text-cyan" : "border-line bg-white/5 text-faint"}`}>
+                        {p.role || "PoC"}
+                      </span>
+                    </div>
+                    {p.title && <div className="mt-0.5 text-[11px] text-faint">{p.title}</div>}
+                    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px]">
+                      {p.email && (
+                        <a href={`mailto:${p.email}`} className="flex items-center gap-1 text-cyan hover:underline">
+                          <Mail size={10} />{p.email}
+                        </a>
+                      )}
+                      {p.phone && (
+                        <a href={`tel:${p.phone}`} className="flex items-center gap-1 text-dim hover:text-ink">
+                          <Phone size={10} />{p.phone}
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Sect>
+          )}
 
           {/* B. Fit analysis */}
           <Sect title={`Fit Analysis — ${f.effective}/100 (${f.band}) · confidence ${f.confidence}`} testid="drawer-fit">

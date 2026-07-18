@@ -36,7 +36,7 @@ export default function Proposals() {
     <PageReveal className="space-y-5">
       <div>
         <SectionLabel>Proposal Hub</SectionLabel>
-        <h1 className="mt-1 text-2xl font-semibold text-ink">Proposals</h1>
+        <h1 className="mt-1 text-2xl font-semibold text-ink">Federal Proposals</h1>
         <p className="mt-1 text-xs text-faint">
           Every package your team has created — open one to keep drafting, run the AI
           evaluation, mark it submitted, or download the documents.
