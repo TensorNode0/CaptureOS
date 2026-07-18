@@ -113,7 +113,7 @@ export default function Features() {
 
       <section className="mx-auto grid max-w-6xl gap-4 px-5 py-6 md:grid-cols-2">
         {FEATURES.map((f) => (
-          <div key={f.title} className="glass p-6">
+          <div key={f.title} className="liquid liquid-hover p-6">
             <div className="mb-3 inline-flex h-10 w-10 items-center justify-center rounded-xl border border-cyan/40 bg-cyan/10">
               <f.icon size={18} className="text-cyan" />
             </div>
@@ -132,7 +132,7 @@ export default function Features() {
       <section className="mx-auto max-w-3xl px-5 py-14 text-center">
         <h2 className="text-2xl font-semibold text-ink">See it with your own pipeline</h2>
         <p className="mt-3 text-dim">Free to set up. Your keys, your data, your wins.</p>
-        <Link to="/register" className="btn btn-primary mt-6 !px-6 !py-3 text-base">
+        <Link to="/register" className="btn btn-liquid liquid-cyan mt-6 !px-6 !py-3 text-base">
           Create your workspace <ArrowRight size={17} />
         </Link>
       </section>

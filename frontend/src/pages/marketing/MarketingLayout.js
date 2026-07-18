@@ -40,7 +40,7 @@ export default function MarketingLayout({ children }) {
               </NavLink>
             ))}
             <Link to="/login" className="text-sm text-ink hover:text-cyan" data-testid="mk-signin">Sign in</Link>
-            <Link to="/register" className="btn btn-primary !py-2" data-testid="mk-start"
+            <Link to="/register" className="btn btn-liquid liquid-cyan !py-2" data-testid="mk-start"
                   title="Start your workspace in under a minute">Start Now</Link>
           </nav>
           <button className="text-ink md:hidden" onClick={() => setOpen(!open)} aria-label="Menu">
@@ -56,8 +56,8 @@ export default function MarketingLayout({ children }) {
               </NavLink>
             ))}
             <div className="mt-2 flex gap-2">
-              <Link to="/login" className="btn btn-ghost flex-1">Sign in</Link>
-              <Link to="/register" className="btn btn-primary flex-1">Start Now</Link>
+              <Link to="/login" className="btn btn-liquid flex-1">Sign in</Link>
+              <Link to="/register" className="btn btn-liquid liquid-cyan flex-1">Start Now</Link>
             </div>
           </nav>
         )}

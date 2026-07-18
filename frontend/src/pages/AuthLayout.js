@@ -10,7 +10,7 @@ export default function AuthLayout({ title, subtitle, children, footer }) {
         initial={{ opacity: 0, y: 18 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-        className="glass w-full max-w-md p-8"
+        className="liquid liquid-hover w-full max-w-md p-8"
       >
         <Link to="/home" className="mb-6 flex items-center gap-3 text-ink" data-testid="auth-brand-home">
           <LogoMark size={40} ink="#e8eefc" />

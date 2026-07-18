@@ -41,14 +41,14 @@ export default function About() {
       </section>
 
       <section className="mx-auto max-w-3xl px-5 py-10">
-        <div className="glass flex flex-col items-center gap-4 p-8 text-center">
+        <div className="liquid liquid-hover flex flex-col items-center gap-4 p-8 text-center">
           <LogoMark size={56} ink="#e8eefc" />
           <div className="text-lg font-semibold text-ink">CaptureAgent</div>
           <p className="max-w-md text-sm text-dim">
             Streamlining government capture — from the first scan to the
             submitted package.
           </p>
-          <Link to="/register" className="btn btn-primary !px-6 !py-2.5">Join us — start free</Link>
+          <Link to="/register" className="btn btn-liquid liquid-cyan !px-6 !py-2.5">Join us — start now</Link>
         </div>
       </section>
     </MarketingLayout>

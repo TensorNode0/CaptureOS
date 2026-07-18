@@ -134,7 +134,7 @@ export default function Why() {
           CaptureAgent makes qualification cheap, so the pursuits you do fund
           get your team's best work.
         </p>
-        <Link to="/register" className="btn btn-primary mt-6 !px-6 !py-3 text-base">
+        <Link to="/register" className="btn btn-liquid liquid-cyan mt-6 !px-6 !py-3 text-base">
           Start qualifying smarter <ArrowRight size={17} />
         </Link>
       </section>

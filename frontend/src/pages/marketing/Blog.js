@@ -79,7 +79,7 @@ export function BlogPost() {
         ))}
         <div className="mt-12 rounded-xl border border-line bg-white/5 p-5 text-center">
           <div className="text-sm font-medium text-ink">Try CaptureAgent</div>
-          <Link to="/register" className="btn btn-primary mt-3 !py-2">Start free</Link>
+          <Link to="/register" className="btn btn-liquid liquid-cyan mt-3 !py-2">Start Now</Link>
         </div>
       </article>
     </MarketingLayout>

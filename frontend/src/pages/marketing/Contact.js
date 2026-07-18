@@ -52,7 +52,7 @@ export default function Contact() {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-line bg-white/[0.03] p-6">
+          <div className="liquid liquid-hover p-6">
             {sent ? (
               <div className="py-14 text-center" data-testid="contact-sent">
                 <CheckCircle2 size={40} className="mx-auto text-ok" />
@@ -60,7 +60,7 @@ export default function Contact() {
                 <p className="mt-2 text-sm text-dim">
                   Thanks for reaching out — we'll reply to your company email shortly.
                 </p>
-                <button className="btn btn-ghost mt-5" onClick={() => setSent(false)} data-testid="contact-again">
+                <button className="btn btn-liquid mt-5" onClick={() => setSent(false)} data-testid="contact-again">
                   Send another message
                 </button>
               </div>
@@ -108,7 +108,7 @@ export default function Contact() {
                 {/* honeypot — hidden from real users */}
                 <input className="hidden" tabIndex={-1} autoComplete="off" value={form.website} onChange={set("website")} aria-hidden="true" />
                 {error && <p className="text-xs text-bad" data-testid="contact-error">{error}</p>}
-                <button type="submit" className="btn btn-primary w-full" disabled={sending} data-testid="contact-send">
+                <button type="submit" className="btn btn-liquid liquid-cyan w-full" disabled={sending} data-testid="contact-send">
                   {sending ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />} Send
                 </button>
               </form>

@@ -113,7 +113,8 @@ export default function Home() {
           <div className="label-mono mb-4 !text-cyan">Streamlining government capture</div>
           <h1 className="mx-auto max-w-4xl text-4xl font-bold leading-[1.08] text-ink md:text-6xl">
             The TurboTax Of GovCon:
-            <span className="mt-2 block bg-gradient-to-r from-cyan via-ink to-violet-300 bg-clip-text text-transparent">
+            <span className="mt-2 block bg-clip-text text-transparent"
+                  style={{ backgroundImage: "linear-gradient(90deg, var(--accent-cyan) 0%, #ffffff 50%, var(--accent-violet) 100%)" }}>
               An AI Capture Manager for Lean Startups &amp; Small Businesses.
             </span>
           </h1>
@@ -175,7 +176,8 @@ export default function Home() {
           <div className="label-mono !text-cyan">CaptureAgent</div>
           <h2 className="mx-auto mt-4 max-w-4xl text-3xl font-bold leading-tight text-ink md:text-4xl">
             The One-Stop Shop For{" "}
-            <span className="bg-gradient-to-r from-cyan to-violet-300 bg-clip-text text-transparent">
+            <span className="bg-clip-text text-transparent"
+                  style={{ backgroundImage: "linear-gradient(90deg, var(--accent-cyan) 0%, #ffffff 50%, var(--accent-violet) 100%)" }}>
               Winning Federal Contracts, Raising, and Accelerating.
             </span>
           </h2>
@@ -209,7 +211,7 @@ export default function Home() {
         <h2 className="text-center text-3xl font-semibold text-ink">From profile to submitted package</h2>
         <div className="mt-10 grid gap-4 md:grid-cols-4">
           {STEPS.map((s, i) => (
-            <div key={s.t} className="glass p-5">
+            <div key={s.t} className="liquid liquid-hover p-5">
               <div className="mono text-xs text-faint">0{i + 1}</div>
               <s.icon size={20} className="mt-2 text-cyan" />
               <div className="mt-3 font-semibold text-ink">{s.t}</div>
@@ -221,7 +223,7 @@ export default function Home() {
 
       {/* security */}
       <section className="mx-auto max-w-6xl px-5 py-14">
-        <div className="glass p-8 md:p-10">
+        <div className="liquid liquid-hover p-8 md:p-10">
           <div className="flex flex-col gap-8 md:flex-row">
             <div className="flex-1">
               <div className="mb-3 inline-flex h-11 w-11 items-center justify-center rounded-xl border border-ok/40 bg-ok/10">

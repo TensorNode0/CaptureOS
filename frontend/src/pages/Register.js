@@ -67,7 +67,7 @@ export default function Register() {
             placeholder="••••••••" data-testid="register-password" />
         </Field>
         {error && <div className="text-sm text-bad" data-testid="register-error">{error}</div>}
-        <button type="submit" className="btn btn-primary w-full" disabled={loading} data-testid="register-submit">
+        <button type="submit" className="btn btn-liquid liquid-cyan w-full" disabled={loading} data-testid="register-submit">
           {loading ? <Spinner /> : "Create account"}
         </button>
       </form>

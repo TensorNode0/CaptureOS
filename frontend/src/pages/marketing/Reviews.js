@@ -12,7 +12,7 @@ const EMPTY = {
 
 function ReviewCard({ r }) {
   return (
-    <div className="rounded-2xl border border-line bg-white/[0.03] p-5" data-testid={`review-${r.id}`}>
+    <div className="liquid liquid-hover p-5" data-testid={`review-${r.id}`}>
       <div className="flex items-center gap-3">
         {r.headshot ? (
           <img src={r.headshot} alt={r.name}
@@ -105,13 +105,13 @@ export default function Reviews() {
         <div className="mt-10 grid gap-10 lg:grid-cols-5">
           {/* form */}
           <div className="lg:col-span-2">
-            <div className="rounded-2xl border border-line bg-white/[0.03] p-6">
+            <div className="liquid liquid-hover p-6">
               {sent ? (
                 <div className="py-10 text-center" data-testid="review-sent">
                   <CheckCircle2 size={40} className="mx-auto text-ok" />
                   <h3 className="mt-4 text-lg font-semibold text-ink">Thank you — review sent!</h3>
                   <p className="mt-2 text-sm text-dim">Your review has been posted below.</p>
-                  <button className="btn btn-ghost mt-5" onClick={() => setSent(false)} data-testid="review-again">
+                  <button className="btn btn-liquid mt-5" onClick={() => setSent(false)} data-testid="review-again">
                     Write another
                   </button>
                 </div>
@@ -179,7 +179,7 @@ export default function Reviews() {
                             data-testid="rv-headshot-remove"><X size={11} /></button>
                         </span>
                       ) : (
-                        <button type="button" className="btn btn-ghost !py-1.5 text-xs" onClick={() => fileRef.current?.click()} data-testid="rv-headshot-button">
+                        <button type="button" className="btn btn-liquid !py-1.5 text-xs" onClick={() => fileRef.current?.click()} data-testid="rv-headshot-button">
                           <Upload size={13} /> Upload photo
                         </button>
                       )}
@@ -187,7 +187,7 @@ export default function Reviews() {
                     </div>
                   </div>
                   {error && <p className="text-xs text-bad" data-testid="review-error">{error}</p>}
-                  <button type="submit" className="btn btn-primary w-full" disabled={sending} data-testid="review-send">
+                  <button type="submit" className="btn btn-liquid liquid-cyan w-full" disabled={sending} data-testid="review-send">
                     {sending ? <Loader2 size={15} className="animate-spin" /> : <Star size={15} />} Send review
                   </button>
                 </form>

@@ -67,7 +67,7 @@ export default function Login() {
           </Link>
         </div>
         {error && <div className="text-sm text-bad" data-testid="login-error">{error}</div>}
-        <button type="submit" className="btn btn-primary w-full" disabled={loading} data-testid="login-submit">
+        <button type="submit" className="btn btn-liquid liquid-cyan w-full" disabled={loading} data-testid="login-submit">
           {loading ? <Spinner /> : "Sign in"}
         </button>
       </form>

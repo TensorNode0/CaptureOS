@@ -88,15 +88,15 @@ export default function BillingCard() {
 
       <div className="mt-5 flex flex-wrap gap-2">
         {sub.tier === "free" && (
-          <Link to="/pricing" className="btn btn-primary"
+          <Link to="/pricing" className="btn btn-liquid liquid-cyan"
                 data-testid="billing-upgrade-btn">
             <Sparkles size={15} /> Choose a plan
           </Link>
         )}
         {sub.tier === "oi" && (
-          <Link to="/pricing" className="btn btn-primary"
+          <Link to="/pricing" className="btn btn-liquid liquid-cyan"
                 data-testid="billing-upgrade-btn">
-            <Rocket size={15} /> Upgrade to Full
+            <Rocket size={15} /> Upgrade to Small Teams
           </Link>
         )}
         {sub.tier !== "free" && (
