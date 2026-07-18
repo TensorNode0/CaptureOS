@@ -21,7 +21,7 @@ export default function Resources() {
             const a = ARTICLES[slug];
             return (
               <Link key={slug} to={`/resources/${slug}`} data-testid={`resource-${slug}`}
-                    className="group flex flex-col rounded-xl border border-line bg-white/5 p-5 transition-colors hover:border-cyan/40">
+                    className="liquid liquid-hover group flex flex-col p-5">
                 <div className="label-mono">{a.tag}</div>
                 <div className="mt-2 text-lg font-semibold leading-snug text-ink">{a.title}</div>
                 <p className="mt-2 flex-1 text-xs leading-relaxed text-faint">{a.summary}</p>

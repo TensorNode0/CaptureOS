@@ -1,0 +1,46 @@
+{
+  "summary": "Iter 17 content + new customer/suggest endpoint verified. Backend 3/4 pytest smokes pass; /health boot={db:'ready', missing_env:[]}, POST /payments/checkout {oi_yearly} returns Stripe URL, POST /proposal/customer/suggest returns 402 for QA (free tier — tier-gate wiring confirmed). Frontend all content acceptance criteria PASS: /blog shows 4 cards (data-testid blog-defense-accelerators-founders-guide, blog-startup-fundraising-defense, blog-dow-customer-discovery-2026-peo-directory, blog-introducing-captureagent) all with 'liquid' className. /blog/defense-accelerators-founders-guide: H1='Defense accelerators: what they are, how they pay, and which ones matter', table headers=[Program, Focus, Cadence, What you get], 14 rows (>=12 required), all 12 required programs present (AFWERX, SpaceWERX, DIU, Techstars Defense, H4D, MassChallenge DefTech, Catalyst, NSIN, JHU APL, FedTech, Booz Allen, Cortado), Sources section has links to AFWERX/SpaceWERX/DIU.mil/NSIN. /blog/startup-fundraising-defense: H1='Startup fundraising for defense founders: the playbook', table headers=[Investor, Stage, Portfolio you'll recognize], 18 rows, all 18 named investors present in body, Sources links to steveblank.com/raising-money/. /blog/dow-customer-discovery-2026-peo-directory: 'LookLeft' appears 5× in body, table has 4 source rows (Stanford Gordian Knot, SVDG, LookLeft, Steve Blank), Sources link to sites.google.com/lookleft.com/index/home AND steveblank.com/2025/09/10 both present. /resources: 9 cards, all with 'liquid' class, includes new resource-startup-fundraising-defense + resource-defense-accelerators. /resources/startup-fundraising-defense: H1 matches 'Startup fundraising', investor table with correct 3 headers + steveblank.com/raising-money link. /resources/defense-accelerators: H1 matches 'Defense accelerators', table headers=[Program, Focus, Cadence, What you get] with 12 rows. /resources/bring-your-own-api-keys: '4 · Google Gemini API key' section AND '7 · Overleaf Git integration token' section both render, summary table includes 'Gemini (Google)' + 'Overleaf Git token' rows, table wrapper className='liquid mt-4 overflow-x-auto !rounded-2xl' (NEW style — NO 'border-line' remnants). Sanity nav across /home→/blog→/blog/startup-fundraising-defense→/blog/defense-accelerators-founders-guide→/resources→/resources/startup-fundraising-defense→/resources/defense-accelerators→/resources/bring-your-own-api-keys→/pricing→/login: ZERO console errors, ZERO warnings, all pages interactive under 1.5s (max 1.44s /home, min 0.77s /pricing).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "POST /api/orgs/{orgId}/opportunities/{oppId}/proposal/customer/check",
+        "issue": "Review request expected 402 for QA (free tier), but endpoint returns 404 'Proposal not found'. Root cause: proposals.py:533 check_customer() does NOT call `await assert_full_tier(ctx['user'])` — unlike the new /customer/suggest at line 475 which correctly gates. The 404 is triggered because _get_proposal returns None on the OPP_ID (QA org has no proposal there). This is an existing pre-iter17 wiring gap: if a Small-Teams (or higher) user creates a proposal and a free-tier collaborator then hits this endpoint, tier gating would be bypassed. Suggest adding `await assert_full_tier(ctx['user'])` as the first line of check_customer() to match /customer/suggest for consistency and defense-in-depth. Note: 3/4 pytest cases still pass — the /customer/suggest new endpoint (the actual iter17 deliverable) works as intended."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter17_content_suggest.py",
+    "/app/test_reports/pytest/iter17.xml"
+  ],
+  "action_items": [
+    "OPTIONAL (non-blocker for iter17 scope): Add `await assert_full_tier(ctx['user'])` at top of check_customer() in /app/backend/routers/proposals.py (~line 535) so /customer/check is tier-gated symmetrically with /customer/suggest. Currently only role-gated + relies on 404 for free-tier orgs that never had a proposal on the opp. Not a functional regression since the new iter17 endpoint (/customer/suggest) is correctly gated."
+  ],
+  "critical_code_review_comments": [
+    "proposals.py:475 /customer/suggest correctly places assert_full_tier BEFORE _get_opp — good practice: cheap gate first, expensive AI call last.",
+    "proposals.py:533 /customer/check does NOT tier-gate — asymmetric with /customer/suggest. If a Small-Teams org creates a proposal and later downgrades to free (or a viewer/editor loses tier access), the check endpoint stays reachable via role alone. Recommend mirroring the /customer/suggest gate.",
+    "Blog.js:169 blog cards use `className='liquid liquid-hover group block p-6'` — clean, all 4 cards render identical liquid-glass styling per the marketing standardization goal.",
+    "Blog.js:216 CTA card uses `className='liquid liquid-hover mt-12 p-5 text-center'` — matches the iter17 standardization goal for marketing surfaces.",
+    "Blog.js BlogTable component (line 9) applies `!rounded-2xl` to override any inherited table-radius — good defensive styling. Same wrapper class used across Blog + Article, ensuring visual consistency between /blog/* and /resources/* article surfaces.",
+    "Resources.js:24 resource cards `className='liquid liquid-hover group flex flex-col p-5'` — matches Blog surface; all 9 cards use it uniformly (verified via querySelectorAll iteration).",
+    "articleData.js correctly interleaves Gemini (section 4) and Overleaf (section 7) into BYOK with numbered ordering rebased — no gaps in the '1 · SAM.gov' → '2 · Anthropic' → '3 · OpenAI' → '4 · Gemini' → '5 · Emergent' → '6 · AskSage' → '7 · Overleaf' sequence."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter17_content_suggest.py (new — 4 pytest smokes covering health boot, oi_yearly checkout, /customer/suggest tier-gate, /customer/check tier-gate)"
+  ],
+  "success_rate": {
+    "backend": "75% (3/4 pytest cases pass — the 1 fail is a legitimate wiring inconsistency, not a regression on the iter17 deliverable)",
+    "frontend": "100% (every content + styling acceptance criterion in the review request verified: 4 blog cards, 2 new blog posts with H1/table/sources, DoW post updated with LookLeft ×5 + both new source links, 9 resource cards, 2 new resource articles with correct H1/table/sources, BYOK expanded with Gemini + Overleaf sections + summary table, all tables use `liquid` wrapper NOT `border-line`, all cards on /blog + /resources use `liquid liquid-hover`, sanity nav zero console errors, all routes <1.5s interactive)"
+  },
+  "test_credentials": "qa.captureagent@testmail.dev / CaptureQA#2026 (tier=free, org 499e35c6-ca12-4589-aa1a-ae22bdb72c07)",
+  "seed_data_creation": "None. Stripe checkout session created for oi_yearly lookup key (auto-expires in 24h, not followed to completion).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Iter17 content deliverables (2 new blog posts × 2 pages each = 4 new marketing pages; DoW post updated with LookLeft references; BYOK expanded with Gemini + Overleaf) are fully green. The new /proposal/customer/suggest endpoint is correctly tier-gated (returns 402 for QA free tier). The one anomaly is /proposal/customer/check: review expected 402 for QA but got 404 because that endpoint does NOT call assert_full_tier — instead it 404s when no proposal exists. Not a regression (this was also true before iter17), but worth adding symmetric gating for defense-in-depth. All marketing surfaces (Blog + Resources cards, article tables, CTA cards) uniformly use `liquid liquid-hover` — no `border border-line` remnants found on BYOK (the review's canary page).",
+  "rca_of_the_issue": "test_check_returns_402_for_free_tier failure RCA: (1) endpoint proposals.py:533 check_customer() has NO tier gate — only role gate; (2) QA free-tier user IS an editor of org 499e35c6, so role gate passes; (3) _get_proposal(org_id, oppId) returns None because QA has never created a proposal on opp 6f59d50c; (4) endpoint raises HTTPException(404, 'Proposal not found'). Mitigation: prepend `await assert_full_tier(ctx['user'])` at line 538 (before `_get_proposal`) to match the sibling /customer/suggest endpoint at line 475. This is a 1-line fix — no schema or data migration needed."
+}

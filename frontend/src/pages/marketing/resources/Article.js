@@ -29,8 +29,8 @@ function Block({ b }) {
   if (b.links) return (
     <div className="mt-4 space-y-2">
       {b.links.map((l, i) => (
-        <a key={i} href={l.href} target="_blank" rel="noreferrer"
-           className="flex items-start justify-between gap-3 rounded-lg border border-line bg-white/5 px-4 py-3 hover:border-cyan/40">
+        <a key={i} href={l.href} target={l.href.startsWith("/") ? "_self" : "_blank"} rel="noreferrer"
+           className="liquid liquid-hover flex items-start justify-between gap-3 px-4 py-3">
           <span>
             <span className="text-sm font-medium text-ink">{l.label}</span>
             {l.note && <span className="mt-0.5 block text-xs text-faint">{l.note}</span>}
@@ -41,15 +41,15 @@ function Block({ b }) {
     </div>
   );
   if (b.table) return (
-    <div className="mt-4 overflow-x-auto rounded-lg border border-line">
+    <div className="liquid mt-4 overflow-x-auto !rounded-2xl">
       <table className="w-full text-sm">
-        <thead className="bg-elev/60 text-xs text-dim">
-          <tr>{b.table.headers.map((h, i) => <th key={i} className="px-3 py-2 text-left font-medium">{h}</th>)}</tr>
+        <thead className="bg-white/[0.04] text-xs text-dim">
+          <tr>{b.table.headers.map((h, i) => <th key={i} className="px-3 py-2.5 text-left font-medium">{h}</th>)}</tr>
         </thead>
         <tbody>
           {b.table.rows.map((r, i) => (
-            <tr key={i} className="border-t border-line/60">
-              {r.map((c, j) => <td key={j} className="px-3 py-2 align-top text-xs leading-relaxed text-dim">{c}</td>)}
+            <tr key={i} className="border-t border-white/10">
+              {r.map((c, j) => <td key={j} className="px-3 py-2.5 align-top text-xs leading-relaxed text-dim">{c}</td>)}
             </tr>
           ))}
         </tbody>
@@ -62,7 +62,7 @@ function Block({ b }) {
         const a = ARTICLES[slug];
         return a ? (
           <Link key={slug} to={`/resources/${slug}`}
-                className="rounded-full border border-line bg-white/5 px-3.5 py-1.5 text-xs text-dim hover:border-cyan/40 hover:text-cyan">
+                className="liquid liquid-hover !rounded-full px-3.5 py-1.5 text-xs text-dim hover:text-cyan">
             {a.title}
           </Link>
         ) : null;
@@ -86,12 +86,12 @@ export default function Article() {
         <h1 className="mt-2 text-3xl font-semibold leading-tight text-ink">{a.title}</h1>
         <p className="mt-3 text-sm leading-relaxed text-faint">{a.summary}</p>
         {a.blocks.map((b, i) => <Block key={i} b={b} />)}
-        <div className="mt-12 rounded-xl border border-line bg-white/5 p-5 text-center">
+        <div className="liquid liquid-hover mt-12 p-5 text-center">
           <div className="text-sm font-medium text-ink">Put this to work in CaptureAgent</div>
           <p className="mx-auto mt-1 max-w-md text-xs text-faint">
             Track opportunities, design capabilities, and draft compliant proposal packages with your own AI keys.
           </p>
-          <Link to="/register" className="btn btn-primary mt-3 !py-2">Start free</Link>
+          <Link to="/register" className="btn btn-liquid liquid-cyan mt-3 !py-2">Start Now</Link>
         </div>
       </article>
     </MarketingLayout>

@@ -37,16 +37,25 @@ export const ARTICLES = {
         { t: "Paste into CaptureAgent", d: "Settings → API Keys → OpenAI. It appears as the ChatGPT option on drafting buttons" },
       ] },
 
-      { h2: "4 · Emergent universal LLM key — optional" },
-      { p: "If you build or host on Emergent, its universal key gives you one credential that routes to multiple frontier models with a single balance." },
+      { h2: "4 · Google Gemini API key — optional, long-context engine" },
+      { p: "Gemini 3 Pro / Flash are strong on long-context reasoning and cheap web-grounded search — a good third choice alongside Claude and ChatGPT. In CaptureAgent, Gemini shows up as a drafting engine wherever Claude and OpenAI do." },
+      { steps: [
+        { t: "Open Google AI Studio", href: "https://aistudio.google.com/apikey", hrefLabel: "aistudio.google.com/apikey" },
+        { t: "Create an API key", d: "sign in with your Google account, click Create API key, pick the project (or create one)" },
+        { t: "Add billing (for higher rate limits)", d: "the free tier is generous but limits per-minute; add a billing account for production" },
+        { t: "Paste into CaptureAgent", d: "Settings → API Keys → Gemini. Available across every drafting/eval button" },
+      ] },
+
+      { h2: "5 · Emergent universal LLM key — optional" },
+      { p: "If you build or host on Emergent, its universal key gives you one credential that routes to Claude / GPT / Gemini frontier models with a single balance." },
       { steps: [
         { t: "Sign in at Emergent", href: "https://app.emergent.sh", hrefLabel: "app.emergent.sh" },
-        { t: "Open your profile menu", d: "look for the key icon / “Universal Key” (labeled Emergent LLM Key)" },
+        { t: "Open your profile menu", d: "look for the key icon / \"Universal Key\" (labeled Emergent LLM Key)" },
         { t: "Copy the key and top up credits", d: "the same balance covers all routed models" },
         { t: "Paste into CaptureAgent", d: "Settings → API Keys → Emergent" },
       ] },
 
-      { h2: "5 · AskSage API key — optional, GovCon-focused AI" },
+      { h2: "6 · AskSage API key — optional, GovCon-focused AI" },
       { p: "AskSage is a government-focused AI platform (FedRAMP-authorized tiers, GovCloud hosting options) popular with defense teams that want their AI calls inside a compliance boundary." },
       { steps: [
         { t: "Create an AskSage account", href: "https://www.asksage.ai", hrefLabel: "asksage.ai" },
@@ -55,17 +64,34 @@ export const ARTICLES = {
         { t: "Paste into CaptureAgent", d: "Settings → API Keys → AskSage" },
       ] },
 
+      { h2: "7 · Overleaf Git integration token — optional, for LaTeX proposals" },
+      { p: "Overleaf's Git integration lets CaptureAgent push proposal volumes to your Overleaf project and pull collaborator edits back — bidirectional sync, versioned. You need a paid Overleaf plan (Standard or Professional, personal or group) that includes Git Integration." },
+      { steps: [
+        { t: "Sign in to Overleaf", href: "https://www.overleaf.com", hrefLabel: "overleaf.com" },
+        { t: "Open Account Settings → Git Integration", d: "the section only appears on Standard / Professional plans", href: "https://www.overleaf.com/user/settings", hrefLabel: "Account Settings" },
+        { t: "Create an authentication token", d: "click Create Token → copy immediately (Overleaf shows it once)" },
+        { t: "Grab your project's Git URL", d: "on the project page → Menu → Sync → Git → copy the HTTPS URL (looks like https://git.overleaf.com/<project-id>)" },
+        { t: "Paste into CaptureAgent", d: "on any proposal → Overleaf panel → paste the token + project Git URL. First push seeds the project; subsequent syncs are incremental" },
+      ] },
+      { note: "The Overleaf token is a Git password with read/write on every project on your account — treat it as sensitive. Rotate from the same Account Settings page any time. Overleaf's docs on git integration authentication: overleaf.com/learn/how-to/Using_Git_and_GitHub." },
+
+      { h2: "What each proposal costs to draft end-to-end" },
+      { p: "With your own keys, a full CaptureAgent proposal cycle — scan for the opportunity, draft the volumes, run the AI color-team evaluation, edit, and export — typically costs $5-10 in AI credits per proposal. Compare with $8,000-25,000 for a boutique proposal shop or a fractional capture manager. Effort and model choice (Claude Sonnet vs. Opus, Gemini Flash vs. Pro) move the number within that range; the app shows the running cost on every AI button." },
+
       { h2: "Where the keys go and who can touch them" },
       { table: { headers: ["Key", "Used for", "Who can manage"],
         rows: [
           ["SAM.gov", "Pulling live federal opportunities", "Org admin"],
           ["Anthropic (Claude)", "Deep scans, verification, capability & proposal drafting (default engine)", "Org admin"],
           ["OpenAI", "Alternate drafting engine", "Org admin"],
+          ["Gemini (Google)", "Long-context reasoning, cheap web-grounded search", "Org admin"],
           ["Emergent", "Alternate drafting engine (routed models)", "Org admin"],
           ["AskSage", "Alternate drafting engine inside a Gov compliance boundary", "Org admin"],
+          ["Overleaf Git token", "Bidirectional LaTeX sync between CaptureAgent and Overleaf projects", "Per proposal (any editor)"],
         ] } },
       { p: "Members use the keys through the app's buttons without ever seeing them. Admins can rotate the org's encryption key at any time from Settings." },
-      { related: ["new-contractor-setup", "compliance"] },
+      { note: "Not on the Small Teams plan? Disk storage, the AI chat assistant, and the drafting engines above require the Small Teams tier. The Starter tier ($49.99/user/mo) still gives you AI-scored opportunities, competitive analysis, and the private-capital + accelerator scans — see /pricing for the full comparison." },
+      { related: ["new-contractor-setup", "compliance", "defense-startup-resources"] },
     ],
   },
 
@@ -419,6 +445,120 @@ export const ARTICLES = {
     ],
   },
 
+  /* ─────────────────────── Startup fundraising ─────────────────────── */
+  "startup-fundraising-defense": {
+    tag: "FUNDRAISING · 12 MIN",
+    title: "Startup fundraising for defense founders: the playbook",
+    summary: "Fundraising for a dual-use defense startup follows the same rules as any startup — with a few defense-specific twists. Here is the compressed playbook, plus the working list of defense-active investors from CaptureAgent's Private Capital tab.",
+    blocks: [
+      { p: "Fundraising is a distraction from building product. Steve Blank's canonical Raising Money reading list makes the point bluntly — the more of your calendar you spend on fundraising, the less of it you spend on the customers who make you fundable. The point of a round is to raise the LEAST amount of money that gets you to the next milestone that de-risks the business, at the valuation the market will bear, from the investors who will help you win." },
+      { note: "Steve Blank's full Raising Money reading list — the definitive founder resource — is at steveblank.com/raising-money/. Read it before you cold-email a VC." },
+
+      { h2: "The defense-startup twist" },
+      { p: "Your market has two heads. Investors want to see commercial pull — recurring revenue, dual-use customers, a story that works without a DoW contract. But the DoW is one of the two or three biggest customers in the world, and a warm program of record (SBIR Phase II bridged into a Phase III / OTA production award) is the strongest de-risk you can bring to a Series A. Prove commercial pull, then use SBIR / OTA / DIU prototype awards to layer in defense revenue without diluting the commercial thesis." },
+
+      { h2: "Match the stage to the check" },
+      { steps: [
+        { t: "Pre-seed / friends & family", d: "funds the customer-discovery motion. Most of the work here is unpaid — the round exists to keep the lights on while you find the PEO that has the problem" },
+        { t: "Seed", d: "funds a Phase I → Phase II transition or the first commercial pilots. SAFE or convertible; do NOT overprice this round" },
+        { t: "Series A", d: "funds the transition path into a program of record plus repeatable commercial revenue. Priced round with an institutional lead" },
+        { t: "Series B+", d: "funds scale-up manufacturing / hiring against a real production award and named commercial customers" },
+      ] },
+      { p: "If a defense-only pitch is your only pitch, the venture funds that write the big checks won't lead — you'll end up with strategics (Lockheed Ventures, Boeing HorizonX) or the small defense-only funds (Shield Capital, Silent Ventures, Squadra Ventures). That is fine at seed, harder at Series A." },
+
+      { h2: "Steve Blank's rules worth stealing" },
+      { steps: [
+        { t: "Start long before you send the deck", d: "every coffee, every panel, every customer intro telegraphs signal to the ecosystem — investors buy conviction, then equity" },
+        { t: "Pick the partner, not the fund", d: "the term sheet is a ten-year co-pilot; optimize for who picks up when the program office calls asking a reference question" },
+        { t: "Minimize round size", d: "raising more than you need at a too-high price prices you out of the next round" },
+        { t: "Control the runway math", d: "18 months of runway with 6-9 months of milestone-hitting; anything less turns the next raise into a fire sale" },
+      ] },
+
+      { h2: "Defense-active investors (from the Private Capital tab)" },
+      { p: "These are the funds actively writing checks into US defense / space / dual-use startups today. Portfolio examples are illustrative — CaptureAgent's Private Capital tab keeps a live, fit-scored version keyed to your company profile." },
+      { table: { headers: ["Investor", "Stage", "Portfolio you'll recognize"], rows: [
+        ["Andreessen Horowitz (American Dynamism)", "Seed → Growth", "Anduril, Shield AI, Saildrone, Hadrian"],
+        ["Founders Fund", "Seed → Growth", "Anduril, Palantir, Varda, ABL Space"],
+        ["Lux Capital", "Seed → Series C", "Anduril, Hadrian, Applied Intuition, Vannevar Labs"],
+        ["8VC", "Seed → Series C", "Anduril, Epirus, Vannevar Labs, Palantir alumni"],
+        ["General Catalyst", "Series A → Growth", "Anduril, Helsing, Rebellion Defense"],
+        ["Point72 Ventures", "Seed → Series B", "Rebellion, ThirdWave Automation, Astranis"],
+        ["Shield Capital", "Seed → Series B", "Cape, Vannevar Labs, ChaosSearch"],
+        ["Razor's Edge Ventures", "Seed → Series B", "HawkEye 360, Reveal Technology, Second Front"],
+        ["Booz Allen Ventures", "Seed → Series B", "Latent AI, Reveal, Synthetaic"],
+        ["Lockheed Martin Ventures", "Seed → Series B", "Terran Orbital, Fortem, Astroscale"],
+        ["Boeing HorizonX / AE Ventures", "Series A → Growth", "Reaction Engines, Isotropic Systems"],
+        ["In-Q-Tel (strategic, IC)", "Seed → Series C", "Palantir historical, Databricks, HawkEye 360"],
+        ["America's Frontier Fund", "Series A → Growth", "US critical-tech deep-tech focus"],
+        ["Alsop Louie Partners", "Seed → Series A", "Vannevar Labs, Chef Robotics"],
+        ["Riot Ventures", "Seed → Series A", "Hadrian, Skydio, Anduril early"],
+        ["Decisive Point", "Seed → Series A", "National-security AI/software focus"],
+        ["Silent Ventures", "Seed → Series A", "Defense/national-security-only fund"],
+        ["Squadra Ventures", "Seed → Series A", "National-security software (Baltimore)"],
+      ] } },
+
+      { h2: "Use it inside CaptureAgent" },
+      { p: "The Investment Deals tab drafts investor emails, decks, business plans, and financials against your live opportunity pipeline. The Private Capital tab runs a live AI scan against your company profile to score which investors on the list — plus any new ones on the open web — actually fit your stage and thesis." },
+      { links: [
+        { label: "Steve Blank — Raising Money reading list", href: "https://steveblank.com/raising-money/", note: "The canonical founder reference on raising money" },
+        { label: "Steve Blank — How to sell to the Dept of Defense (2025 PEO directory)", href: "https://steveblank.com/2025/09/10/how-to-sell-to-the-dept-of-defense-the-2025-peo-directory/", note: "Companion reading on the customer side of the pitch" },
+        { label: "OpenVC — defense-tech investor list", href: "https://www.openvc.app/investor-lists/defensetech-investors", note: "Community-maintained, larger sweep" },
+      ] },
+      { related: ["defense-accelerators", "dow-customer-discovery-peo-directory", "defense-startup-resources"] },
+    ],
+  },
+
+  /* ─────────────────────── Defense accelerators ─────────────────────── */
+  "defense-accelerators": {
+    tag: "FIELD GUIDE · 10 MIN",
+    title: "Defense accelerators: what they are, how they pay, and which ones to shortlist",
+    summary: "Non-dilutive funding, warm PEO paths, and DoW sponsor relationships — the accelerator programs every dual-use founder should know, plus the live list from CaptureAgent's Accelerators tab.",
+    blocks: [
+      { p: "Defense accelerators do three things for a startup that a pure VC round cannot. First, they hand you non-dilutive funding — SBIR, OTA prototype, matching STRATFI dollars — that let you build without giving up equity. Second, they give you a sponsored path into a PEO: a program manager who wants your tech, an OTA vehicle to award through, and the introductions that turn a cold email into a scheduled demo. Third, they train the founder on the acquisition system — the language, the paperwork, and the timing rhythms that separate proposals that get read from proposals that get scored." },
+
+      { h2: "What each type of program optimizes for" },
+      { steps: [
+        { t: "Non-dilutive, at scale — AFWERX / SpaceWERX / DIU / MDA CSO", d: "annualized SBIR + OTA pipelines. You keep 100% of equity; the trade is compliance overhead and slower velocity" },
+        { t: "Equity accelerators — Techstars Defense, MassChallenge DefTech, Catalyst", d: "you give up a few percent; you get a cohort, mentors, demo-day capital, and a running start" },
+        { t: "Problem-match programs — NSIN, Hacking-for-Defense, MD5", d: "founder × DoW problem-owner match; the money comes afterward via SBIR / CSO" },
+        { t: "Federal-lab commercialization — FedTech, JHU APL Discover", d: "licensable IP + facility access; useful when your tech complements a lab platform" },
+        { t: "Strategic ventures — Booz Allen, Lockheed Ventures, Boeing HorizonX", d: "capital plus prime relationships; expect the prime to want a partnership term" },
+      ] },
+
+      { h2: "How to pick" },
+      { p: "The right accelerator for you depends on stage and customer-path shape. Pre-revenue with novel tech → AFWERX / SpaceWERX SBIR Phase I is the least-cost move ($75-250k open door). Commercial traction, want a defense pilot → DIU's problem set is a straight prototype OTA. First-time founder without a PEO relationship → NSIN Foundry / H4D compresses twelve months of customer discovery into one semester." },
+      { note: "Stack accelerators, don't sequence them. A Phase I with AFWERX + a Techstars Defense cohort + an NSIN Foundry problem match in the same quarter is not overreach — the milestones reinforce each other and the diligence stories compound. Primes and defense VCs know the alumni networks by heart." },
+
+      { h2: "The current shortlist (from the Accelerators tab)" },
+      { p: "Deadlines and terms change with each cycle — CaptureAgent's Accelerators tab keeps this current with per-program due dates + AI-scored fit against your company profile. Verify on the program's page before you commit." },
+      { table: { headers: ["Program", "Focus", "Cadence", "What you get"], rows: [
+        ["AFWERX", "Air Force / Space Force SBIR pipeline", "Rolling", "Non-dilutive SBIR + AF contracts"],
+        ["SpaceWERX Orbital Prime / STRATFI", "Space Force scaling programs", "Announced BAAs", "Matched Phase II funds"],
+        ["DIU (Defense Innovation Unit)", "Commercial dual-use → prototype OTAs", "Rolling problem sets", "OTA prototype awards, production paths"],
+        ["Techstars Defense (LA / DC)", "Equity accelerator, defense focus", "Annual cohort", "$120k + demo day"],
+        ["Hacking for Defense (H4D)", "University-based problem sourcing", "Semester cadence", "Warm sponsor path"],
+        ["MassChallenge DefTech", "New-England defense cohort", "Annual", "Non-dilutive, corporate partners"],
+        ["Catalyst Accelerator (Colorado)", "Space & missile-defense focus", "Two cohorts/yr", "Space Force sponsor engagement"],
+        ["NSIN Foundry / MD5", "Founder + DoW problem match", "Rolling", "Non-dilutive, DoW partner"],
+        ["JHU APL Discover", "Applied physics lab commercialization", "By invite", "APL partnering + facilities"],
+        ["FedTech", "Federal-lab tech transfer sprints", "Multiple cohorts/yr", "Lab licenses, corporate access"],
+        ["Booz Allen SkillTerra / Ventures", "Booz Allen-partnered ventures", "Rolling", "Prime relationship, pilots"],
+        ["Cortado Ventures Defense", "Midwest defense/dual-use", "Annual", "Non-dilutive prep + Series-A intros"],
+      ] } },
+
+      { h2: "Use it inside CaptureAgent" },
+      { p: "The Accelerators tab lists programs with AI-scored fit and due dates. The Accelerator Applications tab drafts a tailored application per program straight from the program's own page — same fillable-form UX as a proposal, with the AI already having read the sponsor's evaluation criteria." },
+      { links: [
+        { label: "AFWERX", href: "https://afwerx.com" },
+        { label: "SpaceWERX", href: "https://spacewerx.us" },
+        { label: "Defense Innovation Unit", href: "https://www.diu.mil" },
+        { label: "NSIN (National Security Innovation Network)", href: "https://www.nsin.mil" },
+        { label: "Techstars Defense", href: "https://www.techstars.com/accelerators/defense" },
+      ] },
+      { related: ["startup-fundraising-defense", "defense-startup-resources", "dow-customer-discovery-peo-directory"] },
+    ],
+  },
+
   /* ─────────────────────── Startup resources ─────────────────────── */
   "defense-startup-resources": {
     tag: "ECOSYSTEM",
@@ -454,6 +594,8 @@ export const ARTICLE_ORDER = [
   "new-contractor-setup",
   "selling-to-the-department-of-war",
   "dow-customer-discovery-peo-directory",
+  "startup-fundraising-defense",
+  "defense-accelerators",
   "proposal-templates",
   "compliance",
   "defense-startup-resources",

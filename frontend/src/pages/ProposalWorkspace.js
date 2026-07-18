@@ -18,6 +18,7 @@ import {
   PEO_SOURCES, GOV_SECTORS, CIVIL_AGENCIES, DEFENSE_BRANCHES, IC_AGENCIES,
   COMMERCIAL_MARKETS,
 } from "../lib/peoDirectory";
+import { LOOKLEFT_SOURCE } from "../lib/peoDirectory";
 
 const FMT_META = {
   docx: { icon: FileText, label: "Word", tone: "cyan" },
@@ -474,6 +475,34 @@ function CustomerCard({ proposal, setProposal, orgId, oppId, editor }) {
     return data; // jobId → telemetry panel
   };
 
+  // AI reads the solicitation + cross-checks the PEO directory to pre-fill
+  // the customer form. User reviews + edits + hits Save — nothing persists
+  // server-side until they do.
+  const [suggesting, setSuggesting] = useState(false);
+  const suggest = async () => {
+    setSuggesting(true);
+    try {
+      const { data } = await api.post(
+        `/orgs/${orgId}/opportunities/${oppId}/proposal/customer/suggest`,
+        { engine: "claude" });
+      setForm((f) => ({
+        ...f,
+        sector: data.sector || f.sector || "",
+        branch: data.branch || f.branch || "",
+        peo: data.peo || f.peo || "",
+        agency: data.agency || f.agency || "",
+        tpoc: data.tpoc || f.tpoc || "",
+        contractingOfficer: data.contractingOfficer || f.contractingOfficer || "",
+      }));
+      const conf = data.confidence || "medium";
+      toast.success(`Customer fields suggested (${conf} confidence)`, {
+        description: data.rationale || "Review and edit before saving.",
+        duration: 6000,
+      });
+    } catch (e) { toast.error(errMsg(e)); }
+    finally { setSuggesting(false); }
+  };
+
   const reload = async () => {
     const { data } = await api.get(`/orgs/${orgId}/opportunities/${oppId}/proposal`);
     setProposal(data);
@@ -577,7 +606,12 @@ function CustomerCard({ proposal, setProposal, orgId, oppId, editor }) {
       </div>
 
       {editor && (
-        <div className="mt-3 flex flex-wrap items-center gap-2">
+        <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-line/60 pt-3">
+          <button className="btn btn-liquid liquid-cyan" onClick={suggest}
+            disabled={suggesting} data-testid="customer-suggest">
+            {suggesting ? <Spinner /> : <Sparkles size={14} />}
+            Suggest from solicitation
+          </button>
           <button className="btn btn-primary" onClick={save} disabled={saving || !dirty}
             data-testid="customer-save">
             {saving ? <Spinner /> : <Save size={14} />} Save customer
@@ -585,9 +619,14 @@ function CustomerCard({ proposal, setProposal, orgId, oppId, editor }) {
           {(saved.peo || saved.agency) && (
             <AIButton orgId={orgId} compact icon={Crosshair}
               label="Check directory currency"
-              note="Anthropic checks the live PEO directory; other engines answer from model knowledge."
+              note="Anthropic checks the live PEO directory + LookLeft's rolling tracker; other engines answer from model knowledge."
               onStart={check} onDone={reload} testid="peo-check" />
           )}
+          <div className="ml-auto text-[11px] leading-tight text-faint" data-testid="lookleft-verified">
+            <a href={LOOKLEFT_SOURCE.href} target="_blank" rel="noreferrer" className="text-cyan hover:underline">
+              LookLeft PEO tracker
+            </a>{" "}last verified {LOOKLEFT_SOURCE.lastVerified}
+          </div>
         </div>
       )}
     </Card>

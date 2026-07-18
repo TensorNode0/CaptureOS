@@ -452,11 +452,82 @@ async def set_customer(oppId: str, body: CustomerIn,
 
 PEO_CHECK_SYSTEM = (
     "You verify US government acquisition-organization facts against CURRENT "
-    "public sources using web_search: the service's own acquisition pages and "
+    "public sources using web_search: the service's own acquisition pages, "
     "the Stanford Gordian Knot Center PEO Directory "
-    "(gordianknot.fsi.stanford.edu). Never guess — verify. "
+    "(gordianknot.fsi.stanford.edu), and the LookLeft DoW/DoD PEO tracker "
+    "(sites.google.com/lookleft.com/index/home) which publishes rolling "
+    "updates faster than the annual directories. Never guess — verify. "
     "Respond with a SINGLE JSON object ONLY."
 )
+
+
+@router.post("/{orgId}/opportunities/{oppId}/proposal/customer/suggest")
+async def suggest_customer(oppId: str, body: DraftIn,
+                           ctx: dict = Depends(require_role("editor"))):
+    """AI reads the solicitation text and suggests the customer fields
+    (sector, branch, PEO, agency, TPOC, contracting officer). For DoW
+    solicitations the model also cross-references the Stanford Gordian Knot
+    2026 PEO Directory + the LookLeft rolling tracker so PEO renames /
+    reorganizations don't leak into a stale suggestion. Returns the
+    suggestion synchronously — the frontend uses it to pre-fill the form.
+    The human still reviews + edits + hits Save; nothing is persisted
+    server-side here."""
+    await assert_full_tier(ctx["user"])
+    opp = await _get_opp(ctx["org_id"], oppId)
+    keys = await org_keys.get_keys(ctx["org_id"], ctx["user"],
+                                   purpose="proposal.customer_suggest")
+    ENGINES = {"claude": "anthropic", "openai": "openai",
+               "emergent": "emergent", "asksage": "asksage"}
+    engine = body.engine if body.engine in ENGINES else "claude"
+    if not keys.get(ENGINES[engine]):
+        raise HTTPException(status_code=400,
+            detail=f"No {genai.ENGINE_LABELS[engine]} API key set. "
+                   "Add it in Settings → API Keys.")
+    solicitation = (
+        f"TITLE: {opp.get('title') or ''}\n"
+        f"AGENCY: {opp.get('agency') or ''}\n"
+        f"SOL NUMBER: {opp.get('solNumber') or ''}\n"
+        f"NAICS: {opp.get('naics') or ''}\n"
+        f"SET-ASIDE: {opp.get('setAside') or ''}\n"
+        f"SOURCE URL: {opp.get('sourceUrl') or ''}\n\n"
+        f"DESCRIPTION:\n{(opp.get('description') or '')[:6000]}\n\n"
+        f"POINTS OF CONTACT (if any parsed):\n{opp.get('pocs') or []}"
+    )
+    prompt = (
+        "Read the solicitation below and identify the government customer.\n"
+        "1) sector: one of 'Defense', 'Intelligence Community', 'Civil'\n"
+        "2) branch (Defense only): one of 'Army', 'Navy', 'Marine Corps', "
+        "'Air Force', 'Space Force', 'DoD 4th Estate' (OSD, DARPA, DIU, MDA, "
+        "DLA, DTRA, etc.)\n"
+        "3) peo (Defense only): the specific Program Executive Office name — "
+        "cross-check against the Stanford Gordian Knot 2026 PEO Directory + "
+        "LookLeft's rolling tracker so renames/reorgs are current\n"
+        "4) agency (IC/Civil only): the specific agency name\n"
+        "5) tpoc: technical point of contact 'Name · office · email' as best "
+        "inferred from the solicitation; leave blank if not stated\n"
+        "6) contractingOfficer: 'Name · office · email' from the solicitation; "
+        "leave blank if not stated\n"
+        "7) confidence: 'high' | 'medium' | 'low' — how confident the inference is\n"
+        "8) rationale: 1-2 sentences on how you concluded this\n\n"
+        f"SOLICITATION:\n{solicitation}\n\n"
+        "Respond with a SINGLE JSON object with those exact keys and nothing else."
+    )
+    text, used_model, _usage = await genai.generate(
+        engine, keys, PEO_CHECK_SYSTEM, prompt,
+        max_tokens=1500, web_search=True, model=body.model)
+    data = genai.extract_json(text)
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=502,
+            detail="The AI returned an unparseable suggestion. Try again.")
+    allowed = {"sector", "branch", "peo", "agency", "tpoc",
+               "contractingOfficer", "confidence", "rationale"}
+    suggestion = {k: (str(data.get(k) or "")[:400]) for k in allowed}
+    suggestion["directorySource"] = (
+        "Cross-checked against Stanford Gordian Knot 2026 PEO Directory + "
+        "LookLeft DoW/DoD PEO tracker (sites.google.com/lookleft.com/index/home)")
+    suggestion["suggestedAt"] = now_utc().isoformat()
+    suggestion["model"] = used_model
+    return suggestion
 
 
 @router.post("/{orgId}/opportunities/{oppId}/proposal/customer/check")
@@ -487,9 +558,12 @@ async def check_customer(oppId: str, body: DraftIn,
         f"ORGANIZATION TO VERIFY: {target}\n"
         f"CLAIMED PARENT: {customer.get('branch') or customer.get('sector') or 'n/a'}\n\n"
         "Use web_search to verify whether this organization currently exists "
-        "under that parent as named (check the service's acquisition pages and "
-        "the latest Gordian Knot PEO directory). Consider renames, mergers, and "
-        "reorganizations. Return JSON:\n"
+        "under that parent as named. Check three sources in order of freshness: "
+        "(1) LookLeft's rolling DoW/DoD PEO tracker at "
+        "sites.google.com/lookleft.com/index/home (updates faster than annual "
+        "directories), (2) the Stanford Gordian Knot 2026 PEO Directory, "
+        "(3) the service's own acquisition pages. Consider renames, mergers, "
+        "and reorganizations. Return JSON:\n"
         '{ "upToDate": true|false, "note": "1-2 sentences: current status, and '
         'the current name/successor if it changed", '
         '"source": "url you verified against" }'

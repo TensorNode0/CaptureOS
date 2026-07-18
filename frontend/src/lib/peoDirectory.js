@@ -8,11 +8,23 @@
 export const PEO_SOURCES = [
   { label: "Stanford Gordian Knot Center — 2026 Program Executive Offices Directory",
     href: "https://gordianknot.fsi.stanford.edu/publication/2026-program-executive-offices-directory" },
+  { label: "LookLeft — DoW/DoD PEO tracker (rolling updates + subscribe)",
+    href: "https://sites.google.com/lookleft.com/index/home" },
   { label: "Silicon Valley Defense Group — DoW Directory",
     href: "https://www.siliconvalleydefense.org/dow-directory" },
   { label: "Steve Blank — How to sell to the Dept of Defense: the 2025 PEO directory",
     href: "https://steveblank.com/2025/09/10/how-to-sell-to-the-dept-of-defense-the-2025-peo-directory/" },
 ];
+
+// LookLeft is a rolling-update PEO tracker. This is the date we last confirmed
+// the tracker was reachable + current — bump when a maintainer reviews the
+// site. The AI currency check queries LookLeft live so the user always gets
+// the true freshest state; this constant is the fallback signal + display.
+export const LOOKLEFT_SOURCE = {
+  label: "LookLeft DoW/DoD PEO tracker",
+  href: "https://sites.google.com/lookleft.com/index/home",
+  lastVerified: "2026-07-18",
+};
 
 export const GOV_SECTORS = ["Civil", "Defense", "Intelligence Community"];
 
