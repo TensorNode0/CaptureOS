@@ -1,6 +1,45 @@
 # CaptureAgent (captureagent.us) — PRD & Deployment Log
 
 
+## Phase 2 v2 (Pricing revision + expanded gating) ✅ 2026-07-18
+**Pricing rewrite** (via `setup_stripe.py`, idempotent):
+- OI:   $49.99/user/mo · $479.90/user/yr — **single seat**
+- Full: $99.99/user/mo · $2,879.71/yr   — **bundles up to 3 seats**
+- Enterprise: sales-led, no Stripe price
+- Yearly discount = **20%** off vs 12× monthly
+- Stripe `Price.metadata.seat_limit` = 1/1/1/3 for the 4 lookup keys
+- All old $49/$99 + 15%-off prices archived (`active=false`, lookup_key freed);
+  new prices reuse the same lookup_keys via `transfer_lookup_key=true`.
+
+**Expanded tier gating** (OI + free now blocked from):
+- Disk Storage — `/api/orgs/{orgId}/files` (list/upload/download/delete)
+- AI chat — `/api/orgs/{orgId}/ai/chat`
+- Frontend: `<AIChatButton>` returns `null` when tier < full; `<FilesPanel>`
+  shows a "Disk storage is part of the Full Capture plan" lock message;
+  `/disk-storage` route wrapped in `<RequireTier minTier="full">`; sidebar
+  now shows a lock icon on Disk Storage too (`data-testid nav-disk-lock`).
+
+**Marketing page** (`/pricing`) rewritten:
+- Hero: "Three plans. Pay for what you use."
+- Enterprise tagline: "For large teams and primes"
+- Enterprise features: Full Agentic Workflows, AWS GovCloud hosting, CUI/ITAR
+  support, enhanced security (FIPS 140-2 / KMS-at-rest / mTLS), SSO/SAML,
+  dedicated support, volume seat pricing.
+- Yearly toggle shows "Save 20%" pill.
+- Yearly OI: single-user callout ("Single user seat included").
+- Yearly Full: 3-seat badge above the price + emphasized "Includes up to 3
+  users" callout in features list.
+
+**BillingCard descriptions** updated: `free`/`oi` copy now names disk storage
++ AI chat + drafting as the Full-plan features.
+
+**BrowserRouter** now sets `future={{ v7_startTransition, v7_relativeSplatPath }}`
+to silence deprecation warnings.
+
+**Testing**: `/app/backend/tests/test_iter14_pricing_gating.py` (19) +
+prior 23 tests = **42/42 green**. Frontend acceptance criteria 100% green.
+
+
 ## Phase 2 (Stripe Billing + Tier Gating + Refunds + GDPR Export) ✅ 2026-07-18
 - **3 tiers** provisioned in the Emergent Stripe sandbox via `setup_stripe.py`:
   - `oi_monthly` $49/mo / `oi_yearly` $499.80/yr (15% off)  — Opportunity Intelligence

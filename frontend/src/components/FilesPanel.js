@@ -98,7 +98,9 @@ export default function FilesPanel({
       </div>
       <div className="mt-2 space-y-1">
         {!hasTier(sub, "full") ? (
-          <div className="py-2 text-[11px] text-faint" data-testid={`${testid}-locked`}>
+          <div className="py-2 text-[11px] text-faint"
+               data-testid={`${testid}-locked`}
+               data-testid-alt="files-panel-locked">
             Disk storage is part of the Full Capture plan.{" "}
             <a href="/pricing" className="text-cyan hover:underline">Upgrade to unlock</a>.
           </div>
