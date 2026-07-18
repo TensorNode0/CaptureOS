@@ -238,6 +238,49 @@ async def delete_doc(docId: str, ctx: dict = Depends(require_role("editor"))):
     return {"ok": True}
 
 
+@router.post("/{orgId}/venture-docs/{docId}/redraft-form")
+async def redraft_accelerator_form(docId: str,
+                                   ctx: dict = Depends(require_role("editor"))):
+    """Regenerate the fillable-form schema for an existing accelerator
+    application. Preserves any answers the founder already entered by mapping
+    them across on question `id`; new questions the AI picks up appear with
+    their AI-drafted answers, and questions no longer relevant are dropped."""
+    doc = await _get_doc(ctx["org_id"], docId)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if doc.get("kind") != "accelerator_application":
+        raise HTTPException(status_code=400,
+            detail="This document is not an accelerator application.")
+    prev = (doc.get("content_json") or {})
+    prev_answers = {q.get("id"): q.get("answer", "")
+                    for q in (prev.get("questions") or [])}
+
+    # Prefer the target/name we already stored — the program page has moved on
+    # from the initial URL and we don't keep the URL in venture_docs. Users can
+    # always paste fresh page text via a redraft via `notes` if needed.
+    keys = await org_keys.get_keys(ctx["org_id"], ctx["user"],
+                                   purpose="venture.redraft_form")
+    profile = await db.fetchrow(
+        "select * from org_profiles where organization_id = $1", ctx["org_id"])
+    md, schema, model_used = await venture_ai.form_from_program(
+        keys.get("anthropic", ""), doc["target"] or doc["title"], "",
+        serialize(ctx["org"]), serialize(profile), model="")
+    # Merge previous answers onto matching new questions so the founder's edits
+    # survive the redraft. AI answers stay on any brand-new questions.
+    for q in schema.get("questions", []):
+        if q["id"] in prev_answers and prev_answers[q["id"]]:
+            q["answer"] = prev_answers[q["id"]]
+    row = await db.fetchrow(
+        """update venture_docs
+             set content_md = $2, content_json = $3, model = $4, updated_at = $5
+             where id = $1 returning *""",
+        doc["id"], md, schema, model_used or doc.get("model", ""), now_utc())
+    await write_audit(ctx["org_id"], ctx["user"], "venture.redraft_form",
+                      doc.get("title"), {"model": model_used})
+    return serialize(row)
+
+
+
 @router.get("/{orgId}/venture-docs/{docId}/download")
 async def download_doc(docId: str, ctx: dict = Depends(require_role("viewer"))):
     doc = await _get_doc(ctx["org_id"], docId)
@@ -288,15 +331,16 @@ async def create_from_program(body: FromProgramIn,
     keys = await org_keys.get_keys(ctx["org_id"], ctx["user"], purpose="venture.from_program")
     profile = await db.fetchrow(
         "select * from org_profiles where organization_id = $1", ctx["org_id"])
-    md, model_used = await venture_ai.form_from_program(
+    md, schema, model_used = await venture_ai.form_from_program(
         keys.get("anthropic", ""), body.name.strip(), page_text,
         serialize(ctx["org"]), serialize(profile), model=body.model)
     row = await db.fetchrow(
         """insert into venture_docs (organization_id, kind, target, title,
-                                     content_md, model, created_by)
-           values ($1, 'accelerator_application', $2, $3, $4, $5, $6) returning *""",
+                                     content_md, content_json, model, created_by)
+           values ($1, 'accelerator_application', $2, $3, $4, $5, $6, $7)
+           returning *""",
         ctx["org_id"], body.name.strip(),
-        f"Accelerator application — {body.name.strip()}", md, model_used,
+        f"Accelerator application — {body.name.strip()}", md, schema, model_used,
         as_uuid(ctx["user"]["id"]))
     await write_audit(ctx["org_id"], ctx["user"], "venture.from_program",
                       body.name.strip(), {"hadPage": bool(page_text),

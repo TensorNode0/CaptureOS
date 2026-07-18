@@ -18,6 +18,7 @@ export default function Settings() {
   const [gemini, setGemini] = useState("");
   const [emergent, setEmergent] = useState("");
   const [asksage, setAsksage] = useState("");
+  const [overleaf, setOverleaf] = useState("");
   const [savingOrg, setSavingOrg] = useState(false);
   const [savingKeys, setSavingKeys] = useState(false);
   const [rotating, setRotating] = useState(false);
@@ -52,12 +53,13 @@ export default function Settings() {
         anthropicKey: anthropic || null, samKey: sam || null, openaiKey: openai || null,
         geminiKey: gemini || null,
         emergentKey: emergent || null, asksageKey: asksage || null,
+        overleafKey: overleaf || null,
       });
       setSecrets(data);
-      setAnthropic(""); setSam(""); setOpenai(""); setGemini(""); setEmergent(""); setAsksage("");
+      setAnthropic(""); setSam(""); setOpenai(""); setGemini(""); setEmergent(""); setAsksage(""); setOverleaf("");
       resetAIOptionsCache(activeOrgId);
       toast.success("API keys saved (encrypted)", {
-        description: `Anthropic: ${data.validation.anthropic} · SAM: ${data.validation.sam} · OpenAI: ${data.validation.openai} · Gemini: ${data.validation.gemini} · Emergent: ${data.validation.emergent} · AskSage: ${data.validation.asksage}`,
+        description: `Anthropic: ${data.validation.anthropic} · SAM: ${data.validation.sam} · OpenAI: ${data.validation.openai} · Gemini: ${data.validation.gemini} · Emergent: ${data.validation.emergent} · AskSage: ${data.validation.asksage} · Overleaf: ${data.validation.overleaf}`,
       });
     } catch (e) { toast.error(errMsg(e)); }
     finally { setSavingKeys(false); }
@@ -132,6 +134,9 @@ export default function Settings() {
           <Field label="Google Gemini API key (optional)" hint={secrets.geminiSet ? `Currently set: ${secrets.geminiKey}` : "Not set — enables the Gemini engine (get one at ai.google.dev/apikey)"}>
             <input className="field mono" value={gemini} onChange={(e) => setGemini(e.target.value)} placeholder={secrets.geminiSet ? "•••••••• (enter new to replace)" : "AIza…"} data-testid="gemini-key" />
           </Field>
+          <Field label="Overleaf auth token (optional)" hint={secrets.overleafSet ? `Currently set: ${secrets.overleafKey}` : "Not set — enables push/pull of Federal Proposals to Overleaf. Create at overleaf.com → Account → Git Integration."}>
+            <input className="field mono" value={overleaf} onChange={(e) => setOverleaf(e.target.value)} placeholder={secrets.overleafSet ? "•••••••• (enter new to replace)" : "olp_…"} data-testid="overleaf-key" />
+          </Field>
           <Field label="Emergent universal LLM key (optional)" hint={secrets.emergentSet ? `Currently set: ${secrets.emergentKey}` : "Not set — enables the Emergent drafting engine (routed models)"}>
             <input className="field mono" value={emergent} onChange={(e) => setEmergent(e.target.value)} placeholder={secrets.emergentSet ? "•••••••• (enter new to replace)" : "sk-emergent-…"} data-testid="emergent-key" />
           </Field>
@@ -145,6 +150,7 @@ export default function Settings() {
               <Pill tone={secrets.openaiSet ? "ok" : "neutral"}>OpenAI {secrets.openaiSet ? "set" : "unset"}</Pill>
               <Pill tone={secrets.geminiSet ? "ok" : "neutral"}>Gemini {secrets.geminiSet ? "set" : "unset"}</Pill>
               <Pill tone={secrets.emergentSet ? "ok" : "neutral"}>Emergent {secrets.emergentSet ? "set" : "unset"}</Pill>
+              <Pill tone={secrets.overleafSet ? "ok" : "neutral"}>Overleaf {secrets.overleafSet ? "set" : "unset"}</Pill>
               <Pill tone={secrets.asksageSet ? "ok" : "neutral"}>AskSage {secrets.asksageSet ? "set" : "unset"}</Pill>
               {secrets.keyVersion && <Pill tone="violet">encryption key v{secrets.keyVersion}</Pill>}
             </div>
@@ -152,7 +158,7 @@ export default function Settings() {
               <button className="btn btn-ghost" onClick={rotateKey} disabled={rotating} data-testid="rotate-key" title="Re-encrypt stored keys under a new per-org encryption key">
                 {rotating ? <Spinner /> : <RotateCw size={15} />} Rotate encryption key
               </button>
-              <button className="btn btn-primary" onClick={saveKeys} disabled={savingKeys || (!anthropic && !sam && !openai && !gemini && !emergent && !asksage)} data-testid="save-keys">{savingKeys ? <Spinner /> : <Save size={16} />} Save keys</button>
+              <button className="btn btn-primary" onClick={saveKeys} disabled={savingKeys || (!anthropic && !sam && !openai && !gemini && !emergent && !asksage && !overleaf)} data-testid="save-keys">{savingKeys ? <Spinner /> : <Save size={16} />} Save keys</button>
             </div>
           </div>
         </div>

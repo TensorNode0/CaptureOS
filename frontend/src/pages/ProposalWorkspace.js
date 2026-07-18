@@ -11,6 +11,8 @@ import { useAuth } from "../context/AuthContext";
 import { Card, SectionLabel, Pill, Spinner, PageReveal, EmptyState, Modal, Field } from "../components/ui";
 import { canEdit, canCreateProposal, canSubmitProposal } from "../lib/helpers";
 import AIButton from "../components/AIButton";
+import AIChatButton from "../components/AIChatButton";
+import OverleafPanel from "../components/OverleafPanel";
 import {
   PEO_SOURCES, GOV_SECTORS, CIVIL_AGENCIES, DEFENSE_BRANCHES, IC_AGENCIES,
   COMMERCIAL_MARKETS,
@@ -232,6 +234,12 @@ export default function ProposalWorkspace() {
       )}
 
       {proposal && (
+        <OverleafPanel orgId={activeOrgId} proposal={proposal}
+          canEdit={editor}
+          onSynced={(fresh) => setProposal((p) => ({ ...p, ...fresh }))} />
+      )}
+
+      {proposal && (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {docs.map((doc) => {
             const fmt = FMT_META[doc.fmt] || FMT_META.docx;
@@ -396,6 +404,22 @@ export default function ProposalWorkspace() {
 
       <DocEditor doc={editDoc} onClose={() => setEditDoc(null)} orgId={activeOrgId} oppId={id}
         onSaved={async () => { setEditDoc(null); await load(); }} />
+
+      {proposal && (
+        <AIChatButton
+          contextTitle={`Federal Proposal · ${opp.title}`}
+          contextText={
+            `Solicitation: ${opp.solNumber || "—"} · Agency: ${opp.agency || "—"}\n\n` +
+            (proposal.documents || []).map((d) =>
+              `--- ${d.title} (${d.status}) ---\n${d.contentMd || "(empty)"}`).join("\n\n").slice(0, 55000)
+          }
+          suggestions={[
+            "Tighten the executive summary volume.",
+            "Draft a compliance matrix for the SOW.",
+            "Flag risky claims that need proof.",
+          ]}
+        />
+      )}
     </PageReveal>
   );
 }

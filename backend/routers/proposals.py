@@ -520,3 +520,108 @@ async def check_customer(oppId: str, body: DraftIn,
 
     asyncio.create_task(_run_check())
     return {"ok": True, "status": "checking", "jobId": str(job_id)}
+
+
+
+# ---------------- Overleaf integration (see backend/overleaf.py) -----------------
+
+import overleaf  # noqa: E402  (kept local to this router)
+
+
+async def _get_proposal_by_id(org_id, proposal_id):
+    """Fetch a proposal by its own id (not by opportunity id), still scoped
+    to the caller's org so nothing cross-org leaks."""
+    row = await db.fetchrow(
+        "select * from proposals where id = $1 and organization_id = $2",
+        as_uuid(proposal_id), org_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Proposal not found")
+    return row
+
+
+class OverleafLinkIn(BaseModel):
+    projectIdOrUrl: str  # accepts full URL or bare project id
+
+
+@router.post("/{orgId}/proposals/{proposalId}/overleaf/link")
+async def overleaf_link(proposalId: str, body: OverleafLinkIn,
+                        ctx: dict = Depends(require_role("editor"))):
+    """Attach this proposal to an Overleaf project. Doesn't push anything yet.
+    Accepts either the bare project id or the full URL from the user's
+    browser address bar on overleaf.com."""
+    await _get_proposal_by_id(ctx["org_id"], proposalId)
+    try:
+        project_id = await overleaf.link_proposal(
+            proposal_id=proposalId, project_id_or_url=body.projectIdOrUrl)
+    except overleaf.OverleafError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    await write_audit(ctx["org_id"], ctx["user"], "proposal.overleaf.link",
+                      proposalId, {"projectId": project_id})
+    return {"ok": True, "overleafProjectId": project_id}
+
+
+@router.post("/{orgId}/proposals/{proposalId}/overleaf/unlink")
+async def overleaf_unlink(proposalId: str,
+                          ctx: dict = Depends(require_role("editor"))):
+    await _get_proposal_by_id(ctx["org_id"], proposalId)
+    await overleaf.unlink_proposal(proposal_id=proposalId)
+    await write_audit(ctx["org_id"], ctx["user"], "proposal.overleaf.unlink", proposalId)
+    return {"ok": True}
+
+
+async def _overleaf_ready(ctx, proposalId: str):
+    """Look up the org's Overleaf token and the proposal's linked project id.
+    Returns (token, project_id) or raises the appropriate 400."""
+    prop = await _get_proposal_by_id(ctx["org_id"], proposalId)
+    project_id = (prop.get("overleaf_project_id") or "").strip()
+    if not project_id:
+        raise HTTPException(status_code=400, detail=(
+            "This proposal isn't linked to an Overleaf project yet. Paste the "
+            "Overleaf project URL or id in the Overleaf panel and save first."))
+    keys = await org_keys.get_keys(ctx["org_id"], ctx["user"],
+                                   purpose="proposal.overleaf.sync")
+    token = keys.get("overleaf") or ""
+    if not token:
+        raise HTTPException(status_code=400, detail=(
+            "No Overleaf auth token set for this org. Generate one at "
+            "overleaf.com → Account → Git Integration and save it in Settings → "
+            "API Keys → Overleaf."))
+    return token, project_id, prop
+
+
+@router.post("/{orgId}/proposals/{proposalId}/overleaf/push")
+async def overleaf_push(proposalId: str,
+                        ctx: dict = Depends(require_role("editor"))):
+    """Push every proposal volume to the linked Overleaf project as one .md file
+    per volume plus a `main.tex` wrapper. Idempotent: if nothing changed since
+    the last push we still return 200 and note noChanges=true."""
+    token, project_id, _prop = await _overleaf_ready(ctx, proposalId)
+    try:
+        result = await overleaf.push_proposal(
+            org_id=ctx["org_id"], proposal_id=proposalId,
+            token=token, project_id=project_id)
+    except overleaf.OverleafError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    if not result.get("noChanges"):
+        await overleaf.mark_synced(proposal_id=proposalId)
+    await write_audit(ctx["org_id"], ctx["user"], "proposal.overleaf.push",
+                      proposalId, {"files": result.get("filesWritten", 0)})
+    return {"ok": True, **result}
+
+
+@router.post("/{orgId}/proposals/{proposalId}/overleaf/pull")
+async def overleaf_pull(proposalId: str,
+                        ctx: dict = Depends(require_role("editor"))):
+    """Pull the latest Overleaf revision back into every matching volume."""
+    token, project_id, _prop = await _overleaf_ready(ctx, proposalId)
+    try:
+        result = await overleaf.pull_proposal(
+            org_id=ctx["org_id"], proposal_id=proposalId,
+            token=token, project_id=project_id)
+    except overleaf.OverleafError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    if result.get("updated"):
+        await overleaf.mark_synced(proposal_id=proposalId)
+    await write_audit(ctx["org_id"], ctx["user"], "proposal.overleaf.pull",
+                      proposalId, {"updated": len(result.get("updated", []))})
+    return {"ok": True, **result}

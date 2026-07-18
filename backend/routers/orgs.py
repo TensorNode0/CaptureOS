@@ -629,6 +629,7 @@ class SecretsIn(BaseModel):
     geminiKey: Optional[str] = None
     emergentKey: Optional[str] = None
     asksageKey: Optional[str] = None
+    overleafKey: Optional[str] = None
 
 
 def _masked_payload(values, extra=None):
@@ -658,7 +659,8 @@ async def update_secrets(body: SecretsIn, ctx: dict = Depends(require_role("admi
         ctx["org_id"],
         {"anthropic": body.anthropicKey, "sam": body.samKey, "openai": body.openaiKey,
          "gemini": body.geminiKey,
-         "emergent": body.emergentKey, "asksage": body.asksageKey},
+         "emergent": body.emergentKey, "asksage": body.asksageKey,
+         "overleaf": body.overleafKey},
         ctx["user"]["id"])
     await write_audit(ctx["org_id"], ctx["user"], "secrets.update", "API keys")
     return _masked_payload(values, {

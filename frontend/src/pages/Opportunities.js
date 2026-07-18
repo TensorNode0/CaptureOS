@@ -9,6 +9,7 @@ import { api, errMsg } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { Card, SectionLabel, Skeleton, EmptyState, PageReveal, Modal, Field, Spinner } from "../components/ui";
 import AIButton from "../components/AIButton";
+import AIChatButton from "../components/AIChatButton";
 import OppDrawer from "../components/OppDrawer";
 import { COLUMNS, DEFAULT_VISIBLE, COMPACT_VISIBLE } from "../lib/oppColumns";
 import { fmtDateTime, exportCsv, canEdit } from "../lib/helpers";
@@ -575,6 +576,18 @@ export default function Opportunities() {
 
       <CreateModal open={showCreate} onClose={() => setShowCreate(false)} orgId={activeOrgId}
         onCreated={(d) => setOpps((p) => [d, ...(p || [])])} />
+
+      <AIChatButton
+        contextTitle="Federal Opportunities pipeline"
+        contextText={(opps || []).slice(0, 30).map((o) =>
+          `- ${o.title} · ${o.solNumber || "no-sol"} · ${o.agency || "?"} · fit=${o.fit?.overall ?? "—"} · due ${o.dueDate || "?"}`
+        ).join("\n")}
+        suggestions={[
+          "Which of these has the strongest fit for us right now?",
+          "Group these by agency and rank by pWin.",
+          "Draft a go/no-go rationale for the top 3.",
+        ]}
+      />
     </PageReveal>
   );
 }

@@ -1,6 +1,60 @@
 # CaptureAgent (captureagent.us) — PRD & Deployment Log
 
 
+## Phase 9 (Overleaf full git bidirectional sync) ✅ 2026-07-18
+- Migration 0020 adds `overleaf_key` to `org_secrets` and `overleaf_project_id` + `overleaf_last_sync` to `proposals`.
+- New `backend/overleaf.py` module wraps the `git` CLI via `asyncio.subprocess` in a
+  tempdir, cloning `https://git:{token}@git.overleaf.com/{project_id}`. Pushes every
+  volume as `.md` (round-trippable), plus a first-time-only `main.tex` wrapper using
+  the LaTeX `markdown` package so `Compile` in Overleaf still produces a real PDF.
+  Redacts the token from any surfaced git stderr.
+- Router endpoints on `proposals.py`: link, unlink, push, pull. Auth uses the org's
+  encrypted `overleaf_key` (KEY_COLUMNS updated in `org_keys.py`, Settings.js UI +
+  save flow updated).
+- New `OverleafPanel` component dropped into `ProposalWorkspace.js` — link input,
+  push/pull/change/unlink buttons, last-sync timestamp, Open-in-Overleaf link.
+- Startup guard: `overleaf.py` raises at import if `git` CLI is missing so deploy
+  failures surface immediately, not on first user click.
+
+## Phase 3 rest (AI chat drawer) ✅ 2026-07-18
+- Backend `POST /api/orgs/{orgId}/ai/chat` — stateless (client re-sends full
+  transcript), supports Claude/OpenAI/Gemini/Emergent/AskSage via `genai.generate`,
+  merges optional `contextText` + `contextTitle` for doc-grounded answers, respects
+  org's own API keys (no Emergent fallback), 400 on missing key / invalid message chain.
+- Also fixed `/ai/options` to skip SAM + Overleaf keys when listing engines.
+- New `AIChatButton` component: floating trigger + slide-in drawer with engine
+  dropdown (driven by /ai/options), suggestion chips, per-org last-engine persistence
+  in localStorage, error-safe (rolls back user bubble on send failure).
+- Wired into: Federal Opportunities (context = visible pipeline summary), Federal
+  Proposals workspace (context = all volumes concatenated), Investment Deals &
+  Accelerator Applications (via VentureWorkspace — context = current docs).
+- Data-testids: `ai-chat-open`, `ai-chat-drawer`, `ai-chat-engine`, `ai-chat-input`,
+  `ai-chat-send`, `ai-chat-suggest-*`, `ai-chat-msg-*`, `ai-chat-close`, `ai-chat-reset`.
+
+## Phase 8 (Structured fillable accelerator applications) ✅ 2026-07-18
+- `venture_ai.form_from_program()` now returns `(content_md, content_json, model)` where
+  `content_json = { kind: "acceleratorApplication", programName, keyFacts, questions:[
+   {id, label, type: short|long|number|url, answer, tip} ] }`. Falls back to a
+  `GENERIC_QUESTIONS` set when no key or no page text.
+- The router `create_from_program` persists both to `venture_docs.content_md` (for
+  export/download compatibility) and `content_json` (the source of truth for the form).
+- New endpoint `POST /orgs/{orgId}/venture-docs/{docId}/redraft-form` — regenerates
+  the schema while PRESERVING any answers the founder already typed (mapped by
+  question `id`). New questions get their AI-drafted answers; obsolete questions
+  are dropped.
+- New `AcceleratorForm` component renders each question as a labeled input/textarea
+  (short/long/number/url types) with the AI-generated tip below and a per-doc save
+  button. `VentureWorkspace.EditModal` detects accelerator_application docs with a
+  schema and swaps in the form (falls back to markdown textarea for legacy docs).
+- Data-testids: `accelerator-form`, `accel-form-save`, `accel-form-redraft`,
+  `accel-form-q-*`, `accel-form-input-*`.
+
+## OUT-OF-PLAN reminder (deferred by user)
+- "Export my data" feature: postpone until after ALL phases complete (per user
+  message on 2026-07-18). Backend endpoint was drafted and reverted to avoid dead code.
+
+
+
 ## Phase 7 (Discovered accelerators/investors) ✅ 2026-07-18
 - Migration 0018 → `discovered_venture` table (org-scoped; kind ∈ {'accelerator','investor'}; jsonb `data`).
 - `venture_ai.py`: both scan prompts now append a fenced ```json``` block listing the programs

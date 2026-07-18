@@ -218,14 +218,60 @@ program page" to get this program's ACTUAL questions with tailored guidance.*
 [FILL]
 """
 
+# Default question set used when we can't fetch/parse the program page. Same
+# shape the AI is asked to produce so the form renderer works either way.
+GENERIC_QUESTIONS = [
+    {"id": "one_liner",     "label": "What does your company do? (one-liner + expanded)", "type": "long",
+     "answer": "", "tip": "Lead with the customer problem, not the technology."},
+    {"id": "problem",       "label": "What problem are you solving, and for whom?",       "type": "long",
+     "answer": "", "tip": ""},
+    {"id": "solution",      "label": "Describe your solution and current status.",       "type": "long",
+     "answer": "", "tip": "Say whether it's demo, prototype, or fielded."},
+    {"id": "traction",      "label": "Traction (contracts, pilots, LOIs, revenue)",      "type": "long",
+     "answer": "", "tip": "SBIR awards and signed pilot agreements count — cite numbers."},
+    {"id": "team",          "label": "Team — who are you and why you?",                  "type": "long",
+     "answer": "", "tip": ""},
+    {"id": "ask",           "label": "What do you want from this program?",              "type": "long",
+     "answer": "", "tip": "Name specific mentors, customers, or facilities the program offers."},
+    {"id": "milestones",    "label": "Milestones for the cohort period",                 "type": "long",
+     "answer": "", "tip": ""},
+    {"id": "funding",       "label": "Funding status and runway",                        "type": "short",
+     "answer": "", "tip": ""},
+]
+
+
+def _questions_to_md(name: str, key_facts: dict, questions: list) -> str:
+    """Render a schema back to markdown for exports/downloads/older UIs."""
+    parts = [f"# {name} — Application draft\n"]
+    if key_facts:
+        parts.append("## Key facts")
+        for k, v in key_facts.items():
+            if v:
+                parts.append(f"- **{k}:** {v}")
+        parts.append("")
+    for q in questions or []:
+        parts.append(f"## {q.get('label') or q.get('id', 'Question')}")
+        parts.append(str(q.get("answer") or "[FILL]"))
+        tip = (q.get("tip") or "").strip()
+        if tip:
+            parts.append(f"*Tip: {tip}*")
+        parts.append("")
+    return "\n".join(parts)
+
 
 async def form_from_program(anthropic_key, name, page_text, org, profile,
                             model="", job_id=None):
     """Extract a program's actual application questions from its page text and
-    scaffold answers with tips. Falls back to a generic template without a key."""
+    scaffold answers with tips. Returns (content_md, content_json, used_model)
+    where content_json = {"kind": "acceleratorApplication", "keyFacts": {...},
+    "questions": [{id, label, type, answer, tip}, ...]}. Falls back to the
+    generic template + questions if we don't have a key or a page."""
     import ai_jobs
     if not anthropic_key or not page_text:
-        return GENERIC_APPLICATION_TEMPLATE.format(name=name), ""
+        md = GENERIC_APPLICATION_TEMPLATE.format(name=name)
+        schema = {"kind": "acceleratorApplication", "programName": name,
+                  "keyFacts": {}, "questions": GENERIC_QUESTIONS}
+        return md, schema, ""
     if job_id:
         await ai_jobs.stage(job_id, "Reading the program page and extracting questions…", 30)
     ctx_text = _org_context(org, profile)
@@ -233,21 +279,51 @@ async def form_from_program(anthropic_key, name, page_text, org, profile,
         f"{ctx_text}\n"
         f"PROGRAM: {name}\n"
         f"PROGRAM PAGE TEXT (truncated):\n{page_text[:40000]}\n\n"
-        "Build this program's application as markdown: a ## heading per question "
-        "you can identify from the page (application questions, eligibility asks, "
-        "selection criteria reworded as questions). Under each: a drafted answer "
-        "grounded in the company context ([FILL] where founder input is needed) "
-        "and a one-line *Tip:* on what strong applications do for that question, "
-        "informed by the program's stated criteria. If the page shows deadlines/"
-        "eligibility, open with a '## Key facts' section quoting them. If you "
-        "cannot find real questions on the page, produce the standard accelerator "
-        "question set instead and say so. Markdown ONLY."
+        "Extract this program's application as a fillable form the founder "
+        "will complete inside our app. Respond with a SINGLE JSON object ONLY, "
+        "no prose:\n"
+        '{ "programName": "",\n'
+        '  "keyFacts": { "Deadline": "", "Eligibility": "", "Cohort dates": "", '
+        '"Location": "", "Terms": "" },\n'
+        '  "questions": [\n'
+        '     { "id": "snake_case", "label": "the question as asked on the page", '
+        '"type": "short|long|number|url", "answer": "drafted response grounded in '
+        'company context; use [FILL] where founder input is needed", '
+        '"tip": "one-line coaching for what strong applications do for this question" }\n'
+        "  ]\n}\n"
+        "Rules:\n"
+        "- Include EVERY real application question you can identify on the page.\n"
+        "- If the page doesn't list questions, use the standard accelerator "
+        "question set (one-liner, problem, solution, traction, team, ask, "
+        "milestones, funding).\n"
+        "- Populate keyFacts ONLY with values quoted from the page; leave blank strings otherwise.\n"
+        "- `answer` should be a draft, not a placeholder — use founder context.\n"
+        "- Use `[FILL]` only for numbers/dates the AI can't invent."
     )
     text, used_model, usage = await genai.claude_generate(
         anthropic_key, SYSTEM, prompt, max_tokens=8000, model=model)
     if job_id:
         await ai_jobs.add_usage(job_id, used_model, usage)
-    md = (text or "").strip()
-    if md.startswith("```"):
-        md = md.strip("`").lstrip("markdown").strip()
-    return md or GENERIC_APPLICATION_TEMPLATE.format(name=name), used_model
+    data = genai.extract_json(text) or {}
+    questions = data.get("questions") if isinstance(data.get("questions"), list) else []
+    key_facts = data.get("keyFacts") if isinstance(data.get("keyFacts"), dict) else {}
+    if not questions:
+        md = GENERIC_APPLICATION_TEMPLATE.format(name=name)
+        schema = {"kind": "acceleratorApplication", "programName": name,
+                  "keyFacts": {}, "questions": GENERIC_QUESTIONS}
+        return md, schema, used_model
+    # Normalize / defensively cap runaway AI output.
+    clean_qs = []
+    for i, q in enumerate(questions[:40]):
+        clean_qs.append({
+            "id":     (q.get("id") or f"q_{i}")[:60],
+            "label":  (q.get("label") or f"Question {i + 1}")[:400],
+            "type":   q.get("type") if q.get("type") in ("short", "long", "number", "url") else "long",
+            "answer": (q.get("answer") or "")[:8000],
+            "tip":    (q.get("tip") or "")[:400],
+        })
+    schema = {"kind": "acceleratorApplication",
+              "programName": (data.get("programName") or name)[:200],
+              "keyFacts": {k: str(v)[:400] for k, v in list(key_facts.items())[:12] if v},
+              "questions": clean_qs}
+    return _questions_to_md(name, schema["keyFacts"], clean_qs), schema, used_model

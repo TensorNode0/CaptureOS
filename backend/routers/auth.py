@@ -88,6 +88,7 @@ async def test_login(body: TestLoginIn):
 
 
 
+
 class DeleteAccountIn(BaseModel):
     """Body for the destructive DELETE /auth/me request.
 
