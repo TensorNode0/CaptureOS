@@ -535,6 +535,7 @@ async def check_customer(oppId: str, body: DraftIn,
                          ctx: dict = Depends(require_role("editor"))):
     """AI currency check: does the selected PEO still exist under this branch
     per the latest directory and service pages? Stores customer.aiCheck."""
+    await assert_full_tier(ctx["user"])
     proposal = await _get_proposal(ctx["org_id"], oppId)
     if not proposal:
         raise HTTPException(status_code=404, detail="Proposal not found")
