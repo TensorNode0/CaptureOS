@@ -13,6 +13,7 @@ from domain import write_audit
 import capability_ai
 import ai_jobs
 import exports
+import genai
 import org_keys
 
 router = APIRouter(prefix="/api/orgs", tags=["capabilities"])
@@ -98,7 +99,7 @@ class GenerateIn(BaseModel):
     effort: str = "standard"
 
 
-AI_ENGINES = {"claude": "anthropic", "openai": "openai",
+AI_ENGINES = {"claude": "anthropic", "openai": "openai", "gemini": "gemini",
               "emergent": "emergent", "asksage": "asksage"}
 
 

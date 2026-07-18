@@ -15,3 +15,4 @@ openpyxl==3.1.5
 python-pptx==1.0.2
 --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/
 emergentintegrations
+google-genai==2.12.1

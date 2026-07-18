@@ -27,7 +27,7 @@ async def ai_options(ctx: dict = Depends(require_role("viewer"))):
         "engines": [{"id": e, "label": genai.ENGINE_LABELS[e],
                      "configured": engine_key.get(e, e) in configured,
                      "models": genai.MODEL_CATALOG.get(e, [])}
-                    for e in ("claude", "openai", "emergent", "asksage")],
+                    for e in ("claude", "openai", "gemini", "emergent", "asksage")],
         "efforts": [{"id": "low", "label": "Low — fast & cheap"},
                     {"id": "standard", "label": "Standard"},
                     {"id": "high", "label": "High — deepest"}],

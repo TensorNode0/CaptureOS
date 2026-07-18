@@ -13,6 +13,7 @@ export default function Settings() {
   const [anthropic, setAnthropic] = useState("");
   const [sam, setSam] = useState("");
   const [openai, setOpenai] = useState("");
+  const [gemini, setGemini] = useState("");
   const [emergent, setEmergent] = useState("");
   const [asksage, setAsksage] = useState("");
   const [savingOrg, setSavingOrg] = useState(false);
@@ -43,13 +44,14 @@ export default function Settings() {
     try {
       const { data } = await api.put(`/orgs/${activeOrgId}/secrets`, {
         anthropicKey: anthropic || null, samKey: sam || null, openaiKey: openai || null,
+        geminiKey: gemini || null,
         emergentKey: emergent || null, asksageKey: asksage || null,
       });
       setSecrets(data);
-      setAnthropic(""); setSam(""); setOpenai(""); setEmergent(""); setAsksage("");
+      setAnthropic(""); setSam(""); setOpenai(""); setGemini(""); setEmergent(""); setAsksage("");
       resetAIOptionsCache(activeOrgId);
       toast.success("API keys saved (encrypted)", {
-        description: `Anthropic: ${data.validation.anthropic} · SAM: ${data.validation.sam} · OpenAI: ${data.validation.openai} · Emergent: ${data.validation.emergent} · AskSage: ${data.validation.asksage}`,
+        description: `Anthropic: ${data.validation.anthropic} · SAM: ${data.validation.sam} · OpenAI: ${data.validation.openai} · Gemini: ${data.validation.gemini} · Emergent: ${data.validation.emergent} · AskSage: ${data.validation.asksage}`,
       });
     } catch (e) { toast.error(errMsg(e)); }
     finally { setSavingKeys(false); }
@@ -100,6 +102,9 @@ export default function Settings() {
           <Field label="OpenAI API key (optional)" hint={secrets.openaiSet ? `Currently set: ${secrets.openaiKey}` : "Not set — enables the ChatGPT drafting engine"}>
             <input className="field mono" value={openai} onChange={(e) => setOpenai(e.target.value)} placeholder={secrets.openaiSet ? "•••••••• (enter new to replace)" : "sk-…"} data-testid="openai-key" />
           </Field>
+          <Field label="Google Gemini API key (optional)" hint={secrets.geminiSet ? `Currently set: ${secrets.geminiKey}` : "Not set — enables the Gemini engine (get one at ai.google.dev/apikey)"}>
+            <input className="field mono" value={gemini} onChange={(e) => setGemini(e.target.value)} placeholder={secrets.geminiSet ? "•••••••• (enter new to replace)" : "AIza…"} data-testid="gemini-key" />
+          </Field>
           <Field label="Emergent universal LLM key (optional)" hint={secrets.emergentSet ? `Currently set: ${secrets.emergentKey}` : "Not set — enables the Emergent drafting engine (routed models)"}>
             <input className="field mono" value={emergent} onChange={(e) => setEmergent(e.target.value)} placeholder={secrets.emergentSet ? "•••••••• (enter new to replace)" : "sk-emergent-…"} data-testid="emergent-key" />
           </Field>
@@ -111,6 +116,7 @@ export default function Settings() {
               <Pill tone={secrets.anthropicSet ? "ok" : "neutral"}>Anthropic {secrets.anthropicSet ? "set" : "unset"}</Pill>
               <Pill tone={secrets.samSet ? "ok" : "neutral"}>SAM {secrets.samSet ? "set" : "unset"}</Pill>
               <Pill tone={secrets.openaiSet ? "ok" : "neutral"}>OpenAI {secrets.openaiSet ? "set" : "unset"}</Pill>
+              <Pill tone={secrets.geminiSet ? "ok" : "neutral"}>Gemini {secrets.geminiSet ? "set" : "unset"}</Pill>
               <Pill tone={secrets.emergentSet ? "ok" : "neutral"}>Emergent {secrets.emergentSet ? "set" : "unset"}</Pill>
               <Pill tone={secrets.asksageSet ? "ok" : "neutral"}>AskSage {secrets.asksageSet ? "set" : "unset"}</Pill>
               {secrets.keyVersion && <Pill tone="violet">encryption key v{secrets.keyVersion}</Pill>}
@@ -119,7 +125,7 @@ export default function Settings() {
               <button className="btn btn-ghost" onClick={rotateKey} disabled={rotating} data-testid="rotate-key" title="Re-encrypt stored keys under a new per-org encryption key">
                 {rotating ? <Spinner /> : <RotateCw size={15} />} Rotate encryption key
               </button>
-              <button className="btn btn-primary" onClick={saveKeys} disabled={savingKeys || (!anthropic && !sam && !openai && !emergent && !asksage)} data-testid="save-keys">{savingKeys ? <Spinner /> : <Save size={16} />} Save keys</button>
+              <button className="btn btn-primary" onClick={saveKeys} disabled={savingKeys || (!anthropic && !sam && !openai && !gemini && !emergent && !asksage)} data-testid="save-keys">{savingKeys ? <Spinner /> : <Save size={16} />} Save keys</button>
             </div>
           </div>
         </div>

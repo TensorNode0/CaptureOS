@@ -626,6 +626,7 @@ class SecretsIn(BaseModel):
     anthropicKey: Optional[str] = None
     samKey: Optional[str] = None
     openaiKey: Optional[str] = None
+    geminiKey: Optional[str] = None
     emergentKey: Optional[str] = None
     asksageKey: Optional[str] = None
 
@@ -656,6 +657,7 @@ async def update_secrets(body: SecretsIn, ctx: dict = Depends(require_role("admi
     values = await org_keys.store_keys(
         ctx["org_id"],
         {"anthropic": body.anthropicKey, "sam": body.samKey, "openai": body.openaiKey,
+         "gemini": body.geminiKey,
          "emergent": body.emergentKey, "asksage": body.asksageKey},
         ctx["user"]["id"])
     await write_audit(ctx["org_id"], ctx["user"], "secrets.update", "API keys")

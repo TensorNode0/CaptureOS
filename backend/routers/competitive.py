@@ -24,7 +24,7 @@ class AnalyzeIn(BaseModel):
     effort: str = "standard"
 
 
-AI_ENGINES = {"claude": "anthropic", "openai": "openai",
+AI_ENGINES = {"claude": "anthropic", "openai": "openai", "gemini": "gemini",
               "emergent": "emergent", "asksage": "asksage"}
 
 

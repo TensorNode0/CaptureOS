@@ -32,6 +32,11 @@ MODEL_CATALOG = {
         {"id": "gpt-4o", "label": "GPT-4o"},
         {"id": "gpt-4o-mini", "label": "GPT-4o mini (cheapest)"},
     ],
+    "gemini": [
+        {"id": "gemini-2.5-flash", "label": "Gemini 2.5 Flash (recommended)"},
+        {"id": "gemini-2.5-pro", "label": "Gemini 2.5 Pro (most capable)"},
+        {"id": "gemini-2.5-flash-lite", "label": "Gemini 2.5 Flash-Lite (cheapest)"},
+    ],
     "emergent": [
         {"id": "claude-sonnet-4-6", "label": "Claude Sonnet 4.6 via Emergent (recommended)"},
         {"id": "gpt-5.4", "label": "GPT-5.4 via Emergent"},
@@ -62,7 +67,7 @@ PRICES = [
 ]
 
 ENGINE_LABELS = {"claude": "Anthropic", "openai": "OpenAI",
-                 "emergent": "Emergent", "asksage": "AskSage"}
+                 "gemini": "Gemini", "emergent": "Emergent", "asksage": "AskSage"}
 
 WEB_SEARCH_TOOL = {"type": "web_search_20250305", "name": "web_search", "max_uses": 5}
 
@@ -236,6 +241,50 @@ async def openai_generate(api_key, system, user, max_tokens=8000, model=""):
     raise last_err if last_err else RuntimeError("OpenAI call failed")
 
 
+GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.5-flash-lite"]
+
+
+def _gemini_call_sync(api_key, system, user, max_tokens, model):
+    """Sync Gemini call — google-genai's Client is synchronous. We run it in a
+    thread from the async wrapper so the FastAPI event loop stays free."""
+    from google import genai as g
+    from google.genai import types, errors
+    client = g.Client(api_key=api_key)
+    try:
+        resp = client.models.generate_content(
+            model=model or "gemini-2.5-flash",
+            contents=user,
+            config=types.GenerateContentConfig(
+                system_instruction=system,
+                max_output_tokens=max_tokens,
+                temperature=0.2,
+            ),
+        )
+    except errors.ClientError as e:
+        code = getattr(e, "code", 0)
+        if code in (401, 403):
+            raise PermissionError(f"Gemini rejected the API key ({code})") from e
+        if code == 429:
+            raise RuntimeError("Gemini returned 429 (rate/quota limit). Check "
+                               "ai.google.dev / your Google Cloud billing.") from e
+        raise RuntimeError(f"Gemini client error: {getattr(e, 'message', str(e))[:300]}") from e
+    except errors.ServerError as e:
+        raise RuntimeError(f"Gemini server error: {getattr(e, 'message', str(e))[:300]}") from e
+    text = resp.text or ""
+    u = getattr(resp, "usage_metadata", None)
+    prompt_tok = getattr(u, "prompt_token_count", None) if u else None
+    out_tok = getattr(u, "candidates_token_count", None) if u else None
+    used_model = getattr(resp, "model_version", model) or model or "gemini-2.5-flash"
+    return text, used_model, _usage(prompt_tok, out_tok)
+
+
+async def gemini_generate(api_key, system, user, max_tokens=8000, model=""):
+    """Google Gemini text generation. Returns (text, model_used, usage)."""
+    import asyncio
+    return await asyncio.to_thread(
+        _gemini_call_sync, api_key, system, user, max_tokens, model)
+
+
 async def asksage_generate(api_key, system, user, max_tokens=8000, model=""):
     """AskSage query API (GovCon-focused platform). Returns (text, model, usage)."""
     async with httpx.AsyncClient(timeout=180) as client:
@@ -299,6 +348,8 @@ async def generate(engine, keys, system, user, max_tokens=8000, web_search=False
                              "Add it in Settings → API Keys.")
         if engine == "openai":
             return await openai_generate(key, system, user, max_tokens, model)
+        if engine == "gemini":
+            return await gemini_generate(key, system, user, max_tokens, model)
         if engine == "asksage":
             return await asksage_generate(key, system, user, max_tokens, model)
         return await emergent_generate(key, system, user, max_tokens, model)

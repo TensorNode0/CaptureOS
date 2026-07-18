@@ -1,6 +1,26 @@
 # CaptureAgent (captureagent.us) — PRD & Deployment Log
 
 
+## TERMINOLOGY LOCK — 2026-07-18
+- User is the platform owner. **Never** use "Platform Creator", "Super Admin", or "Admin"
+  in any user-facing UI text to describe them. In UI/marketing they = **CaptureAgent (the
+  platform itself)**. Internal DB/code role can be `super_admin`, but display strings
+  must not surface this. Org-level admins (customers running teams) remain "Admin".
+
+## Phase 3 partial (Gemini engine) ✅ 2026-07-18
+Gemini is now a first-class engine, callable via the same `genai.generate(engine, ...)` interface.
+- Backend: `google-genai==2.12.1` installed; new `gemini_generate` in genai.py (Sync SDK
+  called via `asyncio.to_thread` to keep FastAPI's loop free). Handles 401/403 → PermissionError,
+  429 → RuntimeError. Models: gemini-2.5-flash (default), gemini-2.5-pro, gemini-2.5-flash-lite.
+- Migration 0017_gemini_key.sql adds `gemini_key text default ''` to `org_secrets`.
+- KEY_COLUMNS + all store/rotate/read code paths in org_keys.py + orgs.py Secrets endpoints
+  now include gemini. `/ai/options` returns gemini as an available engine.
+- All routers' local AI_ENGINES dicts (opportunities, competitive, capabilities) include gemini.
+- Frontend Settings.js has a new "Google Gemini API key" input + status pill.
+- The AI chat assistant UI (rest of Phase 3) is NOT built yet — awaiting continuation.
+
+
+
 ## PRODUCT EXPANSION IN PROGRESS 2026-07-18 (this session)
 Massive feature plan approved by user across 9 phases. Batched in size-first order to
 stay within a tight credit budget. Login/auth is CONFIRMED FIXED (do not touch).

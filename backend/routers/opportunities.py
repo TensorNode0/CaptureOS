@@ -231,7 +231,7 @@ async def delete_opportunity(oppId: str, ctx: dict = Depends(require_role("edito
 
 
 # ---------------- AI Verify & Refresh (LIVE) ----------------
-AI_ENGINES = {"claude": "anthropic", "openai": "openai",
+AI_ENGINES = {"claude": "anthropic", "openai": "openai", "gemini": "gemini",
               "emergent": "emergent", "asksage": "asksage"}
 
 
