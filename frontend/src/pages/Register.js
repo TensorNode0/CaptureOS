@@ -29,7 +29,9 @@ export default function Register() {
           description: "We sent a verification link to your email — check your inbox.",
         });
       }
-      navigate(data.organizations?.length ? "/dashboard" : "/onboarding");
+      // New users go to pricing first — pick a plan → Stripe Checkout.
+      // (Org onboarding happens on first entry into the app afterward.)
+      navigate(data?.organizations?.length ? "/dashboard" : "/pricing");
     } catch (err) {
       setError(errMsg(err));
     } finally {
