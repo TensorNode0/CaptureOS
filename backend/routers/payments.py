@@ -93,6 +93,9 @@ async def create_checkout(body: CheckoutIn, user: dict = Depends(get_current_use
     try:
         session = stripe.checkout.Session.create(
             mode="subscription",
+            # No card required when a 100%-off code zeroes the invoice: the
+            # card form only shows if there is actually something to pay.
+            payment_method_collection="if_required",
             line_items=[{"price": price.id, "quantity": 1}],
             customer_email=user.get("email"),
             allow_promotion_codes=True,
