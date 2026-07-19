@@ -341,10 +341,14 @@ async def _apply_paid(session_id: str, session_obj):
     if sub_id:
         try:
             sub = stripe.Subscription.retrieve(sub_id)
-            if sub.current_period_end:
+            cpe = getattr(sub, "current_period_end", None)
+            if not cpe:  # newer Stripe API versions moved this onto the items
+                items = getattr(getattr(sub, "items", None), "data", None) or []
+                cpe = getattr(items[0], "current_period_end", None) if items else None
+            if cpe:
                 from datetime import datetime, timezone
-                period_end = datetime.fromtimestamp(sub.current_period_end, tz=timezone.utc)
-        except stripe.error.StripeError:
+                period_end = datetime.fromtimestamp(cpe, tz=timezone.utc)
+        except Exception:  # period_end is cosmetic — never block the tier flip
             pass
     await db.execute(
         """insert into user_subscriptions
@@ -387,8 +391,10 @@ async def stripe_webhook(request: Request):
     elif t in ("customer.subscription.updated", "customer.subscription.deleted"):
         sub_id = obj["id"] if isinstance(obj, dict) else obj.id
         status = obj["status"] if isinstance(obj, dict) else obj.status
-        cancel_at_pe = obj["cancel_at_period_end"] if isinstance(obj, dict) else obj.cancel_at_period_end
-        cpe = obj["current_period_end"] if isinstance(obj, dict) else obj.current_period_end
+        cancel_at_pe = (obj.get("cancel_at_period_end") if isinstance(obj, dict)
+                        else getattr(obj, "cancel_at_period_end", False))
+        cpe = (obj.get("current_period_end") if isinstance(obj, dict)
+               else getattr(obj, "current_period_end", None))
         from datetime import datetime, timezone
         period_end = datetime.fromtimestamp(cpe, tz=timezone.utc) if cpe else None
         new_tier_input = obj.get("metadata", {}).get("tier") if isinstance(obj, dict) \
