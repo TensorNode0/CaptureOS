@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 
 import database as db
 from auth_utils import get_current_user
+from billing import _grandfathered_emails
 from utils import as_uuid, now_utc
 from domain import write_audit
 
@@ -181,8 +182,12 @@ async def my_subscription(user: dict = Depends(get_current_user)):
         row = await db.fetchrow(
             "insert into user_subscriptions (user_id) values ($1) returning *",
             as_uuid(user["id"]))
+    # Platform owner / allowlisted emails surface as enterprise so the UI
+    # unlocks everything — same bypass billing.assert_tier applies server-side.
+    tier = ("enterprise" if (user.get("email") or "").lower() in _grandfathered_emails()
+            else row["tier"])
     return {
-        "tier": row["tier"], "interval": row["interval"], "status": row["status"],
+        "tier": tier, "interval": row["interval"], "status": row["status"],
         "currentPeriodEnd": row["current_period_end"].isoformat() if row["current_period_end"] else None,
         "cancelAtPeriodEnd": row["cancel_at_period_end"],
         "isPlatformOwner": _is_platform_owner(user),
